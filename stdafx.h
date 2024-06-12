@@ -33,4 +33,8 @@ typedef int				Int32;
 typedef unsigned int	UInt32;
 typedef unsigned char	uchar;
 
+#include <atlimage.h> // CImage
+#include <gdiplus.h> // GDI+
+#pragma comment(lib, "gdiplus.lib")
+
 #endif
