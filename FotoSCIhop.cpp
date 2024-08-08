@@ -646,7 +646,7 @@ BOOL DoFileExport(HWND hwnd)
 }
 
 // Dhel
-BOOL CLIFileExport(char BMPFileName[MAX_PATH])
+BOOL CLIFileExportOG(char BMPFileName[MAX_PATH])
 {
    if(BMPFileName)
    {
@@ -678,6 +678,87 @@ BOOL CLIFileExport(char BMPFileName[MAX_PATH])
    }
 
    return TRUE;
+}
+
+// Dhel - with CImage
+BOOL CLIFileExport(char BMPFileName[MAX_PATH])
+{
+   if(BMPFileName)
+   {
+		CImage image;
+
+        // Extract the width, height, and bit depth from the BITMAPINFOHEADER
+        int width = (*curCell)->bmInfo->bmiHeader.biWidth;
+        int height = abs((*curCell)->bmInfo->bmiHeader.biHeight); // Make sure the height is positive
+        int bitCount = (*curCell)->bmInfo->bmiHeader.biBitCount;
+
+        // Create the image with the specified dimensions and bit depth
+        image.Create(width, height, bitCount);
+
+        // Get a pointer to the image bits
+        BYTE* pBits = (BYTE*)image.GetBits();
+
+        // Calculate the width in bytes
+        int rowBytes = image.GetPitch();
+
+        // Copy the image data
+        long mywidth = (*curCell)->bmInfo->bmiHeader.biSizeImage / height;
+        for (int i = 0; i < height; i++)
+        {
+            memcpy(pBits + (height - 1 - i) * rowBytes, (BYTE*)(*curCell)->bmImage + i * mywidth, mywidth);
+        }
+
+        // Save the image
+        HRESULT hr = image.Save(BMPFileName, Gdiplus::ImageFormatBMP);
+        if (FAILED(hr))
+        {
+            // Handle the error, e.g., print an error message
+            printf("Failed to save the image. HRESULT: 0x%lx\n", hr);
+        }
+   }
+
+   return TRUE;
+}
+
+void ShiftPaletteIndices(CImage& image, int startIndex, int endIndex, int offset) {
+    // Ensure the image is 8-bit indexed
+    if (image.GetBPP() != 8) {
+        //throw std::runtime_error("The image is not an 8-bit indexed BMP.");
+    }
+
+    // Get the number of colors in the palette
+    int numColors = image.GetMaxColorTableEntries();
+
+    // Load the palette
+    RGBQUAD palette[256];
+    image.GetColorTable(0, numColors, palette);
+
+    // Create a copy of the palette to modify
+    RGBQUAD newPalette[256];
+    memcpy(newPalette, palette, sizeof(RGBQUAD) * numColors);
+
+    // Shift the palette entries
+    for (int i = startIndex; i <= endIndex; ++i) {
+        int newIndex = (i + offset + numColors) % numColors;
+        newPalette[newIndex] = palette[i];
+    }
+
+    // Set the modified palette back to the image
+    image.SetColorTable(0, numColors, newPalette);
+
+    // Update the pixel data to reflect the new palette indices
+    int width = image.GetWidth();
+    int height = image.GetHeight();
+    for (int y = 0; y < height; ++y) {
+        BYTE* scanline = reinterpret_cast<BYTE*>(image.GetPixelAddress(0, y));
+        for (int x = 0; x < width; ++x) {
+            BYTE oldIndex = scanline[x];
+            if (oldIndex >= startIndex && oldIndex <= endIndex) {
+                BYTE newIndex = (oldIndex + offset + numColors) % numColors;
+                scanline[x] = newIndex;
+            }
+        }
+    }
 }
 
 // Dhel
@@ -754,8 +835,10 @@ BOOL CLIFileImport(char BMPFileName[MAX_PATH])
 			*/
 
 			// import palette automatically
-			if (memcmp(tctab, (*curCell)->bmInfo->bmiColors, 256*sizeof(RGBQUAD)))			
-				CLIPaletteImport (BMPFileName);
+
+			// Temporarily Disable while testing palette shift
+			//if (memcmp(tctab, (*curCell)->bmInfo->bmiColors, 256*sizeof(RGBQUAD)))			
+			//	CLIPaletteImport (BMPFileName);
 
 			bool isBottomTop=(tbih.biHeight>0);
 
@@ -809,7 +892,10 @@ BOOL CLIFileImport(char BMPFileName[MAX_PATH])
 			if (curCell)
 			{
 				(*curCell)->SetImage(tbinfo, timage);
-	
+				(*curCell)->shiftPaletteRange (0, 108, 127, tctab);
+				
+
+
 				//HMENU menu = GetMenu(hwnd);
 
 				//EnableMenuItem(menu, ID_SALVA, MF_ENABLED);
@@ -833,6 +919,64 @@ BOOL CLIFileImport(char BMPFileName[MAX_PATH])
    return TRUE;
 }
 
+void Cell::shiftPaletteRange (int startIndex, int endIndex, int offset, RGBQUAD *tctab)
+{
+	GetImage (&bmInfo, &bmImage);
+	
+	unsigned short width = static_cast<unsigned short>(bmInfo->bmiHeader.biWidth);
+	unsigned short height = static_cast<unsigned short>(-bmInfo->bmiHeader.biHeight);
+
+	for (int y = 0; y < height; ++y)
+	{
+		for (int x = 0; x < width; ++x)
+		{
+			// Copy pixel data
+			bmImage[y * width + x] = bmImage[y * width + x];
+
+			// Update palette indices
+			BYTE oldIndex = bmImage[y * width + x];
+			if (oldIndex >= startIndex && oldIndex <= endIndex)
+			{
+				BYTE newIndex = (oldIndex + offset + 256) % 256;
+				bmImage[y * width + x] = newIndex;
+			}
+		}
+	}
+
+	// Load the palette
+	Palette *tnewpal;
+	
+	//memcmp((*curCell)->bmInfo->bmiColors, tctab, 256*sizeof(RGBQUAD));
+
+	if (isPicture)
+		tnewpal = globalPicture->palSCI;
+	else
+		tnewpal = globalView->palSCI;
+
+	for (int i = 0; i < 256; i++)
+	{
+		PalEntry *pe = tnewpal->GetPalEntry(i);
+		PalEntry npe;
+		npe.remap = (pe == NULL ? 0 : pe->remap);
+
+		// Apply the palette index shift here
+		// Corrected the newIndex calculation to handle positive and negative offsets correctly
+		int newIndex = (i - offset) % 256;
+		if (newIndex < 0)
+		{
+			newIndex += 256;
+		}
+
+		npe.blue = tctab[newIndex].rgbBlue;
+		npe.green = tctab[newIndex].rgbGreen;
+		npe.red = tctab[newIndex].rgbRed;
+
+		tnewpal->SetPalEntry(npe, i);
+	}
+
+	SetImage (bmInfo, bmImage);
+
+}
 
 BOOL DoImageConversion(char fileName[MAX_PATH])
 {

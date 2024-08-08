@@ -289,6 +289,8 @@ public:
 	unsigned char *bmImage;
 	BITMAPINFO *bmInfo;
 
+	void shiftPaletteRange (int startIndex, int endIndex, int offset, RGBQUAD *tctab);
+
 	bool isClone = false;
 };
 
