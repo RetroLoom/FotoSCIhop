@@ -1326,16 +1326,30 @@ BOOL CALLBACK DoModifyPropertiesProc(HWND hwndDlg,
 					//globalView->cells[i]->Head.pic[(*curCell)->headerIndex].xShift = GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE);
 					//globalView->cells[i]->Head.pic[(*curCell)->headerIndex].yShift = GetDlgItemInt(hwndDlg, IDDI_TOP, NULL, TRUE);
 
-						globalView->loops[selLoop]->Head.flags = GetDlgItemInt(hwndDlg, IDC_LOOP_MIRROR, NULL, TRUE);
-						globalView->loops[selLoop]->Head.altLoop = GetDlgItemInt(hwndDlg, IDC_LOOP_BASE, NULL, TRUE);
+						//globalView->loops[selLoop]->Head.flags = GetDlgItemInt(hwndDlg, IDC_LOOP_MIRROR, NULL, TRUE);
+						//globalView->loops[selLoop]->Head.altLoop = GetDlgItemInt(hwndDlg, IDC_LOOP_BASE, NULL, TRUE);
+
+						int isMirrorMod = GetDlgItemInt(hwndDlg, IDC_LOOP_MIRROR, NULL, TRUE);
+						int mirrorBaseMod = GetDlgItemInt(hwndDlg, IDC_LOOP_BASE, NULL, TRUE);
+
+						if (isMirrorMod != globalView->loops[selLoop]->isMirror)
+						{
+							if (isMirrorMod == 0)
+							{
+								globalView->loops[selLoop] = globalView->loops[mirrorBaseMod];
+
+								globalView->loops[selLoop]->Head = globalView->loops[mirrorBaseMod]->Head;
+								globalView->Head.view32.celCount = globalView->Head.view32.celCount + globalView->loops[mirrorBaseMod]->Head.numCels;
+							}
+						}
 
 						if (!(*curLoop)->Head.flags)
 						{
 							CelHeaderView *bCell = new CelHeaderView;
 							bCell = (CelHeaderView *)&(*curCell)->Head;
 
-							bCell->xHot = GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE);
-							bCell->yHot = GetDlgItemInt(hwndDlg, IDDI_TOP, NULL, TRUE);
+							//bCell->xHot = GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE);
+							//bCell->yHot = GetDlgItemInt(hwndDlg, IDDI_TOP, NULL, TRUE);
 
 							globalView->loops[selLoop]->Head.contLoop = GetDlgItemInt(hwndDlg, IDC_LOOP_CONTINUE, NULL, TRUE);
 							globalView->loops[selLoop]->Head.startCel = GetDlgItemInt(hwndDlg, IDC_LOOP_STARTCELL, NULL, TRUE);

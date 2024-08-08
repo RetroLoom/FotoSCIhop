@@ -126,6 +126,12 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
 	
 			fseek(cfilebuf, offset+loops[z]->Head.celOffset, SEEK_SET);
 
+			if (loops[z]->Head.flags)
+			{		
+				loops[z]->isMirror = 1;
+				loops[z]->mirrorBase = loops[z]->Head.altLoop;				
+			}
+
 			for (unsigned short i=0; i<loops[z]->Head.numCels; i++)
 			{
 				loops[z]->cells[i] = new Cell;

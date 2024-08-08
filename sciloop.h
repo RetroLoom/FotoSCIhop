@@ -22,11 +22,14 @@ class Loop
 
 public:
 	
-	Loop(void){}
+	Loop(void){isMirror = 0; mirrorBase = 0;}
 	~Loop(void);
 
     Cell *cells[MAX_CELLS];
     LoopHeader Head;
+
+    int isMirror;
+    int mirrorBase;
 };
 
 #endif
