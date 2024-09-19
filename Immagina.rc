@@ -237,7 +237,7 @@ FONT 8, "System", 0, 0, 0x1
 BEGIN
     ICON            "aicon",IDC_MYICON,14,9,20,20
     LTEXT           "FotoSCIhop v1.4.beta.001",IDC_STATIC,49,10,119,8,SS_NOPREFIX
-    LTEXT           "\251 Enrico Rolfi (Endroz), 2004-2021\n\251 Daniel Arnold (Dhel), 2022-2024",IDC_STATIC,49,20,143,24
+    LTEXT           "© Enrico Rolfi (Endroz), 2004-2021\n© Daniel Arnold (Dhel), 2022-2024",IDC_STATIC,49,20,143,24
     DEFPUSHBUTTON   "OK",IDOK,191,11,30,11,WS_GROUP
     LTEXT           "This program is open source (GNU GPL license), and can be freely distributed and modified provided that it stays open source.",IDC_STATIC,9,96,201,28
     LTEXT           "In Memory of Michele Del Bene (Micartu).\n\nUpdates on https://github.com/skadarnold/FotoSCIhop\n\n",IDC_STATIC,10,38,190,54
@@ -284,7 +284,7 @@ BEGIN
     END
     POPUP "&Image"
     BEGIN
-        MENUITEM "Show Table\tT",               ID_PALETTE, GRAYED
+        MENUITEM "Show Table\tCtrl+T",          ID_PALETTE, GRAYED
         MENUITEM SEPARATOR
         MENUITEM "&Import Image...\tCtrl+I",    ID_IMPORTABMP, GRAYED
         MENUITEM "&Export Image...\tCtrl+E",    ID_ESPORTABMP, GRAYED
@@ -292,9 +292,9 @@ BEGIN
         MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI, GRAYED
         MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI, GRAYED
         MENUITEM SEPARATOR
-        MENUITEM "&Info...\tI",                 ID_INFO, GRAYED
-        MENUITEM "&Link Points...\tL",          IDM_LINKPOINTS, GRAYED
-        MENUITEM "&Properties...\tP",           IDM_PROPERTIES, GRAYED
+        MENUITEM "&Info...\tCtrl+I",            ID_INFO, GRAYED
+        MENUITEM "&Link Points...\tCtrl+L",     IDM_LINKPOINTS, GRAYED
+        MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES, GRAYED
         POPUP "Magnification"
         BEGIN
             MENUITEM "Normal\tCtrl+1",              ID_INGRANDIMENTO_NORMALE, CHECKED
@@ -307,11 +307,11 @@ BEGIN
     END
     POPUP "&Go"
     BEGIN
-        MENUITEM "&Previous Cell\t<-",          ID_CELLAPRECEDENTE, GRAYED
-        MENUITEM "&Next Cell\t->",              ID_CELLASUCCESSIVA, GRAYED
+        MENUITEM "&Previous Cell\tCtrl + <-",   ID_CELLAPRECEDENTE, GRAYED
+        MENUITEM "&Next Cell\tCtrl + ->",       ID_CELLASUCCESSIVA, GRAYED
         MENUITEM SEPARATOR
-        MENUITEM "P&revious Loop\tUpArrow",     ID_CICLOPRECEDENTE, GRAYED
-        MENUITEM "N&ext Loop\tDownArrow",       ID_CICLOSUCCESSIVO, GRAYED
+        MENUITEM "P&revious Loop\tCtrl + UpArrow", ID_CICLOPRECEDENTE, GRAYED
+        MENUITEM "N&ext Loop\tCtrl + DownArrow", ID_CICLOSUCCESSIVO, GRAYED
     END
     POPUP "?"
     BEGIN
@@ -330,10 +330,10 @@ END
 IDC_IMMAGINA ACCELERATORS
 BEGIN
     "O",            ID_CARICA,              VIRTKEY, CONTROL, NOINVERT
-    VK_LEFT,        ID_CELLAPRECEDENTE,     VIRTKEY, NOINVERT
-    VK_RIGHT,       ID_CELLASUCCESSIVA,     VIRTKEY, NOINVERT
-    VK_UP,          ID_CICLOPRECEDENTE,     VIRTKEY, NOINVERT
-    VK_DOWN,        ID_CICLOSUCCESSIVO,     VIRTKEY, NOINVERT
+    VK_LEFT,        ID_CELLAPRECEDENTE,     VIRTKEY, CONTROL, NOINVERT
+    VK_RIGHT,       ID_CELLASUCCESSIVA,     VIRTKEY, CONTROL, NOINVERT
+    VK_UP,          ID_CICLOPRECEDENTE,     VIRTKEY, CONTROL, NOINVERT
+    VK_DOWN,        ID_CICLOSUCCESSIVO,     VIRTKEY, CONTROL, NOINVERT
     "E",            ID_ESPORTABMP,          VIRTKEY, CONTROL, NOINVERT
     "I",            ID_IMPORTABMP,          VIRTKEY, CONTROL, NOINVERT
     "1",            ID_INGRANDIMENTO_NORMALE, VIRTKEY, CONTROL, NOINVERT
@@ -343,10 +343,10 @@ BEGIN
     "S",            ID_SALVACOME,           VIRTKEY, CONTROL, NOINVERT
     "Q",            IDM_EXIT,               VIRTKEY, CONTROL, NOINVERT
     "N",            ID_FILE_NEXTFILE,       VIRTKEY, CONTROL, NOINVERT
-    "P",            IDM_PROPERTIES,         VIRTKEY, NOINVERT
-    "L",            IDM_LINKPOINTS,         VIRTKEY, NOINVERT
-    "I",            ID_INFO,                VIRTKEY, NOINVERT
-    "T",            ID_PALETTE,             VIRTKEY, NOINVERT
+    "P",            IDM_PROPERTIES,         VIRTKEY, CONTROL, NOINVERT
+    "L",            IDM_LINKPOINTS,         VIRTKEY, CONTROL, NOINVERT
+    "I",            ID_INFO,                VIRTKEY, CONTROL, NOINVERT
+    "T",            ID_PALETTE,             VIRTKEY, CONTROL, NOINVERT
 END
 
 #endif    // English (United States) resources
