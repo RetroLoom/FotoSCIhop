@@ -102,6 +102,17 @@ BEGIN
         HORZGUIDE, 86
         HORZGUIDE, 107
     END
+
+    IDD_REFERENCE_IMG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 216
+        BOTTOMMARGIN, 80
+        HORZGUIDE, 14
+        HORZGUIDE, 34
+        HORZGUIDE, 48
+        HORZGUIDE, 70
+    END
 END
 #endif    // APSTUDIO_INVOKED
 
@@ -237,7 +248,7 @@ FONT 8, "System", 0, 0, 0x1
 BEGIN
     ICON            "aicon",IDC_MYICON,14,9,20,20
     LTEXT           "FotoSCIhop v1.4.beta.001",IDC_STATIC,49,10,119,8,SS_NOPREFIX
-    LTEXT           "© Enrico Rolfi (Endroz), 2004-2021\n© Daniel Arnold (Dhel), 2022-2024",IDC_STATIC,49,20,143,24
+    LTEXT           "ï¿½ Enrico Rolfi (Endroz), 2004-2021\nï¿½ Daniel Arnold (Dhel), 2022-2024",IDC_STATIC,49,20,143,24
     DEFPUSHBUTTON   "OK",IDOK,191,11,30,11,WS_GROUP
     LTEXT           "This program is open source (GNU GPL license), and can be freely distributed and modified provided that it stays open source.",IDC_STATIC,9,96,201,28
     LTEXT           "In Memory of Michele Del Bene (Micartu).\n\nUpdates on https://github.com/skadarnold/FotoSCIhop\n\n",IDC_STATIC,10,38,190,54
@@ -263,6 +274,25 @@ BEGIN
     EDITTEXT        IDC_POS_PRI,85,58,35,14,ES_AUTOHSCROLL
 END
 
+IDD_REFERENCE_IMG DIALOGEX 65236, 0, 223, 87
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+EXSTYLE WS_EX_TRANSPARENT
+CAPTION "Reference Images"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "Apply",IDOK,66,63,50,14
+    PUSHBUTTON      "Close",IDCANCEL,129,63,50,14
+    EDITTEXT        IDC_REF_NAME_1,22,41,108,14,ES_AUTOHSCROLL,WS_EX_ACCEPTFILES
+    EDITTEXT        IDC_REF_XHOT_1,144,41,21,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_REF_YHOT_1,177,41,21,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_REF_SCALE_X,55,7,21,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_REF_SCALE_Y,84,7,21,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "Scale",IDC_STATIC,23,10,18,8
+    LTEXT           "Path",IDC_STATIC,56,30,16,8
+    LTEXT           "X",IDC_STATIC,151,30,8,8
+    LTEXT           "Y",IDC_STATIC,184,30,8,8
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -274,11 +304,11 @@ BEGIN
     POPUP "&File"
     BEGIN
         MENUITEM "&Open...\tCtrl+O",            ID_CARICA
-        MENUITEM "Next File\tCtrl+N",           ID_FILE_NEXTFILE, GRAYED
+        MENUITEM "Next File\tCtrl+N",           ID_FILE_NEXTFILE
         MENUITEM "Open V56 from Volume...",     ID_CARICAV56VOL
         MENUITEM "Open P56 from Volume...",     ID_CARICAP56VOL
-        MENUITEM "&Save",                       ID_SALVA, GRAYED
-        MENUITEM "S&ave as...\tCtrl+S",         ID_SALVACOME, GRAYED
+        MENUITEM "&Save",                       ID_SALVA
+        MENUITEM "S&ave as...\tCtrl+S",         ID_SALVACOME
         MENUITEM SEPARATOR
         MENUITEM "&Quit\tCtrl+Q",               IDM_EXIT
     END
@@ -286,14 +316,15 @@ BEGIN
     BEGIN
         MENUITEM "Show Table\tCtrl+T",          ID_PALETTE, GRAYED
         MENUITEM SEPARATOR
-        MENUITEM "&Import Image...\tCtrl+I",    ID_IMPORTABMP, GRAYED
-        MENUITEM "&Export Image...\tCtrl+E",    ID_ESPORTABMP, GRAYED
+        MENUITEM "&Import Image...\tCtrl+I",    ID_IMPORTABMP
+        MENUITEM "&Export Image...\tCtrl+E",    ID_ESPORTABMP
         MENUITEM SEPARATOR
-        MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI, GRAYED
-        MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI, GRAYED
+        MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI
+        MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI
         MENUITEM SEPARATOR
         MENUITEM "&Info...\tCtrl+I",            ID_INFO, GRAYED
         MENUITEM "&Link Points...\tCtrl+L",     IDM_LINKPOINTS, GRAYED
+        MENUITEM "&Reference",                  IDM_REFERENCE, GRAYED
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES, GRAYED
         POPUP "Magnification"
         BEGIN
@@ -303,7 +334,7 @@ BEGIN
             MENUITEM "x4\tCtrl+4",                  ID_INGRANDIMENTO_X4
         END
         MENUITEM SEPARATOR
-        MENUITEM "Show Priority Bars",          ID_PRIORITYBARS, GRAYED
+        MENUITEM "Show Priority Bars",          ID_PRIORITYBARS
     END
     POPUP "&Go"
     BEGIN

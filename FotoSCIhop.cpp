@@ -315,6 +315,7 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 	  EnableMenuItem(menu, ID_ESPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_INFO, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, IDM_PROPERTIES, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED)); 
+	  EnableMenuItem(menu, IDM_REFERENCE, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED)); 
 	  EnableMenuItem(menu, IDM_LINKPOINTS, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_PRIORITYBARS, (((result==ID_NOERROR)&&(isPicture)) ?((globalPicture)->format == _PIC_11 ?MF_ENABLED:MF_ENABLED):MF_GRAYED));
 
@@ -1653,7 +1654,6 @@ void DoLinkPointDialog(HWND hwnd)
     }
 }
 
-
 void DoPropertyBox(HWND hwnd)
 {
 	/*
@@ -1789,6 +1789,130 @@ void DoPropertyBox(HWND hwnd)
 
 	*/
 }
+
+// Reference Image Dialog
+void DoUpdateReferenceProc(HWND hwndDlg)
+{
+	SendDlgItemMessage(hwndDlg, IDC_REF_SCALE_X, EM_LIMITTEXT, (WPARAM)3, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_SCALE_Y, EM_LIMITTEXT, (WPARAM)3, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_XHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_YHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
+
+
+	SetDlgItemInt(hwndDlg, IDC_REF_SCALE_X, gReferenceScaleX, TRUE);
+	SetDlgItemInt(hwndDlg, IDC_REF_SCALE_Y, gReferenceScaleY, TRUE);
+
+	SetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM);
+	SetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, gReferenceXHot, TRUE);
+	SetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, gReferenceYHot, TRUE);
+	
+	//for (int i = 0; i < bCell->linkTableCount; i++)
+	//{
+	//	SetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, (*curCell)->linkPoints[i].x, TRUE);
+	//	SetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, (*curCell)->linkPoints[i].y, TRUE);
+	//	SetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, (*curCell)->linkPoints[i].priority, TRUE);
+	//	SetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, (*curCell)->linkPoints[i].positionType, TRUE);
+	//}
+
+	InvalidateRgn(hReferenceDialog, NULL, true);
+}
+
+
+BOOL CALLBACK DoReferenceProc(HWND hwndDlg,
+									 UINT message,
+									 WPARAM wParam,
+									 LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_INITDIALOG:
+	{
+		
+		DoUpdateReferenceProc(hwndDlg);
+		
+		return TRUE;
+	}
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam))
+		{
+		case IDOK:
+
+			gReferenceScaleX = GetDlgItemInt(hwndDlg, IDC_REF_SCALE_X, NULL, TRUE);
+			gReferenceScaleY = GetDlgItemInt(hwndDlg, IDC_REF_SCALE_Y, NULL, TRUE);
+
+			GetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM, _MAX_FNAME);
+			gReferenceXHot = GetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, NULL, TRUE);
+			gReferenceYHot = GetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, NULL, TRUE);
+			
+
+			//for (int i = 0; i < bCell->linkTableCount; i++)
+			//{
+			//	(*curCell)->linkPoints[i].x = GetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, NULL, TRUE);
+			//	(*curCell)->linkPoints[i].y = GetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, NULL, TRUE);
+			//	(*curCell)->linkPoints[i].priority = GetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, NULL, TRUE);
+			//	(*curCell)->linkPoints[i].positionType = GetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, NULL, TRUE);
+			//}
+
+			//ShowLoopCell(curLoopIndex, curCellIndex); // refresh screen
+
+			InvalidateRgn(hWnd, NULL, true);
+			
+
+			// write strings to ini
+			WritePrivateProfileStringA ("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
+			
+			// write integers to ini
+			char buffer[16];
+			sprintf(buffer, "%d", gReferenceXHot);
+			WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
+			
+			sprintf(buffer, "%d", gReferenceYHot);
+			WritePrivateProfileStringA ("reference", "referenceYHot", buffer, gConfigIni);
+
+			sprintf(buffer, "%f", gReferenceScaleX);
+			WritePrivateProfileStringA ("reference", "referenceScaleX", buffer, gConfigIni);
+
+			sprintf(buffer, "%f", gReferenceScaleY);
+			WritePrivateProfileStringA ("reference", "referenceScaleY", buffer, gConfigIni);	
+
+			//datasaved = false;
+
+			return TRUE;
+
+		case IDCANCEL:
+			EndDialog(hwndDlg, wParam);
+			return TRUE;
+
+		case WM_KEYDOWN:
+			if (wParam == VK_RETURN)
+			{
+				SendMessage(hwndDlg, WM_COMMAND, IDOK, 0);
+				return TRUE;
+			}
+			break;
+		}
+	}
+	return FALSE;
+}
+
+
+void DoReferenceDialog(HWND hwnd)
+{
+    hReferenceDialog = CreateDialog(NULL, 
+                                                MAKEINTRESOURCE(IDD_REFERENCE_IMG), 
+                                                hwnd, 
+                                                (DLGPROC)DoReferenceProc);
+    if (hReferenceDialog != NULL)
+    {
+        ShowWindow(hReferenceDialog, SW_SHOW);
+    }
+    else
+    {
+        // Failed to create dialog
+    }
+}
+
 
 int cliExport(char *name)
 {
@@ -1995,20 +2119,22 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
     gAppPath[strrchr(gAppPath, '\\') - gAppPath] = '\0'; 
 
 	// get ini settings
-	char ini[_MAX_PATH];
-	sprintf(ini, "%s\\config.ini", gAppPath);
+	sprintf(gConfigIni, "%s\\config.ini", gAppPath);
 
-	gAppResX = GetPrivateProfileInt("preferences", "resX", gAppResX, ini);
-	gAppResY = GetPrivateProfileInt("preferences", "resY", gAppResY, ini);
-	zScale = GetPrivateProfileInt("preferences", "zScale", zScale, ini);
-	gPosCells = GetPrivateProfileInt("preferences", "posCells", gPosCells, ini);
-	gBaseMagnify = GetPrivateProfileInt("preferences", "magScale", gBaseMagnify, ini);
+	gAppResX = GetPrivateProfileInt("preferences", "resX", gAppResX, gConfigIni);
+	gAppResY = GetPrivateProfileInt("preferences", "resY", gAppResY, gConfigIni);
+	zScale = GetPrivateProfileInt("preferences", "zScale", zScale, gConfigIni);
+	gPosCells = GetPrivateProfileInt("preferences", "posCells", gPosCells, gConfigIni);
+	gBaseMagnify = GetPrivateProfileInt("preferences", "magScale", gBaseMagnify, gConfigIni);
+	gCliEnabled = GetPrivateProfileInt("preferences", "cliStartup", gCliEnabled, gConfigIni);
 
-	GetPrivateProfileString("preferences", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, ini);
-	gReferenceX = GetPrivateProfileInt("preferences", "referenceX", gReferenceX, ini);
-	gReferenceY = GetPrivateProfileInt("preferences", "referenceY", gReferenceY, ini);
+	// image references
+	gReferenceScaleX = GetPrivateProfileInt("reference", "referenceScaleX", gReferenceScaleX, gConfigIni);
+	gReferenceScaleY = GetPrivateProfileInt("reference", "referenceScaleY", gReferenceScaleY, gConfigIni);
+	GetPrivateProfileString("reference", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, gConfigIni);
+	gReferenceXHot = GetPrivateProfileInt("reference", "referenceXHot", gReferenceXHot, gConfigIni);
+	gReferenceYHot = GetPrivateProfileInt("reference", "referenceYHot", gReferenceYHot, gConfigIni);
 
-	gCliEnabled = GetPrivateProfileInt("preferences", "cliStartup", gCliEnabled, ini);
 
 	MagnifyFactor = gBaseMagnify;
 
@@ -2343,6 +2469,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		case IDM_LINKPOINTS:
 			DoLinkPointDialog(hWnd);
 			break;
+
+		case IDM_REFERENCE:
+			DoReferenceDialog(hWnd);
+			break;
                 
 		case ID_PALETTE:
 			{
@@ -2561,7 +2691,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			DeleteObject(redpen);
 		}
 
-		if (gReferenceBM)
+		if (gReferenceBM && globalView && !(*curLoop)->Head.flags)
 		{
 			HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
 
@@ -2574,7 +2704,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 				HDC memdc = CreateCompatibleDC(hdc);
 				SelectObject(memdc, hbm);
 
-				TransparentBlt(hdc, 10 + picX + tableX + gReferenceX, 30 + picY + gReferenceY, bm.bmWidth, bm.bmHeight, memdc, 0, 0, bm.bmWidth, bm.bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+				int referenceImagePosX = 10 + picX + tableX + gReferenceXHot;
+				int referenceImagePosY = 30 + picY + gReferenceYHot;
+				float referenceImageScaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
+				float referenceImageScaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
+
+				TransparentBlt(hdc, referenceImagePosX, referenceImagePosY, referenceImageScaleX, referenceImageScaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
 				// BitBlt(hdc, 10 + picX + tableX, 30 + picY, 640, 480, memdc, 0, 0, SRCCOPY);
 				//  SetDIBitsToDevice(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, bmWidth, -bmHeight, 0, 0, 0, -bmHeight, bmImage, bmImageHeader, DIB_RGB_COLORS);
 			}

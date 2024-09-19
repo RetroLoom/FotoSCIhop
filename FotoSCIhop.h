@@ -29,25 +29,25 @@ char gAppPath[MAX_PATH];
 HWND hPropertiesDialog;
 HWND hLinkPointDialog;
 void DoUpdatePropertiesProc(HWND hwndDlg);
-
-
 void DoUpdateLinkPointProc(HWND hwndDlg);
 
-
-
 // ini
+char gConfigIni[_MAX_PATH];
 int gAppResX = 700;
 int gAppResY = 500;
 int zScale = 100;
 int gPosCells = 0;
 int gCliMode = 0;
 int gBaseMagnify = 100;
-
-char gReferenceBM[_MAX_PATH] = "reference.bmp";
-int gReferenceX = 0;
-int gReferenceY = 0;
-
 int gCliEnabled = 0;
+
+// Reference Image
+HWND hReferenceDialog;
+float gReferenceScaleX = 100;
+float gReferenceScaleY = 100;
+char gReferenceBM[_MAX_PATH] = "reference.bmp";
+int gReferenceXHot = 0;
+int gReferenceYHot = 0;
 
 //BOOL DoImageConversion(char fileName[MAX_PATH], int cLimit, int tolerance);
 BOOL CLIPaletteImport(char *palette);
