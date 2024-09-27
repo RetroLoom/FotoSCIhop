@@ -1797,6 +1797,9 @@ void DoUpdateReferenceProc(HWND hwndDlg)
 	SendDlgItemMessage(hwndDlg, IDC_REF_SCALE_Y, EM_LIMITTEXT, (WPARAM)3, 0);
 	SendDlgItemMessage(hwndDlg, IDC_REF_XHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
 	SendDlgItemMessage(hwndDlg, IDC_REF_YHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_LP_X_1, EM_LIMITTEXT, (WPARAM)4, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_LP_Y_1, EM_LIMITTEXT, (WPARAM)4, 0);
+	SendDlgItemMessage(hwndDlg, IDC_REF_LP_1, EM_LIMITTEXT, (WPARAM)2, 0);
 
 
 	SetDlgItemInt(hwndDlg, IDC_REF_SCALE_X, gReferenceScaleX, TRUE);
@@ -1805,15 +1808,17 @@ void DoUpdateReferenceProc(HWND hwndDlg)
 	SetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM);
 	SetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, gReferenceXHot, TRUE);
 	SetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, gReferenceYHot, TRUE);
-	
-	//for (int i = 0; i < bCell->linkTableCount; i++)
-	//{
-	//	SetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, (*curCell)->linkPoints[i].x, TRUE);
-	//	SetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, (*curCell)->linkPoints[i].y, TRUE);
-	//	SetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, (*curCell)->linkPoints[i].priority, TRUE);
-	//	SetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, (*curCell)->linkPoints[i].positionType, TRUE);
-	//}
 
+	SetDlgItemInt(hwndDlg, IDC_REF_LP_1, gReferenceLinkPoint, TRUE);
+	
+	CelHeaderView *bCell = new CelHeaderView;
+	bCell = (CelHeaderView *)&(*curCell)->Head;
+
+	SetDlgItemInt(hwndDlg, IDC_REF_LP_X_1, gReferenceLinkPointX , TRUE);
+	SetDlgItemInt(hwndDlg, IDC_REF_LP_Y_1, gReferenceLinkPointY, TRUE);
+
+	CheckDlgButton(hwndDlg, IDC_REF_PRI_1, gReferencePriority ? BST_CHECKED : BST_UNCHECKED);
+	
 	InvalidateRgn(hReferenceDialog, NULL, true);
 }
 
@@ -1844,21 +1849,15 @@ BOOL CALLBACK DoReferenceProc(HWND hwndDlg,
 			GetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM, _MAX_FNAME);
 			gReferenceXHot = GetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, NULL, TRUE);
 			gReferenceYHot = GetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, NULL, TRUE);
-			
 
-			//for (int i = 0; i < bCell->linkTableCount; i++)
-			//{
-			//	(*curCell)->linkPoints[i].x = GetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, NULL, TRUE);
-			//	(*curCell)->linkPoints[i].y = GetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, NULL, TRUE);
-			//	(*curCell)->linkPoints[i].priority = GetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, NULL, TRUE);
-			//	(*curCell)->linkPoints[i].positionType = GetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, NULL, TRUE);
-			//}
+			gReferenceLinkPoint = GetDlgItemInt(hwndDlg, IDC_REF_LP_1, NULL, TRUE);
+			gReferenceLinkPointX = GetDlgItemInt(hwndDlg, IDC_REF_LP_X_1, NULL, TRUE);
+			gReferenceLinkPointY = GetDlgItemInt(hwndDlg, IDC_REF_LP_Y_1, NULL, TRUE);
 
-			//ShowLoopCell(curLoopIndex, curCellIndex); // refresh screen
+			gReferencePriority = (IsDlgButtonChecked(hwndDlg, IDC_REF_PRI_1) == BST_CHECKED);
 
 			InvalidateRgn(hWnd, NULL, true);
 			
-
 			// write strings to ini
 			WritePrivateProfileStringA ("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
 			
@@ -1874,7 +1873,19 @@ BOOL CALLBACK DoReferenceProc(HWND hwndDlg,
 			WritePrivateProfileStringA ("reference", "referenceScaleX", buffer, gConfigIni);
 
 			sprintf(buffer, "%f", gReferenceScaleY);
-			WritePrivateProfileStringA ("reference", "referenceScaleY", buffer, gConfigIni);	
+			WritePrivateProfileStringA ("reference", "referenceScaleY", buffer, gConfigIni);
+
+			sprintf(buffer, "%d", gReferenceLinkPoint);
+			WritePrivateProfileStringA ("reference", "referenceLinkPoint", buffer, gConfigIni);	
+
+			sprintf(buffer, "%d", gReferenceLinkPointX);
+			WritePrivateProfileStringA ("reference", "referenceLinkPointX", buffer, gConfigIni);
+
+			sprintf(buffer, "%d", gReferenceLinkPointY);
+			WritePrivateProfileStringA ("reference", "referenceLinkPointY", buffer, gConfigIni);
+
+			sprintf(buffer, "%d", gReferencePriority);
+			WritePrivateProfileStringA ("reference", "referencePriority", buffer, gConfigIni);
 
 			//datasaved = false;
 
@@ -2084,6 +2095,67 @@ int cliSetHeader( int vanishX, int viewAngle )
 	return retVal;
 }
 
+RGBQUAD ExtractPaletteIndexFromBM(char *image, int index) 
+{
+	char bmPath[_MAX_PATH];
+	sprintf (bmPath, "%s\\%s", gAppPath, image);
+
+    RGBQUAD rgbQuad[256];
+	
+	FILE *tempfile = fopen(bmPath, "rb");
+	if (tempfile)
+	{
+		BITMAPFILEHEADER tfh;
+		fread(&tfh, sizeof(BITMAPFILEHEADER), 1, tempfile);
+
+		BITMAPINFOHEADER tbih;
+		fread(&tbih, sizeof(BITMAPINFOHEADER), 1, tempfile);
+
+		fread(rgbQuad, 256 * sizeof(RGBQUAD), 1, tempfile);
+
+		fclose(tempfile);
+	}
+    
+    return rgbQuad[index];
+}
+
+void DisplayReferenceImage(HDC hdc)
+{
+	CelHeaderView *bCell;
+	bCell = (CelHeaderView*)&(*curCell)->Head;
+
+	HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+	BITMAP bm;
+	GetObject(hbm, sizeof(BITMAP), &bm);
+
+	if (hbm)
+	{
+		HDC memdc = CreateCompatibleDC(hdc);
+		SelectObject(memdc, hbm);
+
+		int xOrigin = (bm.bmWidth >> 1) - gReferenceXHot;
+		int yOrigin = bm.bmHeight - gReferenceYHot;
+
+		int xPos = gReferenceLinkPointX - xOrigin + bCell->xHot;
+		int yPos = gReferenceLinkPointY - yOrigin + bCell->yHot;
+
+		if (gReferenceLinkPoint && gReferenceLinkPoint < 12)
+		{
+			xPos = (*curCell)->linkPoints[gReferenceLinkPoint - 1].x - xOrigin + bCell->xHot;
+			yPos = (*curCell)->linkPoints[gReferenceLinkPoint - 1].y - yOrigin + bCell->yHot;
+		}
+
+		int referenceImagePosX = 10 + picX + tableX + xPos;
+		int referenceImagePosY = 30 + picY + yPos;
+		float referenceImageScaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
+		float referenceImageScaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
+
+		RGBQUAD refSkip = ExtractPaletteIndexFromBM(gReferenceBM, gReferenceTransparentIndex);
+
+		TransparentBlt(hdc, referenceImagePosX, referenceImagePosY, referenceImageScaleX, referenceImageScaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight, RGB(refSkip.rgbRed, refSkip.rgbGreen, refSkip.rgbBlue));
+	}
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -2134,7 +2206,10 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 	GetPrivateProfileString("reference", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, gConfigIni);
 	gReferenceXHot = GetPrivateProfileInt("reference", "referenceXHot", gReferenceXHot, gConfigIni);
 	gReferenceYHot = GetPrivateProfileInt("reference", "referenceYHot", gReferenceYHot, gConfigIni);
-
+	gReferenceLinkPoint = GetPrivateProfileInt("reference", "referenceLinkPoint", gReferenceLinkPoint, gConfigIni);
+	gReferenceLinkPointX = GetPrivateProfileInt("reference", "referenceLinkPointX", gReferenceLinkPointX, gConfigIni);
+	gReferenceLinkPointY = GetPrivateProfileInt("reference", "referenceLinkPointY", gReferenceLinkPointY, gConfigIni);
+	gReferencePriority = GetPrivateProfileInt("reference", "referencePriority", gReferencePriority, gConfigIni);
 
 	MagnifyFactor = gBaseMagnify;
 
@@ -2691,32 +2766,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			DeleteObject(redpen);
 		}
 
-		if (gReferenceBM && globalView && !(*curLoop)->Head.flags)
-		{
-			HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-
-			BITMAP bm;
-
-			GetObject(hbm, sizeof(BITMAP), &bm);
-
-			if (hbm)
-			{
-				HDC memdc = CreateCompatibleDC(hdc);
-				SelectObject(memdc, hbm);
-
-				int referenceImagePosX = 10 + picX + tableX + gReferenceXHot;
-				int referenceImagePosY = 30 + picY + gReferenceYHot;
-				float referenceImageScaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
-				float referenceImageScaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
-
-				TransparentBlt(hdc, referenceImagePosX, referenceImagePosY, referenceImageScaleX, referenceImageScaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-				// BitBlt(hdc, 10 + picX + tableX, 30 + picY, 640, 480, memdc, 0, 0, SRCCOPY);
-				//  SetDIBitsToDevice(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, bmWidth, -bmHeight, 0, 0, 0, -bmHeight, bmImage, bmImageHeader, DIB_RGB_COLORS);
-			}
-		}
-
 		if (globalView && !(*curLoop)->Head.flags)
 		{
+			if (gReferenceBM && !gReferencePriority)
+				DisplayReferenceImage(hdc);
+
 			if ((*curCell)->cellImage->image != (*curCell)->bmImage)
 			{
 				delete (*curCell)->bmImage;
@@ -2733,7 +2787,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 			CelHeaderView *bCell = new CelHeaderView;
 			bCell = (CelHeaderView*)&(*curCell)->Head;
-
 			skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
 
 			int xPos = bCell->xHot;
@@ -2749,10 +2802,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
 							  (*curCell)->bmImage, (*curCell)->bmInfo, DIB_RGB_COLORS);
 
-			TransparentBlt(hdc, 10 + picX + tableX, 30 + picY, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+			TransparentBlt(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
 
 			DeleteDC(memdc);
 
+			if (gReferenceBM && gReferencePriority)
+				DisplayReferenceImage(hdc);
+		
 			// draw link points
 			if (bCell->linkTableCount >= 1)
 			{
@@ -2772,13 +2828,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 				// Select the accent pen for drawing and draw a point at the position of the last link point
 				SelectObject(hdc, accentPen);
-				MoveToEx(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY, NULL);
-				LineTo(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY);
+				MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
+				LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
 
 				// Select the solid pen for drawing and draw a point at the position of the last link point
 				SelectObject(hdc, solidPointPen);
-				MoveToEx(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY, NULL);
-				LineTo(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY);
+				MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
+				LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
 
 				// Select the dotted pen for drawing
 				SelectObject(hdc, dottedPen);
@@ -2798,8 +2854,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					linkY = ((*curCell)->linkPoints[i].y * MagnifyFactor) / 100;
 
 					// Calculate the position of the current link point
-					int linkPosX = 10 + picX + tableX + linkX;
-					int linkPosY = 30 + picY + linkY;
+					int linkPosX = 10 + picX + tableX + bCell->xHot + linkX;
+					int linkPosY = 30 + picY + bCell->yHot + linkY;
 
 					// Calculate the color of the pen for the current link point
 					int colorStep = 255 / bCell->linkTableCount;
@@ -2817,8 +2873,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 					// Select the accent pen for drawing and draw a point at the position of the last link point
 					SelectObject(hdc, accentPen);
-					MoveToEx(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY, NULL);
-					LineTo(hdc, 10 + picX + tableX + linkX, 30 + picY + linkY);
+					MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
+					LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
 
 					// Create a solid point pen with the calculated color and size
 					HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(colorRed, 0, colorBlue));

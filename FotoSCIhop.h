@@ -48,6 +48,13 @@ float gReferenceScaleY = 100;
 char gReferenceBM[_MAX_PATH] = "reference.bmp";
 int gReferenceXHot = 0;
 int gReferenceYHot = 0;
+int gReferenceLinkPoint = 0;
+int gReferenceLinkPointX = 0;
+int gReferenceLinkPointY = 0;
+int gReferencePriority = 0;
+int gReferenceTransparentIndex = 255;
+
+
 
 //BOOL DoImageConversion(char fileName[MAX_PATH], int cLimit, int tolerance);
 BOOL CLIPaletteImport(char *palette);
