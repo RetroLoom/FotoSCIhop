@@ -28,6 +28,8 @@
 #define IDC_RESX                        1003
 #define IDC_RESY                        1004
 #define IDC_CHECK1                      1005
+#define IDC_PRIORITY_1                  1005
+#define IDC_REF_PRI_1                   1005
 #define IDC_CHECK2                      1006
 #define IDC_LOOP_BASE                   1008
 #define IDC_LOOP_CONTINUE               1009
@@ -41,6 +43,7 @@
 #define IDC_EDIT1                       1021
 #define IDC_POS_PRI                     1021
 #define IDC_IMPORT_CLIMIT               1021
+#define IDC_REF_LP_1                    1021
 #define IDC_REF_NAME_1                  1022
 #define IDC_IMPORT_TOLERANCE            1023
 #define IDC_LINK_TYPE                   1024
@@ -51,6 +54,9 @@
 #define IDC_REF_YHOT_1                  1032
 #define IDC_REF_SCALE_X                 1033
 #define IDC_REF_SCALE_Y                 1034
+#define IDC_REF_LP_X_1                  1040
+#define IDC_REF_LP_Y_1                  1041
+#define IDC_STATIC_X                    1042
 #define IDC_LINK_X_1                    1050
 #define IDC_LINK_X_2                    1051
 #define IDC_LINK_X_3                    1052
@@ -147,7 +153,7 @@
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        142
 #define _APS_NEXT_COMMAND_VALUE         32838
-#define _APS_NEXT_CONTROL_VALUE         1039
+#define _APS_NEXT_CONTROL_VALUE         1043
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif
