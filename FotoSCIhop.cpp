@@ -2156,6 +2156,126 @@ void DisplayReferenceImage(HDC hdc)
 	}
 }
 
+void DisplayCurrentView(HDC hdc)
+{
+	if ((*curCell)->cellImage->image != (*curCell)->bmImage)
+	{
+		delete (*curCell)->bmImage;
+
+		if ((*curCell)->bmInfo)
+			delete (*curCell)->bmInfo;
+
+		(*curCell)->bmInfo = 0;
+		(*curCell)->bmImage = 0;
+	}
+
+	if (!(*curCell)->bmInfo || !(*curCell)->bmImage)
+		(*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+
+	CelHeaderView *bCell;
+	bCell = (CelHeaderView *)&(*curCell)->Head;
+	skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+
+	int xPos = 10 + picX + tableX + bCell->xHot;
+	int yPos = 30 + picY + bCell->yHot;
+
+	int bmWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
+	int bmHeight = (*curCell)->bmInfo->bmiHeader.biHeight;
+
+	HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
+
+	HDC memdc = CreateCompatibleDC(hdc);
+	SelectObject(memdc, hbm);
+	SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
+					  (*curCell)->bmImage, (*curCell)->bmInfo, DIB_RGB_COLORS);
+
+	TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+
+	DeleteDC(memdc);
+}
+
+void DisplayLinkPoints(HDC hdc)
+{
+	CelHeaderView *bCell;
+	bCell = (CelHeaderView *)&(*curCell)->Head;
+
+	// Create a pen with a thickness of 6 * MagnifyFactor / 100 if there is only one link
+	// or a thickness of 2 * MagnifyFactor / 100 if there are multiple links
+	int pointSize = (4 * MagnifyFactor) / 100;
+	int dottedSize = 1;
+
+	// Calculate the x and y coordinates for the last link point
+	int linkX = ((*curCell)->linkPoints[bCell->linkTableCount - 1].x * MagnifyFactor) / 100;
+	int linkY = ((*curCell)->linkPoints[bCell->linkTableCount - 1].y * MagnifyFactor) / 100;
+
+	HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(255, 0, 0));
+
+	HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(255, 0, 0));
+	HPEN accentPen = CreatePen(PS_SOLID, pointSize + 2, RGB(255, 255, 255));
+
+	int xOrigin = 10 + picX + tableX + bCell->xHot;
+	int yOrigin = 30 + picY + bCell->yHot;
+
+	int xPos = xOrigin + linkX;
+	int yPos = yOrigin + linkY;
+
+	// Select the accent pen for drawing and draw a point at the position of the last link point
+	SelectObject(hdc, accentPen);
+	MoveToEx(hdc, xPos,  yPos, NULL);
+	LineTo(hdc, xPos, yPos);
+
+	// Select the solid pen for drawing and draw a point at the position of the last link point
+	SelectObject(hdc, solidPointPen);
+	MoveToEx(hdc, xPos, yPos, NULL);
+	LineTo(hdc, xPos, yPos);
+
+	// Select the dotted pen for drawing
+	SelectObject(hdc, dottedPen);
+
+	// Iterate through all the link points and draw lines between them
+	for (int i = 0; i < bCell->linkTableCount; i++)
+	{
+		bCell = (CelHeaderView *)&globalView->loops[curLoopIndex]->cells[curCellIndex]->Head;
+
+		// Calculate the x and y coordinates for the current link point
+		linkX = ((*curCell)->linkPoints[i].x * MagnifyFactor) / 100;
+		linkY = ((*curCell)->linkPoints[i].y * MagnifyFactor) / 100;
+
+		// Calculate the x and y shift values for the current cell
+		xPos = xOrigin + linkX;
+		yPos = yOrigin + linkY;
+
+		// Calculate the color of the pen for the current link point
+		int colorStep = 255 / bCell->linkTableCount;
+		int colorRed = 255 - (colorStep * i);
+		int colorBlue = (colorStep * i);
+
+		// Create a dotted pen with the calculated color and size
+		HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(colorRed, 0, colorBlue));
+
+		// Select the dotted pen for drawing
+		SelectObject(hdc, dottedPen);
+
+		// Draw a dotted line from the previous link point to the current one
+		LineTo(hdc, xPos, yPos);
+
+		// Select the accent pen for drawing and draw a point at the position of the last link point
+		SelectObject(hdc, accentPen);
+		MoveToEx(hdc, xPos, yPos, NULL);
+		LineTo(hdc, xPos, yPos);
+
+		// Create a solid point pen with the calculated color and size
+		HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(colorRed, 0, colorBlue));
+
+		// Select the solid point pen for drawing
+		SelectObject(hdc, solidPointPen);
+
+		// Draw a solid point at the current link point
+		MoveToEx(hdc, xPos, yPos, NULL);
+		LineTo(hdc, xPos, yPos);
+	}
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -2771,122 +2891,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 			if (gReferenceBM && !gReferencePriority)
 				DisplayReferenceImage(hdc);
 
-			if ((*curCell)->cellImage->image != (*curCell)->bmImage)
-			{
-				delete (*curCell)->bmImage;
-
-				if ((*curCell)->bmInfo)
-					delete (*curCell)->bmInfo;
-
-				(*curCell)->bmInfo = 0;
-				(*curCell)->bmImage = 0;
-			}
-
-			if (!(*curCell)->bmInfo || !(*curCell)->bmImage)
-				(*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-
-			CelHeaderView *bCell = new CelHeaderView;
-			bCell = (CelHeaderView*)&(*curCell)->Head;
-			skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
-
-			int xPos = bCell->xHot;
-			int yPos = bCell->yHot;
-
-			int bmWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
-			int bmHeight = (*curCell)->bmInfo->bmiHeader.biHeight;
-
-			HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-
-			HDC memdc = CreateCompatibleDC(hdc);
-			SelectObject(memdc, hbm);
-			SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-							  (*curCell)->bmImage, (*curCell)->bmInfo, DIB_RGB_COLORS);
-
-			TransparentBlt(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-
-			DeleteDC(memdc);
+			DisplayCurrentView(hdc);
 
 			if (gReferenceBM && gReferencePriority)
 				DisplayReferenceImage(hdc);
 		
-			// draw link points
-			if (bCell->linkTableCount >= 1)
-			{
-				// Create a pen with a thickness of 6 * MagnifyFactor / 100 if there is only one link
-				// or a thickness of 2 * MagnifyFactor / 100 if there are multiple links
-				int pointSize = (4 * MagnifyFactor) / 100;
-				int dottedSize = 1;
-
-				// Calculate the x and y coordinates for the last link point
-				int linkX = ((*curCell)->linkPoints[bCell->linkTableCount - 1].x * MagnifyFactor) / 100;
-				int linkY = ((*curCell)->linkPoints[bCell->linkTableCount - 1].y * MagnifyFactor) / 100;
-
-				HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(255, 0, 0));
-				;
-				HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(255, 0, 0));
-				HPEN accentPen = CreatePen(PS_SOLID, pointSize + 2, RGB(255, 255, 255));
-
-				// Select the accent pen for drawing and draw a point at the position of the last link point
-				SelectObject(hdc, accentPen);
-				MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
-				LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
-
-				// Select the solid pen for drawing and draw a point at the position of the last link point
-				SelectObject(hdc, solidPointPen);
-				MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
-				LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
-
-				// Select the dotted pen for drawing
-				SelectObject(hdc, dottedPen);
-
-				// Iterate through all the link points and draw lines between them
-				for (int i = 0; i < bCell->linkTableCount; i++)
-				{
-					CelHeaderView *tCell = new CelHeaderView;
-					bCell = (CelHeaderView*)&globalView->loops[curLoopIndex]->cells[curCellIndex]->Head;
-
-					// Calculate the x and y shift values for the current cell
-					xPos = tCell->xHot;
-					yPos = tCell->yHot;
-
-					// Calculate the x and y coordinates for the current link point
-					linkX = ((*curCell)->linkPoints[i].x * MagnifyFactor) / 100;
-					linkY = ((*curCell)->linkPoints[i].y * MagnifyFactor) / 100;
-
-					// Calculate the position of the current link point
-					int linkPosX = 10 + picX + tableX + bCell->xHot + linkX;
-					int linkPosY = 30 + picY + bCell->yHot + linkY;
-
-					// Calculate the color of the pen for the current link point
-					int colorStep = 255 / bCell->linkTableCount;
-					int colorRed = 255 - (colorStep * i);
-					int colorBlue = (colorStep * i);
-
-					// Create a dotted pen with the calculated color and size
-					HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(colorRed, 0, colorBlue));
-
-					// Select the dotted pen for drawing
-					SelectObject(hdc, dottedPen);
-
-					// Draw a dotted line from the previous link point to the current one
-					LineTo(hdc, linkPosX, linkPosY);
-
-					// Select the accent pen for drawing and draw a point at the position of the last link point
-					SelectObject(hdc, accentPen);
-					MoveToEx(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY, NULL);
-					LineTo(hdc, 10 + picX + tableX + bCell->xHot + linkX, 30 + picY + bCell->yHot + linkY);
-
-					// Create a solid point pen with the calculated color and size
-					HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(colorRed, 0, colorBlue));
-
-					// Select the solid point pen for drawing
-					SelectObject(hdc, solidPointPen);
-
-					// Draw a solid point at the current link point
-					MoveToEx(hdc, linkPosX, linkPosY, NULL);
-					LineTo(hdc, linkPosX, linkPosY);
-				}
-			}
+			if ((*curCell)->Head.view.linkTableCount >= 1)
+				DisplayLinkPoints(hdc);
 		}
 
 		if (globalPicture)
