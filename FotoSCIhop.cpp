@@ -2276,6 +2276,106 @@ void DisplayLinkPoints(HDC hdc)
 	}
 }
 
+void DisplayCell(HDC hdc, int index)
+{
+	if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage)
+	{
+		delete globalPicture->cells[index]->bmImage;
+
+		if (globalPicture->cells[index]->bmInfo)
+			delete globalPicture->cells[index]->bmInfo;
+
+		globalPicture->cells[index]->bmInfo = 0;
+		globalPicture->cells[index]->bmImage = 0;
+	}
+
+	if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage)
+		globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);	
+
+	if (globalPicture->cells[index]->bmInfo)
+	{
+		CelHeaderPic *bCell;
+		bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
+
+		skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+
+		int xOrigin = 10 + picX + tableX;
+		int yOrigin = 30 + picY;
+
+		int xPos = xOrigin + (bCell->xpos * MagnifyFactor) / 100;
+		int yPos = yOrigin + (bCell->ypos * MagnifyFactor) / 100;
+		
+		int bmWidth = globalPicture->cells[index]->bmInfo->bmiHeader.biWidth;
+		int bmHeight = globalPicture->cells[index]->bmInfo->bmiHeader.biHeight;
+
+		HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
+		HDC memdc = CreateCompatibleDC(hdc);
+		SelectObject(memdc, hbm);
+
+		SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
+						  globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, DIB_RGB_COLORS);
+
+		TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+
+		DeleteDC(memdc);
+	}
+}
+
+void DisplayCurrentPic(HDC hdc)
+{
+	if (curCellIndex == 0)
+		for (int i = 0; i < globalPicture->CellsCount(); i++)
+			DisplayCell(hdc, i);
+	else
+		DisplayCell(hdc, curCellIndex);
+}
+
+void DisplayPriorityBars(HDC hdc)
+{
+	CelHeaderPic *bCell;
+	bCell = (CelHeaderPic *)&(*curCell)->Head;
+
+	int xOrigin = 5 + picX + tableX;
+	int yOrigin = 30 + picY;
+
+	HPEN redpen = CreatePen(PS_SOLID, (1 * MagnifyFactor) / 100, RGB(255, 0, 0));
+	SelectObject(hdc, redpen);
+
+	if (globalPicture->format == _PIC_11)
+	{
+		for (int i = 0; i < 14; i++)
+		{
+			CelBase *bCell;
+			bCell = (CelBase *)&globalPicture->cells[curCellIndex]->Head;
+
+			MoveToEx(hdc, xOrigin, yOrigin + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100, NULL);
+			LineTo(hdc, xOrigin + (bCell->xDim * MagnifyFactor) / 100, yOrigin + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100);
+		}
+	}
+
+	if (!globalPicture->format == _PIC_11)
+	{
+		for (int i = 1; i < globalPicture->CellsCount(); i++)
+		{
+			CelHeaderPic *bCell;
+			bCell = (CelHeaderPic *)&globalPicture->cells[i]->Head;
+
+			int xPos = xOrigin + (bCell->xpos * MagnifyFactor / 100 );
+			int xSpan = xPos + (bCell->xDim * MagnifyFactor / 100);
+						
+			int zOffset = bCell->ypos + bCell->yDim - (bCell->priority * zScale / 100);
+			int zDepth = bCell->ypos + bCell->yDim - zOffset;
+			int yPos = yOrigin + (zDepth * MagnifyFactor / 100);
+			
+			if (curCellIndex == i || curCellIndex == 0)
+			{
+				MoveToEx(hdc, xPos,  yPos, NULL);
+				LineTo(hdc, xSpan, yPos);
+			}
+		}
+	}
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -2902,133 +3002,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		if (globalPicture)
 		{
-			if ((*curCell)->cellImage->image != (*curCell)->bmImage)
-			{
-				delete (*curCell)->bmImage;
-
-				if ((*curCell)->bmInfo)
-					delete (*curCell)->bmInfo;
-
-				(*curCell)->bmInfo = 0;
-				(*curCell)->bmImage = 0;
-			}
-
-			if (!(*curCell)->bmInfo || !(*curCell)->bmImage)
-				(*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-
-			int xPos = 0;
-			int yPos = 0;
-
-			CelHeaderPic *bCell = new CelHeaderPic;
-			bCell = (CelHeaderPic*)&(*curCell)->Head;
-
-			skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
-
-			if (gPosCells == 1)
-			{
-				xPos = bCell->xpos * MagnifyFactor / 100;
-				yPos = bCell->ypos * MagnifyFactor / 100;
-			}
-
-			int zDepth = bCell->priority;
-
-			int bmWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
-			int bmHeight = (*curCell)->bmInfo->bmiHeader.biHeight;
-
-			HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-			HDC memdc = CreateCompatibleDC(hdc);
-			SelectObject(memdc, hbm);
-			SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight, (*curCell)->bmImage, (*curCell)->bmInfo, DIB_RGB_COLORS);
-
-			TransparentBlt(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-			DeleteDC(memdc);
-
-			// draw all cells
-			if (curCellIndex == 0)
-				for (int i = 1; i < globalPicture->CellsCount(); i++)
-				{
-
-					if (globalPicture->cells[i]->cellImage->image != globalPicture->cells[i]->bmImage)
-					{
-						delete globalPicture->cells[i]->bmImage;
-
-						if (globalPicture->cells[i]->bmInfo)
-							delete globalPicture->cells[i]->bmInfo;
-
-						globalPicture->cells[i]->bmInfo = 0;
-						globalPicture->cells[i]->bmImage = 0;
-					}
-
-					if (!globalPicture->cells[i]->bmInfo || !globalPicture->cells[i]->bmImage)
-						globalPicture->cells[i]->GetImage(&globalPicture->cells[i]->bmInfo, &globalPicture->cells[i]->bmImage);
-
-					if (globalPicture->cells[i]->bmInfo)
-					{
-						CelHeaderPic *bCell = new CelHeaderPic;
-						bCell = (CelHeaderPic*)&globalPicture->cells[i]->Head;
-
-						xPos = (bCell->xpos * MagnifyFactor) / 100;
-						yPos = (bCell->ypos * MagnifyFactor) / 100;
-						zDepth = (bCell->priority * MagnifyFactor) / 100;
-
-						bmWidth = globalPicture->cells[i]->bmInfo->bmiHeader.biWidth;
-						bmHeight = globalPicture->cells[i]->bmInfo->bmiHeader.biHeight;
-
-						hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-						memdc = CreateCompatibleDC(hdc);
-						SelectObject(memdc, hbm);
-
-						SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-										  globalPicture->cells[i]->bmImage, globalPicture->cells[i]->bmInfo, DIB_RGB_COLORS);
-
-						TransparentBlt(hdc, 10 + picX + tableX + xPos, 30 + picY + yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-
-						DeleteDC(memdc);
-					}
-				}
-			//
+			DisplayCurrentPic(hdc);
 
 			if (showpbars)
-			{
-				if (globalPicture->format == _PIC_11)
-				{
-					for (int i = 0; i < 14; i++)
-					{
-						CelBase *bCell = new CelBase;
-						bCell = (CelBase *)&globalPicture->cells[curCellIndex]->Head;
+				DisplayPriorityBars(hdc);
 
-						MoveToEx(hdc, 5 + picX + tableX, 30 + picY + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100, NULL);
-						LineTo(hdc, 15 + picX + tableX + (bCell->xDim * MagnifyFactor) / 100, 30 + picY + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100);
-					}
-				}
-
-				if (!globalPicture->format == _PIC_11)
-				{
-					// Create a red pen with a thickness of 2 * MagnifyFactor / 100
-					HPEN redpen = CreatePen(PS_SOLID, (2 * MagnifyFactor) / 100, RGB(255, 0, 0));
-
-					// Select the red pen for drawing
-					SelectObject(hdc, redpen);
-
-					for (int i = 1; i < globalPicture->CellsCount(); i++)
-					{
-						CelHeaderPic *bCell = new CelHeaderPic;
-						bCell = (CelHeaderPic *)&globalPicture->cells[i]->Head;
-
-						xPos = bCell->xpos;
-						yPos = bCell->ypos;
-						bmWidth = globalPicture->cells[i]->bmInfo->bmiHeader.biWidth;
-						bmHeight = globalPicture->cells[i]->bmInfo->bmiHeader.biHeight;
-						int zOffset = bCell->ypos + bmHeight - (bCell->priority * zScale) / 100;
-						zDepth = yPos + bmHeight - zOffset;
-						if (curCellIndex == i || curCellIndex == 0)
-						{
-							MoveToEx(hdc, 5 + picX + tableX + (xPos * MagnifyFactor) / 100, 30 + picY + (zDepth * MagnifyFactor) / 100, NULL);
-							LineTo(hdc, 15 + picX + tableX + (xPos * MagnifyFactor) / 100 + (bCell->xDim * MagnifyFactor) / 100, 30 + picY + (zDepth * MagnifyFactor) / 100);
-						}
-					}
-				}
-			}
 		}
 
 		// draw cell info
