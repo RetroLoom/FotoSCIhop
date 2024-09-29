@@ -2156,6 +2156,57 @@ void DisplayReferenceImage(HDC hdc)
 	}
 }
 
+void DisplayImage(HDC hdc, unsigned char *bmImage, BITMAPINFO *bmInfo, int xPos, int yPos)
+{
+	int xOrigin = 10 + picX + tableX;
+	int yOrigin = 30 + picY;
+
+	xPos = xOrigin + (xPos * MagnifyFactor) / 100;
+	yPos = yOrigin + (yPos * MagnifyFactor) / 100;
+
+	int bmWidth = bmInfo->bmiHeader.biWidth;
+	int bmHeight = bmInfo->bmiHeader.biHeight;
+
+	HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
+	HDC memdc = CreateCompatibleDC(hdc);
+	SelectObject(memdc, hbm);
+
+	SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
+					  bmImage, bmInfo, DIB_RGB_COLORS);
+
+	TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+
+	DeleteDC(memdc);
+}
+
+void DisplayCell(HDC hdc, int index)
+{
+	if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage)
+	{
+		delete globalPicture->cells[index]->bmImage;
+
+		if (globalPicture->cells[index]->bmInfo)
+			delete globalPicture->cells[index]->bmInfo;
+
+		globalPicture->cells[index]->bmInfo = 0;
+		globalPicture->cells[index]->bmImage = 0;
+	}
+
+	if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage)
+		globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);	
+
+	if (globalPicture->cells[index]->bmInfo)
+	{
+		CelHeaderPic *bCell;
+		bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
+
+		skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+
+		DisplayImage(hdc, globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, bCell->xpos, bCell->ypos);
+	}
+}
+
+
 void DisplayCurrentView(HDC hdc)
 {
 	if ((*curCell)->cellImage->image != (*curCell)->bmImage)
@@ -2176,22 +2227,7 @@ void DisplayCurrentView(HDC hdc)
 	bCell = (CelHeaderView *)&(*curCell)->Head;
 	skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
 
-	int xPos = 10 + picX + tableX + bCell->xHot;
-	int yPos = 30 + picY + bCell->yHot;
-
-	int bmWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
-	int bmHeight = (*curCell)->bmInfo->bmiHeader.biHeight;
-
-	HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-
-	HDC memdc = CreateCompatibleDC(hdc);
-	SelectObject(memdc, hbm);
-	SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-					  (*curCell)->bmImage, (*curCell)->bmInfo, DIB_RGB_COLORS);
-
-	TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-
-	DeleteDC(memdc);
+	DisplayImage(hdc, (*curCell)->bmImage, (*curCell)->bmInfo, bCell->xHot, bCell->yHot);
 }
 
 void DisplayLinkPoints(HDC hdc)
@@ -2273,51 +2309,6 @@ void DisplayLinkPoints(HDC hdc)
 		// Draw a solid point at the current link point
 		MoveToEx(hdc, xPos, yPos, NULL);
 		LineTo(hdc, xPos, yPos);
-	}
-}
-
-void DisplayCell(HDC hdc, int index)
-{
-	if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage)
-	{
-		delete globalPicture->cells[index]->bmImage;
-
-		if (globalPicture->cells[index]->bmInfo)
-			delete globalPicture->cells[index]->bmInfo;
-
-		globalPicture->cells[index]->bmInfo = 0;
-		globalPicture->cells[index]->bmImage = 0;
-	}
-
-	if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage)
-		globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);	
-
-	if (globalPicture->cells[index]->bmInfo)
-	{
-		CelHeaderPic *bCell;
-		bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
-
-		skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
-
-		int xOrigin = 10 + picX + tableX;
-		int yOrigin = 30 + picY;
-
-		int xPos = xOrigin + (bCell->xpos * MagnifyFactor) / 100;
-		int yPos = yOrigin + (bCell->ypos * MagnifyFactor) / 100;
-		
-		int bmWidth = globalPicture->cells[index]->bmInfo->bmiHeader.biWidth;
-		int bmHeight = globalPicture->cells[index]->bmInfo->bmiHeader.biHeight;
-
-		HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-		HDC memdc = CreateCompatibleDC(hdc);
-		SelectObject(memdc, hbm);
-
-		SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-						  globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, DIB_RGB_COLORS);
-
-		TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
-
-		DeleteDC(memdc);
 	}
 }
 
