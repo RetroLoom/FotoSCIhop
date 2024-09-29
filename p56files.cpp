@@ -23,8 +23,8 @@ P56file32::~P56file32(void)
 
 	if (cells)
 	{
-		PicHeader32 *bPic32 = new PicHeader32;
-		PicHeader11 *bPic11 = new PicHeader11;
+		PicHeader32 *bPic32;
+		PicHeader11 *bPic11;
 
 		int cellCount = 0;
 
