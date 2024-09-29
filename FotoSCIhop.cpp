@@ -157,23 +157,22 @@ void ShowCell(unsigned char newcell)
 BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 {
    OPENFILENAME ofn;
+   
    bool proceed = false;
 
-   if (filename == NULL)
-   {
-		ZeroMemory(&ofn, sizeof(OPENFILENAME));
-		//szFileName[0] = 0;
+   ZeroMemory(&ofn, sizeof(OPENFILENAME));
+   // szFileName[0] = 0;
 
-		ofn.lStructSize = sizeof(ofn);
-		ofn.hwndOwner = hwnd;
-		ofn.lpstrFilter = INTERFACE_OPENFILEFILTER; 
-		ofn.lpstrFile = szFileName;
-		ofn.nMaxFile = MAX_PATH;
+   ofn.lStructSize = sizeof(ofn);
+   ofn.hwndOwner = hwnd;
+   ofn.lpstrFilter = INTERFACE_OPENFILEFILTER;
+   ofn.lpstrFile = szFileName;
+   ofn.nMaxFile = MAX_PATH;
 
-		ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_NOVALIDATE | OFN_FILEMUSTEXIST;
-		proceed = (GetOpenFileName(&ofn)!=0);
-   }
-   else
+   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_NOVALIDATE | OFN_FILEMUSTEXIST;
+   proceed = (GetOpenFileName(&ofn) != 0);
+
+   if (filename)
    {
 	    strcpy(szFileName, filename);
 		proceed=true;
@@ -818,8 +817,8 @@ BOOL CLIFileImport(char BMPFileName[MAX_PATH])
 			}
 			else
 			{
-				delete timage;
-				delete tbinfo;
+				delete[] timage;
+				delete[] tbinfo;
 			}
 
 			fclose(tempfile);
@@ -2101,6 +2100,7 @@ RGBQUAD ExtractPaletteIndexFromBM(char *image, int index)
 	sprintf (bmPath, "%s\\%s", gAppPath, image);
 
     RGBQUAD rgbQuad[256];
+	memset (rgbQuad, 0, sizeof(RGBQUAD[256]));
 	
 	FILE *tempfile = fopen(bmPath, "rb");
 	if (tempfile)
@@ -2353,7 +2353,7 @@ void DisplayPriorityBars(HDC hdc)
 		}
 	}
 
-	if (!globalPicture->format == _PIC_11)
+	if (globalPicture->format != _PIC_11)
 	{
 		for (int i = 1; i < globalPicture->CellsCount(); i++)
 		{
@@ -2433,13 +2433,14 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 
 	MagnifyFactor = gBaseMagnify;
 
+	char startupfile[_MAX_PATH];
+	memset (startupfile, 0, _MAX_PATH);
+
 	if (gCliEnabled)
 	{
 		// Dhel - cli
 		if (lpCmdLine[0] != 0)
 		{
-			char startupfile[MAX_PATH];
-			
 			// tokenize arguments to array
 			int i = 0;
 			char *p = strtok(lpCmdLine, " ");
@@ -2450,7 +2451,6 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 				p = strtok(NULL, " ");
 			}
 
-			startupfile[MAX_PATH];
 			if (lpCmdLine[0] == '\"')
 			{
 				strncpy(startupfile, argv[0] + 1, strlen(argv[0]) - 2);
@@ -2551,7 +2551,6 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 	// Original
 	if (lpCmdLine[0] != 0)
 	{
-		char startupfile[MAX_PATH];
 		if (lpCmdLine[0] == '\"')
 		{
 			strncpy(startupfile, lpCmdLine + 1, strlen(lpCmdLine) - 2);
