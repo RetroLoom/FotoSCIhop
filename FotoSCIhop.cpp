@@ -2235,25 +2235,24 @@ void DisplayLinkPoints(HDC hdc)
 	CelHeaderView *bCell;
 	bCell = (CelHeaderView *)&(*curCell)->Head;
 
-	// Create a pen with a thickness of 6 * MagnifyFactor / 100 if there is only one link
-	// or a thickness of 2 * MagnifyFactor / 100 if there are multiple links
-	int pointSize = (4 * MagnifyFactor) / 100;
-	int dottedSize = 1;
+	int xOrigin = 10 + picX + tableX;
+	int yOrigin = 30 + picY;
 
-	// Calculate the x and y coordinates for the last link point
+	int xHot = (bCell->xHot * MagnifyFactor) / 100;
+	int yHot = (bCell->yHot * MagnifyFactor) / 100;
+
 	int linkX = ((*curCell)->linkPoints[bCell->linkTableCount - 1].x * MagnifyFactor) / 100;
 	int linkY = ((*curCell)->linkPoints[bCell->linkTableCount - 1].y * MagnifyFactor) / 100;
 
-	HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(255, 0, 0));
+	int xPos = xOrigin + xHot + linkX;
+	int yPos = yOrigin + yHot + linkY;
 
+	int pointSize = (4 * MagnifyFactor) / 100;
+	int dottedSize = 1;
+
+	HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(255, 0, 0));
 	HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(255, 0, 0));
 	HPEN accentPen = CreatePen(PS_SOLID, pointSize + 2, RGB(255, 255, 255));
-
-	int xOrigin = 10 + picX + tableX + bCell->xHot;
-	int yOrigin = 30 + picY + bCell->yHot;
-
-	int xPos = xOrigin + linkX;
-	int yPos = yOrigin + linkY;
 
 	// Select the accent pen for drawing and draw a point at the position of the last link point
 	SelectObject(hdc, accentPen);
@@ -2278,8 +2277,8 @@ void DisplayLinkPoints(HDC hdc)
 		linkY = ((*curCell)->linkPoints[i].y * MagnifyFactor) / 100;
 
 		// Calculate the x and y shift values for the current cell
-		xPos = xOrigin + linkX;
-		yPos = yOrigin + linkY;
+		xPos = xOrigin + xHot + linkX;
+		yPos = yOrigin + yHot + linkY;
 
 		// Calculate the color of the pen for the current link point
 		int colorStep = 255 / bCell->linkTableCount;
