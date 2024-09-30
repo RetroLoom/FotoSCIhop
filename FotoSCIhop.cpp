@@ -2121,38 +2121,42 @@ RGBQUAD ExtractPaletteIndexFromBM(char *image, int index)
 
 void DisplayReferenceImage(HDC hdc)
 {
-	CelHeaderView *bCell;
-	bCell = (CelHeaderView*)&(*curCell)->Head;
-
+	CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
 	HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-	BITMAP bm;
-	GetObject(hbm, sizeof(BITMAP), &bm);
 
 	if (hbm)
 	{
+		BITMAP bm;
+		GetObject(hbm, sizeof(BITMAP), &bm);
+
 		HDC memdc = CreateCompatibleDC(hdc);
 		SelectObject(memdc, hbm);
 
-		int xOrigin = (bm.bmWidth >> 1) - gReferenceXHot;
-		int yOrigin = bm.bmHeight - gReferenceYHot;
+		int scaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
+		int scaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
 
-		int xPos = gReferenceLinkPointX - xOrigin + bCell->xHot;
-		int yPos = gReferenceLinkPointY - yOrigin + bCell->yHot;
+		int xOrigin = (scaleX >> 1) - (gReferenceXHot * MagnifyFactor / 100);
+		int yOrigin = scaleY - (gReferenceYHot * MagnifyFactor / 100);
+
+		int xHot = bCell->xHot * MagnifyFactor / 100;
+		int yHot = bCell->yHot * MagnifyFactor / 100;
+
+		int xPos = gReferenceLinkPointX - xOrigin + xHot;
+		int yPos = gReferenceLinkPointY - yOrigin + yHot;
 
 		if (gReferenceLinkPoint && gReferenceLinkPoint < 12)
 		{
-			xPos = (*curCell)->linkPoints[gReferenceLinkPoint - 1].x - xOrigin + bCell->xHot;
-			yPos = (*curCell)->linkPoints[gReferenceLinkPoint - 1].y - yOrigin + bCell->yHot;
+			xPos = ((*curCell)->linkPoints[gReferenceLinkPoint - 1].x * MagnifyFactor / 100) - xOrigin + xHot;
+			yPos = ((*curCell)->linkPoints[gReferenceLinkPoint - 1].y * MagnifyFactor / 100) - yOrigin + yHot;
 		}
 
-		int referenceImagePosX = 10 + picX + tableX + xPos;
-		int referenceImagePosY = 30 + picY + yPos;
-		float referenceImageScaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
-		float referenceImageScaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
+		int posX = 10 + picX + tableX + xPos;
+		int posY = 30 + picY + yPos;
 
 		RGBQUAD refSkip = ExtractPaletteIndexFromBM(gReferenceBM, gReferenceTransparentIndex);
 
-		TransparentBlt(hdc, referenceImagePosX, referenceImagePosY, referenceImageScaleX, referenceImageScaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight, RGB(refSkip.rgbRed, refSkip.rgbGreen, refSkip.rgbBlue));
+		TransparentBlt(hdc, posX, posY, scaleX, scaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight,
+					   RGB(refSkip.rgbRed, refSkip.rgbGreen, refSkip.rgbBlue));
 	}
 }
 
