@@ -1331,7 +1331,7 @@ BOOL CALLBACK DoModifyPropertiesProc(HWND hwndDlg,
 
 						if (!(*curLoop)->Head.flags)
 						{
-							CelHeaderView *bCell = new CelHeaderView;
+							CelHeaderView *bCell;
 							bCell = (CelHeaderView *)&(*curCell)->Head;
 
 							bCell->xHot = GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE);
@@ -1376,8 +1376,8 @@ BOOL CALLBACK DoModifyPropertiesProc(HWND hwndDlg,
 
 			if (globalPicture)
 			{
-				PicHeader11 *bPic11 = new PicHeader11;
-				PicHeader32 *bPic32 = new PicHeader32;
+				PicHeader11 *bPic11;
+				PicHeader32 *bPic32;
 
 				switch (globalPicture->format)
 				{
@@ -1396,7 +1396,7 @@ BOOL CALLBACK DoModifyPropertiesProc(HWND hwndDlg,
 
 				if (curCell)
 				{
-					CelHeaderPic *bCell = new CelHeaderPic;
+					CelHeaderPic *bCell;
 					bCell = (CelHeaderPic*)&(*curCell)->Head;
 
 					bCell->xpos = GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE);
@@ -1449,7 +1449,7 @@ void DoUpdatePropertiesProc(HWND hwndDlg)
 			if (!(*curLoop)->Head.flags)
 			{
 
-				CelHeaderView *bCell = new CelHeaderView;
+				CelHeaderView *bCell;
 				bCell = (CelHeaderView *)&(*curCell)->Head;
 
 				SetDlgItemInt(hwndDlg, IDDI_LEFT, bCell->xHot, TRUE);
@@ -1483,8 +1483,8 @@ void DoUpdatePropertiesProc(HWND hwndDlg)
 
 		if (globalPicture)
 		{
-			PicHeader11 *bPic11 = new PicHeader11;
-			PicHeader32 *bPic32 = new PicHeader32;
+			PicHeader11 *bPic11;
+			PicHeader32 *bPic32;
 
 			switch (globalPicture->format)
 			{
@@ -1503,7 +1503,7 @@ void DoUpdatePropertiesProc(HWND hwndDlg)
 
 			if (curCell)
 			{
-				CelHeaderPic *bCell = new CelHeaderPic;
+				CelHeaderPic *bCell;
 				bCell = (CelHeaderPic*)&(*curCell)->Head;
 
 				SetDlgItemInt(hwndDlg, IDDI_LEFT, bCell->xpos, TRUE);
@@ -1574,7 +1574,7 @@ BOOL CALLBACK DoLinkPointProc(HWND hwndDlg,
 			{
 				if (curCell)
 				{
-					CelHeaderView *bCell = new CelHeaderView;
+					CelHeaderView *bCell;
 					bCell = (CelHeaderView*)&(*curCell)->Head;
 
 					bCell->linkTableCount = GetDlgItemInt(hwndDlg, IDC_LINK_COUNT, NULL, TRUE);
@@ -1617,7 +1617,7 @@ void DoUpdateLinkPointProc(HWND hwndDlg)
 		{			
 			if (!(*curLoop)->Head.flags)
 			{
-				CelHeaderView *bCell = new CelHeaderView;
+				CelHeaderView *bCell;
 				bCell = (CelHeaderView*)&(*curCell)->Head;
 				
 				SetDlgItemInt(hwndDlg, IDC_LINK_COUNT, bCell->linkTableCount, TRUE);
