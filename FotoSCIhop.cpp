@@ -2568,6 +2568,32 @@ void DrawCellInfo (HDC hdc)
 	}
 }
 
+void LoadConfig ()
+{
+	// get ini settings
+	sprintf(gConfigIni, "%s\\config.ini", gAppPath);
+
+	gAppResX = GetPrivateProfileInt("main", "resX", gAppResX, gConfigIni);
+	gAppResY = GetPrivateProfileInt("main", "resY", gAppResY, gConfigIni);
+	zScale = GetPrivateProfileInt("main", "zScale", zScale, gConfigIni);
+	gPosCells = GetPrivateProfileInt("main", "posCells", gPosCells, gConfigIni);
+	gBaseMagnify = GetPrivateProfileInt("main", "magScale", gBaseMagnify, gConfigIni);
+	gCliEnabled = GetPrivateProfileInt("main", "cliStartup", gCliEnabled, gConfigIni);
+
+	// image references
+	gReferenceScaleX = GetPrivateProfileInt("reference", "referenceScaleX", gReferenceScaleX, gConfigIni);
+	gReferenceScaleY = GetPrivateProfileInt("reference", "referenceScaleY", gReferenceScaleY, gConfigIni);
+	GetPrivateProfileString("reference", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, gConfigIni);
+	gReferenceXHot = GetPrivateProfileInt("reference", "referenceXHot", gReferenceXHot, gConfigIni);
+	gReferenceYHot = GetPrivateProfileInt("reference", "referenceYHot", gReferenceYHot, gConfigIni);
+	gReferenceLinkPoint = GetPrivateProfileInt("reference", "referenceLinkPoint", gReferenceLinkPoint, gConfigIni);
+	gReferenceLinkPointX = GetPrivateProfileInt("reference", "referenceLinkPointX", gReferenceLinkPointX, gConfigIni);
+	gReferenceLinkPointY = GetPrivateProfileInt("reference", "referenceLinkPointY", gReferenceLinkPointY, gConfigIni);
+	gReferencePriority = GetPrivateProfileInt("reference", "referencePriority", gReferencePriority, gConfigIni);
+
+	MagnifyFactor = gBaseMagnify;
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -2602,28 +2628,7 @@ int APIENTRY _tWinMain (HINSTANCE hInstance,
 	GetModuleFileName(NULL, gAppPath, MAX_PATH);
     gAppPath[strrchr(gAppPath, '\\') - gAppPath] = '\0'; 
 
-	// get ini settings
-	sprintf(gConfigIni, "%s\\config.ini", gAppPath);
-
-	gAppResX = GetPrivateProfileInt("preferences", "resX", gAppResX, gConfigIni);
-	gAppResY = GetPrivateProfileInt("preferences", "resY", gAppResY, gConfigIni);
-	zScale = GetPrivateProfileInt("preferences", "zScale", zScale, gConfigIni);
-	gPosCells = GetPrivateProfileInt("preferences", "posCells", gPosCells, gConfigIni);
-	gBaseMagnify = GetPrivateProfileInt("preferences", "magScale", gBaseMagnify, gConfigIni);
-	gCliEnabled = GetPrivateProfileInt("preferences", "cliStartup", gCliEnabled, gConfigIni);
-
-	// image references
-	gReferenceScaleX = GetPrivateProfileInt("reference", "referenceScaleX", gReferenceScaleX, gConfigIni);
-	gReferenceScaleY = GetPrivateProfileInt("reference", "referenceScaleY", gReferenceScaleY, gConfigIni);
-	GetPrivateProfileString("reference", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, gConfigIni);
-	gReferenceXHot = GetPrivateProfileInt("reference", "referenceXHot", gReferenceXHot, gConfigIni);
-	gReferenceYHot = GetPrivateProfileInt("reference", "referenceYHot", gReferenceYHot, gConfigIni);
-	gReferenceLinkPoint = GetPrivateProfileInt("reference", "referenceLinkPoint", gReferenceLinkPoint, gConfigIni);
-	gReferenceLinkPointX = GetPrivateProfileInt("reference", "referenceLinkPointX", gReferenceLinkPointX, gConfigIni);
-	gReferenceLinkPointY = GetPrivateProfileInt("reference", "referenceLinkPointY", gReferenceLinkPointY, gConfigIni);
-	gReferencePriority = GetPrivateProfileInt("reference", "referencePriority", gReferencePriority, gConfigIni);
-
-	MagnifyFactor = gBaseMagnify;
+	LoadConfig();
 
 	char startupfile[_MAX_PATH];
 	memset (startupfile, 0, _MAX_PATH);
