@@ -169,18 +169,18 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
    ofn.lpstrFile = szFileName;
    ofn.nMaxFile = MAX_PATH;
 
-   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_NOVALIDATE | OFN_FILEMUSTEXIST;
+   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST;
    proceed = (GetOpenFileName(&ofn) != 0);
-
-   if (filename)
-   {
-	    strcpy(szFileName, filename);
-		proceed=true;
-   }
 
    if(proceed)
    {
-      strcpy(szNextFileName, szFileName);
+	   if (filename)
+	   {
+		   strcpy(szFileName, filename);
+
+	   }
+
+	  strcpy(szNextFileName, szFileName);
       
 	  if (!stricmp((ext==NULL?szFileName+ofn.nFileExtension:ext), "v56"))
 		isPicture=false;
