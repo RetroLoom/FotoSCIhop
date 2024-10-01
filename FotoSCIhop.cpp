@@ -2468,6 +2468,106 @@ void DrawPaletteTable (HDC hdc)
 	DeleteObject(redpen);
 }
 
+void DrawCellInfo (HDC hdc)
+{
+	CelBase *bCell;
+	bCell = (CelBase *)&(*curCell)->Head;
+
+	if (globalView)
+	{
+		char finalstr[64];
+		sprintf(finalstr, INTERFACE_LOOPSSTR, curLoopIndex + 1, globalView->Head.view32.loopCount);
+		SetRect(&rc, 25, 0, 125, 20);
+		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+		if (curLoop)
+		{
+			if ((*curLoop)->Head.flags)
+			{
+				char mirr[64];
+				sprintf(mirr, INTERFACE_MIRROREDSTR, (*curLoop)->Head.altLoop + 1);
+				SetRect(&rc, 125, 0, 325, 20);
+				DrawText(hdc, mirr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+			}
+			else
+			{
+				sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, (*curLoop)->Head.numCels);
+				SetRect(&rc, 125, 0, 225, 20);
+				DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+			}
+		}
+
+		if (!(*curLoop)->Head.flags)
+		{
+
+			char finalstr[64];
+			sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
+			SetRect(&rc, 250, 0, 390, 20);
+			DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+			// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
+
+			if ((*curCell)->bmInfo)
+			{
+				HPEN outline = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
+				SelectObject(hdc, outline);
+
+				RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
+				HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
+				SelectBrush(hdc, tbrush);
+				Rectangle(hdc, 225, 2, 245, 18);
+
+				DeleteObject(tbrush);
+			}
+
+			if ((*curCell)->changed)
+			{
+				SetTextColor(hdc, RGB(255, 0, 0));
+				SetRect(&rc, 480, 0, 530, 20);
+				DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+				SetTextColor(hdc, RGB(0, 0, 0));
+			}
+		}
+	}
+
+	if (globalPicture)
+	{
+		// Draw transparency info
+		char finalstr[64];
+		sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
+		SetRect(&rc, 250, 0, 390, 20);
+		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+		// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
+		if ((*curCell)->bmInfo)
+		{
+			RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
+			HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
+			SelectBrush(hdc, tbrush);
+			Rectangle(hdc, 225, 2, 245, 18);
+
+			DeleteObject(tbrush);
+		}
+
+		// Draw version info
+		char vers[10];
+		strcpy(vers, (globalPicture->format == _PIC_11 ? "SCI1.1" : "SCI32"));
+		SetRect(&rc, 25, 0, 100, 20);
+		DrawText(hdc, vers, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+		// char finalstr[64];
+		sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, globalPicture->CellsCount());
+		SetRect(&rc, 125, 0, 250, 20);
+		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+		if ((*curCell)->changed)
+		{
+			SetTextColor(hdc, RGB(255, 0, 0));
+			SetRect(&rc, 480, 0, 530, 20);
+			DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+			SetTextColor(hdc, RGB(0, 0, 0));
+		}
+	}
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -3004,107 +3104,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		}
 
-		// draw cell info
 		if (curCell)
-		{
-
-			CelBase *bCell = new CelBase;
-			bCell = (CelBase*)&(*curCell)->Head;
-
-			if (globalView)
-			{
-				char finalstr[64];
-				sprintf(finalstr, INTERFACE_LOOPSSTR, curLoopIndex + 1, globalView->Head.view32.loopCount);
-				SetRect(&rc, 25, 0, 125, 20);
-				DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-				if (curLoop)
-				{
-					if ((*curLoop)->Head.flags)
-					{
-						char mirr[64];
-						sprintf(mirr, INTERFACE_MIRROREDSTR, (*curLoop)->Head.altLoop + 1);
-						SetRect(&rc, 125, 0, 325, 20);
-						DrawText(hdc, mirr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-					}
-					else
-					{
-						sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, (*curLoop)->Head.numCels);
-						SetRect(&rc, 125, 0, 225, 20);
-						DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-					}
-				}
-
-				if (!(*curLoop)->Head.flags)
-				{
-
-					char finalstr[64];
-					sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
-					SetRect(&rc, 250, 0, 390, 20);
-					DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-					// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
-
-					if ((*curCell)->bmInfo)
-					{
-						HPEN outline = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
-						SelectObject(hdc, outline);
-
-						RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
-						HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
-						SelectBrush(hdc, tbrush);
-						Rectangle(hdc, 225, 2, 245, 18);
-
-						DeleteObject(tbrush);
-					}
-
-					if ((*curCell)->changed)
-					{
-						SetTextColor(hdc, RGB(255, 0, 0));
-						SetRect(&rc, 480, 0, 530, 20);
-						DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-						SetTextColor(hdc, RGB(0, 0, 0));
-					}
-				}
-			}
-
-			if (globalPicture)
-			{
-				// Draw transparency info
-				char finalstr[64];
-				sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
-				SetRect(&rc, 250, 0, 390, 20);
-				DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-				// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
-				if ((*curCell)->bmInfo)
-				{
-					RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
-					HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
-					SelectBrush(hdc, tbrush);
-					Rectangle(hdc, 225, 2, 245, 18);
-
-					DeleteObject(tbrush);
-				}
-
-				// Draw version info
-				char vers[10];
-				strcpy(vers, (globalPicture->format == _PIC_11 ? "SCI1.1" : "SCI32"));
-				SetRect(&rc, 25, 0, 100, 20);
-				DrawText(hdc, vers, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-				// char finalstr[64];
-				sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, globalPicture->CellsCount());
-				SetRect(&rc, 125, 0, 250, 20);
-				DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-				if ((*curCell)->changed)
-				{
-					SetTextColor(hdc, RGB(255, 0, 0));
-					SetRect(&rc, 480, 0, 530, 20);
-					DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-					SetTextColor(hdc, RGB(0, 0, 0));
-				}
-			}
-		}
+			DrawCellInfo (hdc);
 
 		EndPaint(hWnd, &ps);
 		break;
