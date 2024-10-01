@@ -2370,6 +2370,104 @@ void DisplayPriorityBars(HDC hdc)
 	}
 }
 
+void DrawPaletteTable (HDC hdc)
+{
+	HPEN redpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+
+	HBRUSH tbrush;
+	Palette *tpalette = (isPicture ? globalPicture->palSCI : globalView->palSCI);
+	for (int i = 0; i < 16; i++)
+		for (int j = 0; j < 16; j++)
+		{
+			PalEntry *tentry = tpalette->GetPalEntry(i * 16 + j);
+
+			tbrush = CreateSolidBrush(RGB(tentry->red, tentry->green, tentry->blue));
+
+			SetRect(&rc, 10 + (j * 11), 30 + (i * 16), 20 + (j * 11), 40 + (i * 16));
+			FillRect(hdc, &rc, tbrush);
+			DeleteObject(tbrush);
+
+			if (tentry->remap == 1)
+			{
+				HPEN tpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+				SelectObject(hdc, tpen);
+				MoveToEx(hdc, 10 + (j * 11), 41 + (i * 16), NULL);
+				LineTo(hdc, 20 + (j * 11), 41 + (i * 16));
+
+				MoveToEx(hdc, 10 + (j * 11), 40 + (i * 16), NULL);
+				LineTo(hdc, 20 + (j * 11), 40 + (i * 16));
+				SelectObject(hdc, GetStockObject(WHITE_PEN));
+				DeleteObject(tpen);
+				MoveToEx(hdc, 10 + (j * 11), 39 + (i * 16), NULL);
+				LineTo(hdc, 20 + (j * 11), 39 + (i * 16));
+				SelectObject(hdc, GetStockObject(BLACK_PEN));
+			}
+
+			if (((i * 16 + j) < tpalette->Head.startOffset) ||
+				((i * 16 + j) >= tpalette->Head.startOffset + tpalette->Head.nColors))
+			{
+				SelectObject(hdc, redpen);
+				MoveToEx(hdc, 9 + (j * 11), 29 + (i * 16), NULL);
+				LineTo(hdc, 21 + (j * 11), 41 + (i * 16));
+				MoveToEx(hdc, 9 + (j * 11), 40 + (i * 16), NULL);
+				LineTo(hdc, 21 + (j * 11), 28 + (i * 16));
+				SelectObject(hdc, GetStockObject(BLACK_PEN));
+			}
+		}
+
+	if (tpalette->palData)
+	{
+		tbrush = CreateSolidBrush(RGB(0, 255, 255));
+
+		SetRect(&rc, 20, 300, 30, 310);
+		FillRect(hdc, &rc, tbrush);
+		DeleteObject(tbrush);
+
+		SelectObject(hdc, redpen);
+		MoveToEx(hdc, 19, 299, NULL);
+		LineTo(hdc, 31, 311);
+		MoveToEx(hdc, 19, 310, NULL);
+		LineTo(hdc, 31, 298);
+		SelectObject(hdc, GetStockObject(BLACK_PEN));
+
+		SetRect(&rc, 40, 295, 190, 315);
+		DrawText(hdc, INTERFACE_MISSINGCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+
+		if (!tpalette->Head.type)
+		{
+			SetRect(&rc, 20, 320, 30, 330);
+			FillRect(hdc, &rc, tbrush);
+			DeleteObject(tbrush);
+
+			SelectObject(hdc, redpen);
+			MoveToEx(hdc, 20, 332, NULL);
+			LineTo(hdc, 30, 332);
+			MoveToEx(hdc, 20, 331, NULL);
+			LineTo(hdc, 30, 331);
+
+			SelectObject(hdc, GetStockObject(WHITE_PEN));
+
+			MoveToEx(hdc, 20, 330, NULL);
+			LineTo(hdc, 30, 330);
+			SelectObject(hdc, GetStockObject(BLACK_PEN));
+
+			SetRect(&rc, 40, 316, 190, 336);
+			DrawText(hdc, INTERFACE_LOCKEDCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+		}
+	}
+	else
+	{
+		SetRect(&rc, 30, 300, 190, 320);
+		DrawText(hdc, INTERFACE_MISSINGPALETTE, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+	}
+
+	// SetRect(&rc, 20, 340, 440, 900);
+	// DoPropertyTable(hWnd);
+	// DrawText (hdc, INTERFACE_PROPTABLE, -1, &rc, DT_LEFT | DT_VCENTER);
+
+	DeleteObject(redpen);
+}
+
 typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
  
 /* this is what is going to hold our function, I like to name it like the function we are importing,
@@ -2881,103 +2979,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
 		// palette will be drawn only if the image exists
 		if (tableX > 0)
-		{
-
-			HPEN redpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
-
-			HBRUSH tbrush;
-			Palette *tpalette = (isPicture ? globalPicture->palSCI : globalView->palSCI);
-			for (int i = 0; i < 16; i++)
-				for (int j = 0; j < 16; j++)
-				{
-					PalEntry *tentry = tpalette->GetPalEntry(i * 16 + j);
-
-					tbrush = CreateSolidBrush(RGB(tentry->red, tentry->green, tentry->blue));
-
-					SetRect(&rc, 10 + (j * 11), 30 + (i * 16), 20 + (j * 11), 40 + (i * 16));
-					FillRect(hdc, &rc, tbrush);
-					DeleteObject(tbrush);
-
-					if (tentry->remap == 1)
-					{
-						HPEN tpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
-						SelectObject(hdc, tpen);
-						MoveToEx(hdc, 10 + (j * 11), 41 + (i * 16), NULL);
-						LineTo(hdc, 20 + (j * 11), 41 + (i * 16));
-
-						MoveToEx(hdc, 10 + (j * 11), 40 + (i * 16), NULL);
-						LineTo(hdc, 20 + (j * 11), 40 + (i * 16));
-						SelectObject(hdc, GetStockObject(WHITE_PEN));
-						DeleteObject(tpen);
-						MoveToEx(hdc, 10 + (j * 11), 39 + (i * 16), NULL);
-						LineTo(hdc, 20 + (j * 11), 39 + (i * 16));
-						SelectObject(hdc, GetStockObject(BLACK_PEN));
-					}
-
-					if (((i * 16 + j) < tpalette->Head.startOffset) ||
-						((i * 16 + j) >= tpalette->Head.startOffset + tpalette->Head.nColors))
-					{
-						SelectObject(hdc, redpen);
-						MoveToEx(hdc, 9 + (j * 11), 29 + (i * 16), NULL);
-						LineTo(hdc, 21 + (j * 11), 41 + (i * 16));
-						MoveToEx(hdc, 9 + (j * 11), 40 + (i * 16), NULL);
-						LineTo(hdc, 21 + (j * 11), 28 + (i * 16));
-						SelectObject(hdc, GetStockObject(BLACK_PEN));
-					}
-				}
-
-			if (tpalette->palData)
-			{
-				tbrush = CreateSolidBrush(RGB(0, 255, 255));
-
-				SetRect(&rc, 20, 300, 30, 310);
-				FillRect(hdc, &rc, tbrush);
-				DeleteObject(tbrush);
-
-				SelectObject(hdc, redpen);
-				MoveToEx(hdc, 19, 299, NULL);
-				LineTo(hdc, 31, 311);
-				MoveToEx(hdc, 19, 310, NULL);
-				LineTo(hdc, 31, 298);
-				SelectObject(hdc, GetStockObject(BLACK_PEN));
-
-				SetRect(&rc, 40, 295, 190, 315);
-				DrawText(hdc, INTERFACE_MISSINGCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-				if (!tpalette->Head.type)
-				{
-					SetRect(&rc, 20, 320, 30, 330);
-					FillRect(hdc, &rc, tbrush);
-					DeleteObject(tbrush);
-
-					SelectObject(hdc, redpen);
-					MoveToEx(hdc, 20, 332, NULL);
-					LineTo(hdc, 30, 332);
-					MoveToEx(hdc, 20, 331, NULL);
-					LineTo(hdc, 30, 331);
-
-					SelectObject(hdc, GetStockObject(WHITE_PEN));
-
-					MoveToEx(hdc, 20, 330, NULL);
-					LineTo(hdc, 30, 330);
-					SelectObject(hdc, GetStockObject(BLACK_PEN));
-
-					SetRect(&rc, 40, 316, 190, 336);
-					DrawText(hdc, INTERFACE_LOCKEDCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-				}
-			}
-			else
-			{
-				SetRect(&rc, 30, 300, 190, 320);
-				DrawText(hdc, INTERFACE_MISSINGPALETTE, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-			}
-
-			// SetRect(&rc, 20, 340, 440, 900);
-			// DoPropertyTable(hWnd);
-			// DrawText (hdc, INTERFACE_PROPTABLE, -1, &rc, DT_LEFT | DT_VCENTER);
-
-			DeleteObject(redpen);
-		}
+			DrawPaletteTable (hdc);
 
 		if (globalView && !(*curLoop)->Head.flags)
 		{
