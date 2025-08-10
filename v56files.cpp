@@ -492,191 +492,265 @@ int V56file::addCells(int loop, int base, int amount)
     return 1;
 }
 
-int V56file::writeFileHeader(FILE *cfilebuf)
+int V56file::writeFileHeader(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	unsigned long patchID = 0;
-	patchID += V56PATCH;
-	fwrite(&patchID, 4, 1, cfilebuf);
-
-	unsigned short tshort = 320;
-	fwrite(&tshort, 2, 1, cfilebuf);
-	tshort = 200;
-	fwrite(&tshort, 2, 1, cfilebuf);
-	tshort = 5;
-	fwrite(&tshort, 2, 1, cfilebuf);
-	tshort = 6;
-	fwrite(&tshort, 2, 1, cfilebuf);
-	tshort = 256;
-	fwrite(&tshort, 2, 1, cfilebuf);
-	tshort = 0;
-	for (int i = 0; i < 6; i++)
-		fwrite(&tshort, 2, 1, cfilebuf);
-
-	retVal = 1;
-
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    // Write patch ID
+    const unsigned long patchID = V56PATCH;
+    if (fwrite(&patchID, 4, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write standard header values efficiently
+    const unsigned short headerValues[] = {320, 200, 5, 6, 256, 0, 0, 0, 0, 0, 0};
+    const size_t numValues = sizeof(headerValues) / sizeof(headerValues[0]);
+    
+    if (fwrite(headerValues, sizeof(unsigned short), numValues, cfilebuf) != numValues) {
+        return 0;
+    }
+    
+    return 1;
 }
 
-int V56file::writeViewHeader(FILE *cfilebuf)
+int V56file::writeViewHeader(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	ViewHeaderLinks *bView = (ViewHeaderLinks *)&Head;
-
-	if (bView->version)
-		fwrite(&Head, VIEW32_HEADER_LINK_SIZE, 1, cfilebuf);
-	else
-		fwrite(&Head, VIEW32_HEADER_SIZE, 1, cfilebuf);
-
-	retVal = 1;
-
-	return retVal;
-	
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    const ViewHeaderLinks* bView = reinterpret_cast<const ViewHeaderLinks*>(&Head);
+    const size_t headerSize = bView->version ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
+    
+    if (fwrite(&Head, headerSize, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    return 1;
 }
 
-int V56file::writeLoopHeaders(FILE *cfilebuf)
+int V56file::writeLoopHeaders(FILE* cfilebuf)
 {
-	int retVal = 0;
-	
-	for (int i = 0; i < Head.view32.loopCount; i++)
-		fwrite(&loops[i]->Head, LOOPHEADERSIZE, 1, cfilebuf);		
-
-	retVal = 1;
-
-	return retVal;
-	
+    if (!cfilebuf || Head.view32.loopCount <= 0) {
+        return 0;
+    }
+    
+    for (int i = 0; i < Head.view32.loopCount; i++) {
+        if (!loops[i]) {
+            return 0; // Invalid loop
+        }
+        
+        if (fwrite(&loops[i]->Head, LOOPHEADERSIZE, 1, cfilebuf) != 1) {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
-int V56file::writeCellHeaders(FILE *cfilebuf)
+int V56file::writeCellHeaders(FILE* cfilebuf)
 {
-	int retVal = 0;
-		
-	for (int j = 0; j < Head.view32.loopCount; j++)
-		for (int i = 0; i < loops[j]->Head.numCels; i++)
-			fwrite(&loops[j]->cells[i]->Head.view, CELHEADERVIEWSIZE, 1, cfilebuf);
-
-	retVal = 1;
-
-	return retVal;	
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    for (int j = 0; j < Head.view32.loopCount; j++) {
+        if (!loops[j]) {
+            return 0; // Invalid loop
+        }
+        
+        for (int i = 0; i < loops[j]->Head.numCels; i++) {
+            if (!loops[j]->cells[i]) {
+                return 0; // Invalid cell
+            }
+            
+            if (fwrite(&loops[j]->cells[i]->Head.view, CELHEADERVIEWSIZE, 1, cfilebuf) != 1) {
+                return 0;
+            }
+        }
+    }
+    
+    return 1;
 }
 
-int V56file::writeImages(FILE *cfilebuf)
+int V56file::writeImages(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	// writing images now:
-	if (Head.view32.celCount)
-	{
-		unsigned short ttag = VIEW32_IMAGE_POS;
-		fwrite(&ttag, 2, 1, cfilebuf);
-		fwrite(&totalImageSize, 4, 1, cfilebuf);
-
-		// write current cell images
-		for (int l = 0; l < Head.view32.loopCount; l++)
-		{
-			for (int i = 0; i < loops[l]->Head.numCels; i++)
-			{
-				(*loops[l]->cells[i]).WriteImage(cfilebuf);
-			}
-		}
-
-		if (Head.view32.splitView)
-		{
-			// write current cell compression
-			for (int l = 0; l < Head.view32.loopCount; l++)
-			{
-				for (int i = 0; i < loops[l]->Head.numCels; i++)
-				{
-					(*loops[l]->cells[i]).WritePack(cfilebuf);
-				}
-			}
-		}
-	}
-
-	retVal = 1;
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    // Only write if there are cells to write
+    if (Head.view32.celCount <= 0) {
+        return 1; // Success - nothing to write
+    }
+    
+    // Write image section header
+    const unsigned short ttag = VIEW32_IMAGE_POS;
+    if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    if (fwrite(&totalImageSize, 4, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write all cell images
+    for (int l = 0; l < Head.view32.loopCount; l++) {
+        if (!loops[l]) {
+            return 0; // Invalid loop
+        }
+        
+        for (int i = 0; i < loops[l]->Head.numCels; i++) {
+            if (!loops[l]->cells[i]) {
+                return 0; // Invalid cell
+            }
+            
+            loops[l]->cells[i]->WriteImage(cfilebuf);
+        }
+    }
+    
+    // Write pack data if split view format
+    if (Head.view32.splitView) {
+        for (int l = 0; l < Head.view32.loopCount; l++) {
+            if (!loops[l]) {
+                return 0; // Invalid loop
+            }
+            
+            for (int i = 0; i < loops[l]->Head.numCels; i++) {
+                if (!loops[l]->cells[i]) {
+                    return 0; // Invalid cell
+                }
+                
+                loops[l]->cells[i]->WritePack(cfilebuf);
+            }
+        }
+    }
+    
+    return 1;
 }
 
-int V56file::writeScanLines(FILE *cfilebuf)
+int V56file::writeScanLines(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	if (Head.view32.splitView) // writing scan lines
-	{
-
-		unsigned short ttag = VIEW32_LINES_POS;
-		fwrite(&ttag, 2, 1, cfilebuf);
-		unsigned long tzero = 0;
-		fwrite(&tzero, 4, 1, cfilebuf);
-
-		// write current scan lines
-		for (int j = 0; j < Head.view32.loopCount; j++)
-		{
-			for (int i = 0; i < loops[j]->Head.numCels; i++)
-			{
-				(*loops[j]->cells[i]).WriteScanLines(cfilebuf);
-			}
-		}
-	}
-
-	retVal = 1;
-
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    // Only write scan lines for split view format
+    if (!Head.view32.splitView) {
+        return 1; // Success - nothing to write
+    }
+    
+    // Write scan lines section header
+    const unsigned short ttag = VIEW32_LINES_POS;
+    if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    const unsigned long tzero = 0;
+    if (fwrite(&tzero, 4, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write scan lines for all cells
+    for (int j = 0; j < Head.view32.loopCount; j++) {
+        if (!loops[j]) {
+            return 0; // Invalid loop
+        }
+        
+        for (int i = 0; i < loops[j]->Head.numCels; i++) {
+            if (!loops[j]->cells[i]) {
+                return 0; // Invalid cell
+            }
+            
+            loops[j]->cells[i]->WriteScanLines(cfilebuf);
+        }
+    }
+    
+    return 1;
 }
 
-int V56file::writeLinks(FILE *cfilebuf)
+int V56file::writeLinks(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	// first there is an unknown 00 06 00 00 00 00 in all files:
-	LinkPoint tlp;
-	memset(&tlp, 0, sizeof(tlp));
-	tlp.x = VIEW32_LINKS_POS;
-	fwrite(&tlp, sizeof(tlp), 1, cfilebuf);
-
-	// write current link points
-	for (int l = 0; l < Head.view32.loopCount; l++)
-	{
-		for (int i = 0; i < loops[l]->Head.numCels; i++)
-		{
-			CelHeaderView *bCell = bCell = (CelHeaderView *)&loops[l]->cells[i]->Head;
-
-			if (bCell->linkTableCount)
-				(*loops[l]->cells[i]).WriteLinks(cfilebuf);
-		}
-	}
-
-	retVal = 1;
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    // Write the standard link header (unknown 00 06 00 00 00 00 pattern)
+    LinkPoint tlp = {0}; // Initialize all fields to zero
+    tlp.x = VIEW32_LINKS_POS;
+    
+    if (fwrite(&tlp, sizeof(tlp), 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write link points for all cells that have them
+    for (int l = 0; l < Head.view32.loopCount; l++) {
+        if (!loops[l]) {
+            return 0; // Invalid loop
+        }
+        
+        for (int i = 0; i < loops[l]->Head.numCels; i++) {
+            if (!loops[l]->cells[i]) {
+                return 0; // Invalid cell
+            }
+            
+            const CelHeaderView* bCell = reinterpret_cast<const CelHeaderView*>(&loops[l]->cells[i]->Head);
+            
+            if (bCell->linkTableCount > 0) {
+                loops[l]->cells[i]->WriteLinks(cfilebuf);
+            }
+        }
+    }
+    
+    return 1;
 }
 
-bool V56file::SaveFile (HWND hwnd, LPSTR szFileName)
+bool V56file::SaveFile(HWND hwnd, LPSTR szFileName)
 {
-	int retVal = 0;
-
-	FILE *cfilebuf = fopen(szFileName, "wb");
-	if (cfilebuf)
-	{
-		loadCellOffset();	
-		writeFileHeader(cfilebuf);
-		writeViewHeader(cfilebuf);
-		writeLoopHeaders(cfilebuf);
-		writeCellHeaders(cfilebuf);
-
-		palSCI->WritePalette(cfilebuf, false);
-
-		writeImages(cfilebuf);
-
-		writeScanLines(cfilebuf);
-
-		writeLinks(cfilebuf);
-
-		fclose(cfilebuf);
-
-		retVal = 1;
-	}
-
-	return retVal;
+    if (!szFileName) {
+        return false;
+    }
+    
+    FILE* cfilebuf = fopen(szFileName, "wb");
+    if (!cfilebuf) {
+        return false;
+    }
+    
+    // Calculate offsets before writing
+    if (!loadCellOffset()) {
+        fclose(cfilebuf);
+        return false;
+    }
+    
+    // Write all file sections in order
+    bool success = true;
+    
+    success &= (writeFileHeader(cfilebuf) != 0);
+    success &= (writeViewHeader(cfilebuf) != 0);
+    success &= (writeLoopHeaders(cfilebuf) != 0);
+    success &= (writeCellHeaders(cfilebuf) != 0);
+    
+    // Write palette
+    if (success && palSCI) {
+        palSCI->WritePalette(cfilebuf, false);
+        // Note: WritePalette returns void, so we assume success
+        // You could add error checking inside WritePalette if needed
+    } else {
+        success = false;
+    }
+    
+    success &= (writeImages(cfilebuf) != 0);
+    success &= (writeScanLines(cfilebuf) != 0);
+    success &= (writeLinks(cfilebuf) != 0);
+    
+    fclose(cfilebuf);
+    
+    // If writing failed, optionally delete the partial file
+    if (!success) {
+        remove(szFileName);
+    }
+    
+    return success;
 }
