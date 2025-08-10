@@ -14,6 +14,64 @@
 // Dhel
 #include "v56files.h"
 
+// Constructor and destructor implementations for scicell.cpp
+
+Cell::Cell(void) : cellImage(new CellImage), 
+                   bmInfo(new BITMAPINFO), 
+                   bmImage(new unsigned char),
+                   changed(false), 
+                   palette(0)
+{
+    initializeMembers();
+}
+
+Cell::~Cell(void) 
+{ 
+    cleanup();
+}
+
+void Cell::initializeMembers()
+{
+    cellImage->image = 0;
+    cellImage->imageSize = 0;
+    cellImage->pack = 0;
+    cellImage->packSize = 0;
+    cellImage->lines = 0;
+    cellImage->lineSize = 0;
+}
+
+void Cell::cleanup()
+{
+    if (cellImage->image) delete[] cellImage->image; 
+    if (cellImage->pack) delete[] cellImage->pack;
+    if (cellImage->lines) delete[] cellImage->lines; 
+    if (bmImage && (cellImage->image != bmImage)) delete[] bmImage;
+    if (bmInfo) delete bmInfo;
+    delete cellImage;
+}
+
+void Cell::GetImage(BITMAPINFO **imhd, unsigned char **im) 
+{  
+    if (bmImage == 0) makeBitmap();
+    *imhd = bmInfo;
+    *im = bmImage; 
+}
+
+void Cell::SetImage(BITMAPINFO *imhd, unsigned char *im)
+{
+    bmImage = im;
+    bmInfo = imhd;
+    changed = true;
+    makeSCI();
+}
+
+void Cell::setPalette(Palette **value) 
+{
+    palette = *value;
+}
+
+// Rest of your existing methods (makeBitmap, makeSCI, loadImage, etc.) go here...
+
 void Cell::makeSCI()
 {
     if (!bmImage || !bmInfo) {

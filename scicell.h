@@ -76,7 +76,6 @@ const int CELHEADERPICSIZE = sizeof(CelHeaderPic);
 const int CELHEADERVIEWSIZE = sizeof(CelHeaderView);
 const int CELHEADER11SIZE = sizeof(CelHeaderView) - 16;
 
-
 const uchar REPEATC = 0x80;
 const uchar REPSKIP = 0x40;
 const uchar PIC11CELLRECSIZE = 0x24;
@@ -85,15 +84,14 @@ const uchar PIC11CELLRECSIZE = 0x24;
 #define CELRECSIZE_LINKS 0x34
 
 #define PIC11_IMAGE_POS 0x0401
-#define PIC11_VECTOR_POS 0x0500;
+#define PIC11_VECTOR_POS 0x0500
 
-#define PIC32_IMAGE_POS 0x0400;
-#define PIC32_LINES_POS 0x0500;
+#define PIC32_IMAGE_POS 0x0400
+#define PIC32_LINES_POS 0x0500
 
-#define VIEW32_IMAGE_POS 0x0400;
-#define VIEW32_LINES_POS 0x0500;
-#define VIEW32_LINKS_POS 0x0600;
-
+#define VIEW32_IMAGE_POS 0x0400
+#define VIEW32_LINES_POS 0x0500
+#define VIEW32_LINKS_POS 0x0600
 
 union CellHeader
 {
@@ -180,71 +178,16 @@ union ViewHeader
 	ViewHeaderLinks view32links;
 };
 
-
-
 #pragma pack()
 
 class Cell // size 2A
 {
 public:
-	Cell(void) : cellImage(new CellImage), 
-				bmInfo(new BITMAPINFO), bmImage(new unsigned char),
-				changed(false), palette(0)
-	{
-		cellImage->image = 0;
-		cellImage->imageSize = 0;
-		cellImage->pack = 0;
-		cellImage->packSize = 0;
-		cellImage->lines = 0;
-		cellImage->lineSize = 0;
+	// Constructor - implementation moved to .cpp
+	Cell(void);
 
-	}
-
-	/*
-	// copy constructor
-	Cell(Cell& other)
-	{
-									changed = other.changed;
-									palette = other.palette;
-
-									bmInfo = new BITMAPINFO;
-									memcpy(bmInfo, other.bmInfo, sizeof(BITMAPINFO));
-
-									int imageSize = other.bmInfo->bmiHeader.biSizeImage;
-									bmImage = new unsigned char[imageSize];
-									memcpy(bmImage, other.bmImage, imageSize);
-
-									cellImage = new CellImage;
-									memcpy(cellImage, other.cellImage, sizeof(CellImage));
-
-									if (cellImage->image)
-									{
-										cellImage->image = new unsigned char;
-										memcpy(cellImage->image, other.cellImage->image, sizeof(other.cellImage->image));
-									}
-
-									if (cellImage->pack)
-									{
-										cellImage->pack = new unsigned char;
-										memcpy(cellImage->pack, other.cellImage->pack, sizeof(other.cellImage->pack));
-									}
-
-									if (cellImage->lines)
-									{
-										cellImage->lines = new unsigned char;
-										memcpy(cellImage->lines, other.cellImage->lines, sizeof(other.cellImage->lines));
-									}
-
-									memcpy(&Head, &other.Head, sizeof(CellHeader));
-									//memcpy(linkPoints, other.linkPoints, sizeof(linkPoints));
-	}
-	*/
-	
-
-	~Cell(void) { if (cellImage->image) delete[] cellImage->image; if (cellImage->pack) delete[] cellImage->pack;
-					if (cellImage->lines) delete[] cellImage->lines; 
-					if (bmImage && (cellImage->image != bmImage)) delete[] bmImage;
-					if (bmInfo) delete bmInfo;}
+	// Destructor - implementation moved to .cpp
+	~Cell(void);
 
 	bool changed;
 	//if set to true, the new image is the one referenced by bmImage
@@ -252,30 +195,17 @@ public:
 
 	Palette *palette;
 
-	void GetImage(BITMAPINFO **imhd, unsigned char **im) {  if (bmImage==0) makeBitmap();
-															*imhd=bmInfo;
-															*im=bmImage; }
-
-	void SetImage(BITMAPINFO *imhd, unsigned char *im)
-	{
-															bmImage = im;
-															bmInfo = imhd;
-															changed = true;
-															makeSCI();
-	}
+	// Method declarations only - implementations moved to .cpp
+	void GetImage(BITMAPINFO **imhd, unsigned char **im);
+	void SetImage(BITMAPINFO *imhd, unsigned char *im);
+	void setPalette(Palette **value);
 
 	long makeBitmap();	
 	void makeSCI();
 
-	void setPalette(Palette **value) {
-									palette = *value;
-									}
-
 	void WriteImage(FILE *cfb);
 	void WritePack(FILE *cfb);
-
 	void WriteScanLines(FILE *cfb);
-
     void ReadLinks(FILE *cfb);
     void WriteLinks(FILE *cfb);
 
@@ -290,6 +220,11 @@ public:
 	BITMAPINFO *bmInfo;
 
 	bool isClone = false;
+
+private:
+	// Helper methods for constructor/destructor
+	void initializeMembers();
+	void cleanup();
 };
 
 #endif
