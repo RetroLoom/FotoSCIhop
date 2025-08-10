@@ -72,6 +72,9 @@ public:
 	int writeImages(FILE *cfilebuf, int cellCount = 0);
 
 	bool SavePic(HWND hwnd, LPSTR szFileName);
+
+	int writePic32Images(FILE* cfilebuf, int cellCount);
+    int writePic11Images(FILE* cfilebuf, int cellCount);
 };
 
 #endif

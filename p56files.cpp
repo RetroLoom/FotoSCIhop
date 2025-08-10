@@ -475,197 +475,273 @@ int P56file32::addCells(int base, int amount)
     return 1;
 }
 
-int P56file32::writeFileHeader(FILE *cfilebuf)
+int P56file32::writeFileHeader(FILE* cfilebuf)
 {
-	int retVal = 0;
-
-	unsigned long offset = 0;
-	unsigned long patchID = 0;
-
-	if (format != _PIC_11)
-	{
-		patchID = P56PATCH80;
-		fwrite(&patchID, 4, 1, cfilebuf);
-
-		offset = 4;
-	}
-	else
-	{
-		patchID = 0;
-		patchID += P56PATCHOLD;
-		fwrite(&patchID, 4, 1, cfilebuf);
-
-		unsigned short tshort = 320;
-		fwrite(&tshort, 2, 1, cfilebuf);
-		tshort = 200;
-		fwrite(&tshort, 2, 1, cfilebuf);
-		tshort = 5;
-		fwrite(&tshort, 2, 1, cfilebuf);
-		tshort = 6;
-		fwrite(&tshort, 2, 1, cfilebuf);
-		tshort = 256;
-		fwrite(&tshort, 2, 1, cfilebuf);
-		tshort = 0;
-		for (int i = 0; i < 6; i++)
-			fwrite(&tshort, 2, 1, cfilebuf);
-
-		offset = 26;
-	}
-
-	retVal = 1;
-
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    unsigned long patchID = 0;
+    
+    if (format != _PIC_11) {
+        // PIC_32 format
+        patchID = P56PATCH80;
+        if (fwrite(&patchID, 4, 1, cfilebuf) != 1) {
+            return 0;
+        }
+    } else {
+        // PIC_11 format - write extended header
+        patchID = P56PATCHOLD;
+        if (fwrite(&patchID, 4, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        
+        // Write standard header values efficiently
+        const unsigned short headerValues[] = {320, 200, 5, 6, 256, 0, 0, 0, 0, 0, 0};
+        const size_t numValues = sizeof(headerValues) / sizeof(headerValues[0]);
+        
+        if (fwrite(headerValues, sizeof(unsigned short), numValues, cfilebuf) != numValues) {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
-int P56file32::writePicHeader(FILE *cfilebuf, int cellCount)
+int P56file32::writePicHeader(FILE* cfilebuf, int cellCount)
 {
-	int retVal = 0;
-
-	fwrite(&Head, (format == _PIC_11 ? PICHEADER11SIZE : PICHEADER32SIZE), 1, cfilebuf);
-
-	if (format == _PIC_11 && cellCount)
-	{
-		fwrite(&_unkShort1, 2, 1, cfilebuf);
-		fwrite(&_unkShort2, 2, 1, cfilebuf);
-	}
-
-	retVal = 1;
-
-	return retVal;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    // Write main header
+    const size_t headerSize = (format == _PIC_11) ? PICHEADER11SIZE : PICHEADER32SIZE;
+    if (fwrite(&Head, headerSize, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write additional data for PIC_11 format if cells exist
+    if (format == _PIC_11 && cellCount > 0) {
+        if (fwrite(&_unkShort1, 2, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        if (fwrite(&_unkShort2, 2, 1, cfilebuf) != 1) {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
-int P56file32::writeCellHeaders(FILE *cfilebuf, int cellCount)
+int P56file32::writeCellHeaders(FILE* cfilebuf, int cellCount)
 {
-	int retVal = 0;
-
-	for (int i = 0; i < cellCount; i++)
-	{
-		fwrite(&cells[i]->Head, (format == _PIC_11 ? CELHEADER11SIZE : CELHEADERPICSIZE), 1, cfilebuf);
-	}
-
-	retVal = 1;
-
-	return retVal;
-
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    if (cellCount <= 0) {
+        return 1; // Success - nothing to write
+    }
+    
+    const size_t cellHeaderSize = (format == _PIC_11) ? CELHEADER11SIZE : CELHEADERPICSIZE;
+    
+    for (int i = 0; i < cellCount; i++) {
+        if (!cells[i]) {
+            return 0; // Invalid cell
+        }
+        
+        if (fwrite(&cells[i]->Head, cellHeaderSize, 1, cfilebuf) != 1) {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
-int P56file32::writeImages(FILE *cfilebuf, int cellCount)
+int P56file32::writeImages(FILE* cfilebuf, int cellCount)
 {
-	int retVal = 0;
+    if (!cfilebuf) {
+        return 0;
+    }
+    
+    switch (format) {
+        case _PIC_32:
+            return writePic32Images(cfilebuf, cellCount);
+        case _PIC_11:
+            return writePic11Images(cfilebuf, cellCount);
+        default:
+            return 0; // Unknown format
+    }
+}
 
-	PicHeader11 *bPic11 = new PicHeader11;
-	PicHeader32 *bPic32 = new PicHeader32;		
+int P56file32::writePic32Images(FILE* cfilebuf, int cellCount)
+{
+    const PicHeader32* bPic32 = reinterpret_cast<const PicHeader32*>(&Head);
+    
+    // Write palette first for PIC_32
+    if (palSCI) {
+        palSCI->WritePalette(cfilebuf, false);
+    }
+    
+    // Write images if cells exist
+    if (bPic32->celCount > 0 && cellCount > 0) {
+        // Write image section header
+        const unsigned short ttag = PIC32_IMAGE_POS;
+        if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        if (fwrite(&imageAllSize, 4, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        
+        // Write all cell images
+        for (int i = 0; i < cellCount; i++) {
+            if (!cells[i]) {
+                return 0; // Invalid cell
+            }
+            cells[i]->WriteImage(cfilebuf);
+        }
+        
+        // Write all pack data
+        for (int i = 0; i < cellCount; i++) {
+            if (!cells[i]) {
+                return 0; // Invalid cell
+            }
+            cells[i]->WritePack(cfilebuf);
+        }
+    }
+    
+    // Write scan lines if split flag is set
+    if (bPic32->splitFlag) {
+        const unsigned short ttag = PIC32_LINES_POS;
+        if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        
+        const unsigned long tzero = 0;
+        if (fwrite(&tzero, 4, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        
+        for (int i = 0; i < cellCount; i++) {
+            if (!cells[i]) {
+                return 0; // Invalid cell
+            }
+            cells[i]->WriteScanLines(cfilebuf);
+        }
+    }
+    
+    return 1;
+}
 
-
-	switch (format)
-	{
-	case _PIC_32:
-
-		palSCI->WritePalette(cfilebuf, false);
-		bPic32 = (PicHeader32 *)&Head;
-
-		if (bPic32->celCount)
-		{
-			unsigned short ttag = PIC32_IMAGE_POS;
-			fwrite(&ttag, 2, 1, cfilebuf);
-			fwrite(&imageAllSize, 4, 1, cfilebuf);
-
-			for (int i = 0; i < cellCount; i++)
-				cells[i]->WriteImage(cfilebuf);
-			for (int i = 0; i < cellCount; i++)
-				cells[i]->WritePack(cfilebuf);
-		}
-
-		if (bPic32->splitFlag)
-		{
-			unsigned short ttag = PIC32_LINES_POS;
-			fwrite(&ttag, 2, 1, cfilebuf);
-			unsigned long tzero = 0;
-			fwrite(&tzero, 4, 1, cfilebuf);
-
-			for (int i = 0; i < cellCount; i++)
-				cells[i]->WriteScanLines(cfilebuf);
-		}
-
-		break;
-
-	case _PIC_11:
-		bPic11 = (PicHeader11 *)&Head;
-
-		if (cellCount)
-		{
-			unsigned short ttag = PIC11_IMAGE_POS;
-			fwrite(&ttag, 2, 1, cfilebuf);
-			fwrite(&imageAllSize, 4, 1, cfilebuf);
-
-			for (int i = 0; i < cellCount; i++)
-				cells[i]->WriteImage(cfilebuf);
-			for (int i = 0; i < cellCount; i++)
-				cells[i]->WritePack(cfilebuf);
-		}
-		
-		palSCI->WritePalette(cfilebuf, false);
-
-		unsigned short ttag = PIC11_VECTOR_POS;
-		fwrite(&ttag, 2, 1, cfilebuf);
-		fwrite(&bPic11->vectorSize, 4, 1, cfilebuf);
-		fwrite(vector, bPic11->vectorSize, 1, cfilebuf);
-
-		break;
-	}
-
-	retVal = 1;
-
-	return retVal;
+int P56file32::writePic11Images(FILE* cfilebuf, int cellCount)
+{
+    const PicHeader11* bPic11 = reinterpret_cast<const PicHeader11*>(&Head);
+    
+    // Write images first for PIC_11
+    if (cellCount > 0) {
+        // Write image section header
+        const unsigned short ttag = PIC11_IMAGE_POS;
+        if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        if (fwrite(&imageAllSize, 4, 1, cfilebuf) != 1) {
+            return 0;
+        }
+        
+        // Write all cell images
+        for (int i = 0; i < cellCount; i++) {
+            if (!cells[i]) {
+                return 0; // Invalid cell
+            }
+            cells[i]->WriteImage(cfilebuf);
+        }
+        
+        // Write all pack data
+        for (int i = 0; i < cellCount; i++) {
+            if (!cells[i]) {
+                return 0; // Invalid cell
+            }
+            cells[i]->WritePack(cfilebuf);
+        }
+    }
+    
+    // Write palette after images for PIC_11
+    if (palSCI) {
+        palSCI->WritePalette(cfilebuf, false);
+    }
+    
+    // Write vector data
+    const unsigned short ttag = PIC11_VECTOR_POS;
+    if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    if (fwrite(&bPic11->vectorSize, 4, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    if (vector && bPic11->vectorSize > 0) {
+        if (fwrite(vector, bPic11->vectorSize, 1, cfilebuf) != 1) {
+            return 0;
+        }
+    }
+    
+    return 1;
 }
 
 bool P56file32::SavePic(HWND hwnd, LPSTR szFileName)
 {
-	FILE *cfilebuf = fopen(szFileName, "wb");
-	if (cfilebuf)
-	{
-		imageAllSize = 0;
-		
-		PicHeader32 *bPic32 = new PicHeader32;
-		PicHeader11 *bPic11 = new PicHeader11;
-
-		int cellCount = 0;
-
-		switch (format)
-		{
-
-		case _PIC_32:
-
-			bPic32 = (PicHeader32 *)&Head;
-
-			cellCount = bPic32->celCount;
-
-			break;
-
-		case _PIC_11:
-
-			bPic11 = (PicHeader11 *)&Head;
-
-			cellCount = bPic11->celCount;
-
-			break;
-		}
-
-		loadCellOffset();
-
-		writeFileHeader(cfilebuf);
-
-		writePicHeader(cfilebuf, cellCount);
-
-		writeCellHeaders(cfilebuf, cellCount);
-
-		writeImages(cfilebuf, cellCount);
-
-		fclose(cfilebuf);
-
-		return true;
-	}
-
-	return false;
+    if (!szFileName) {
+        return false;
+    }
+    
+    FILE* cfilebuf = fopen(szFileName, "wb");
+    if (!cfilebuf) {
+        return false;
+    }
+    
+    // Reset image size counter
+    imageAllSize = 0;
+    
+    // Determine cell count based on format
+    int cellCount = 0;
+    switch (format) {
+        case _PIC_32:
+        {
+            const PicHeader32* bPic32 = reinterpret_cast<const PicHeader32*>(&Head);
+            cellCount = bPic32->celCount;
+            break;
+        }
+        case _PIC_11:
+        {
+            const PicHeader11* bPic11 = reinterpret_cast<const PicHeader11*>(&Head);
+            cellCount = bPic11->celCount;
+            break;
+        }
+        default:
+            fclose(cfilebuf);
+            return false; // Unknown format
+    }
+    
+    // Calculate offsets before writing
+    if (!loadCellOffset()) {
+        fclose(cfilebuf);
+        return false;
+    }
+    
+    // Write all file sections in order
+    bool success = true;
+    success &= (writeFileHeader(cfilebuf) != 0);
+    success &= (writePicHeader(cfilebuf, cellCount) != 0);
+    success &= (writeCellHeaders(cfilebuf, cellCount) != 0);
+    success &= (writeImages(cfilebuf, cellCount) != 0);
+    
+    fclose(cfilebuf);
+    
+    // If writing failed, optionally delete the partial file
+    if (!success) {
+        remove(szFileName);
+    }
+    
+    return success;
 }
-
