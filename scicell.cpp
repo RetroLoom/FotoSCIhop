@@ -364,61 +364,57 @@ void Cell::loadImageOffset()
 }
 
 
-void Cell::loadImage( FILE *cfilebuf, unsigned char offset )
+void Cell::loadImage(FILE* cfilebuf, unsigned char offset)
 {
-	CellImage *sciImage = new CellImage;
-
-	sciImage->lines = 0;
-	sciImage->pack = 0;
-	sciImage->lines = 0;
-	sciImage->imageSize = 0;
-
-	CelBase *bCell = new CelBase;
-	bCell = (CelBase *)&Head;
-
-	if (!bCell->compressType)
-		// timsize = cells[i]->Head.pic.imageandPackSize;
-		// NOTE in certain files it is wrong, Sierra's tool writes this only on two bytes,
-		// but if the image is too big, it gets cut.
-		sciImage->imageSize = bCell->xDim * bCell->yDim;
-	else
-	{
-		sciImage->imageSize = bCell->controlByteCount;
-	}
-
-	fseek(cfilebuf, offset + bCell->controlOffset, SEEK_SET);
-
-	sciImage->image = (unsigned char *)new char[sciImage->imageSize];
-	fread(sciImage->image, sciImage->imageSize, 1, cfilebuf);
-
-	if (bCell->compressType)
-	{
-		fseek(cfilebuf, offset + bCell->colorOffset, SEEK_SET);
-		sciImage->packSize = bCell->dataByteCount - bCell->controlByteCount;
-		sciImage->pack = (unsigned char *)new char[sciImage->packSize];
-		fread(sciImage->pack, sciImage->packSize, 1, cfilebuf);
-
-		if (bCell->rowTableOffset)
-		{
-		fseek(cfilebuf, offset + bCell->rowTableOffset, SEEK_SET);
-		sciImage->lineSize = bCell->yDim * 4 * 2;
-		sciImage->lines = (unsigned char *)new char[sciImage->lineSize];
-		fread(sciImage->lines, sciImage->lineSize, 1, cfilebuf);
-		}
-	}
-
-	if (!bCell->compressType)
-	{
-
-		//_imageSize = chead->imageandPackSize;
-		// unreliable!!! it's better to calculate it again
-		
-		sciImage->imageSize = bCell->xDim * bCell->yDim;
-
-		sciImage->packSize = 0;
-	}
-
-	cellImage = sciImage;	
+    CellImage* sciImage = new CellImage;
+    
+    // Initialize all members (fix for potential uninitialized data)
+    sciImage->lines = nullptr;
+    sciImage->pack = nullptr;
+    sciImage->image = nullptr;
+    sciImage->imageSize = 0;
+    sciImage->packSize = 0;
+    sciImage->lineSize = 0;
+    
+    const CelBase* bCell = reinterpret_cast<const CelBase*>(&Head);
+    const unsigned long pixelCount = bCell->xDim * bCell->yDim;
+    
+    if (!bCell->compressType) {
+        // Uncompressed image
+        // NOTE: imageandPackSize in certain files is wrong (Sierra's tool bug)
+        // Better to calculate it directly
+        sciImage->imageSize = pixelCount;
+        sciImage->packSize = 0;
+        
+        // Load image data
+        fseek(cfilebuf, offset + bCell->controlOffset, SEEK_SET);
+        sciImage->image = new unsigned char[sciImage->imageSize];
+        fread(sciImage->image, sciImage->imageSize, 1, cfilebuf);
+    } else {
+        // Compressed RLE image
+        sciImage->imageSize = bCell->controlByteCount;
+        
+        // Load control/tag data
+        fseek(cfilebuf, offset + bCell->controlOffset, SEEK_SET);
+        sciImage->image = new unsigned char[sciImage->imageSize];
+        fread(sciImage->image, sciImage->imageSize, 1, cfilebuf);
+        
+        // Load color/pack data
+        fseek(cfilebuf, offset + bCell->colorOffset, SEEK_SET);
+        sciImage->packSize = bCell->dataByteCount - bCell->controlByteCount;
+        sciImage->pack = new unsigned char[sciImage->packSize];
+        fread(sciImage->pack, sciImage->packSize, 1, cfilebuf);
+        
+        // Load line table if present
+        if (bCell->rowTableOffset) {
+            fseek(cfilebuf, offset + bCell->rowTableOffset, SEEK_SET);
+            sciImage->lineSize = bCell->yDim * 8; // 4 * 2 = 8 bytes per line
+            sciImage->lines = new unsigned char[sciImage->lineSize];
+            fread(sciImage->lines, sciImage->lineSize, 1, cfilebuf);
+        }
+    }
+    
+    cellImage = sciImage;
 }
 	
 void Cell::WriteImage(FILE *cfb)
