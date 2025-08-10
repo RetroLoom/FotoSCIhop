@@ -2094,478 +2094,661 @@ int cliSetHeader( int vanishX, int viewAngle )
 	return retVal;
 }
 
-RGBQUAD ExtractPaletteIndexFromBM(char *image, int index) 
-{
-	char bmPath[_MAX_PATH];
-	sprintf (bmPath, "%s\\%s", gAppPath, image);
+// =============================================================================
+// DISPLAY - CONFIGURATION CONSTANTS
+// =============================================================================
 
-    RGBQUAD rgbQuad[256];
-	memset (rgbQuad, 0, sizeof(RGBQUAD[256]));
-	
-	FILE *tempfile = fopen(bmPath, "rb");
-	if (tempfile)
-	{
-		BITMAPFILEHEADER tfh;
-		fread(&tfh, sizeof(BITMAPFILEHEADER), 1, tempfile);
+static const int UI_LEFT_MARGIN = 10;
+static const int UI_TOP_MARGIN = 30;
+static const int UI_PRIORITY_MARGIN = 5;
+static const int UI_INFO_HEIGHT = 20;
 
-		BITMAPINFOHEADER tbih;
-		fread(&tbih, sizeof(BITMAPINFOHEADER), 1, tempfile);
+static const int PALETTE_COLORS_PER_ROW = 16;
+static const int PALETTE_TOTAL_COLORS = 256;
+static const int PALETTE_CELL_WIDTH = 11;
+static const int PALETTE_CELL_HEIGHT = 16;
+static const int PALETTE_CELL_DISPLAY_SIZE = 10;
 
-		fread(rgbQuad, 256 * sizeof(RGBQUAD), 1, tempfile);
+static const int MAX_PRIORITY_LINES = 14;
+static const int MAX_LINK_POINTS = 12;
 
-		fclose(tempfile);
-	}
+static const int LINK_POINT_BASE_SIZE = 4;
+static const int LINK_POINT_ACCENT_THICKNESS = 2;
+static const int DOTTED_LINE_THICKNESS = 1;
+
+static const int COLOR_SWATCH_LEFT = 225;
+static const int COLOR_SWATCH_TOP = 2;
+static const int COLOR_SWATCH_RIGHT = 245;
+static const int COLOR_SWATCH_BOTTOM = 18;
+
+// Color constants for better readability
+static const COLORREF COLOR_RED = RGB(255, 0, 0);
+static const COLORREF COLOR_WHITE = RGB(255, 255, 255);
+static const COLORREF COLOR_BLACK = RGB(0, 0, 0);
+static const COLORREF COLOR_CYAN = RGB(0, 255, 255);
+
+// =============================================================================
+// DISPLAY - HELPER FUNCTIONS
+// =============================================================================
+
+// Fast integer scaling with bounds checking
+static int ScaleCoordinate(int value, int magnifyFactor) {
+    if (magnifyFactor <= 0) return value; // Safety check
+    return (value * magnifyFactor) / 100;
+}
+
+// Cached origin calculation to avoid repeated arithmetic
+static POINT GetDisplayOrigin() {
+    static int lastPicX = -1, lastPicY = -1, lastTableX = -1;
+    static POINT cachedOrigin = {0, 0};
+    
+    // Only recalculate if values have changed
+    if (picX != lastPicX || picY != lastPicY || tableX != lastTableX) {
+        cachedOrigin.x = UI_LEFT_MARGIN + picX + tableX;
+        cachedOrigin.y = UI_TOP_MARGIN + picY;
+        lastPicX = picX;
+        lastPicY = picY;
+        lastTableX = tableX;
+    }
+    
+    return cachedOrigin;
+}
+
+// Color conversion for performance
+static COLORREF RGBQUADToColorRef(const RGBQUAD& quad) {
+    return RGB(quad.rgbRed, quad.rgbGreen, quad.rgbBlue);
+}
+
+// Safe GDI object deletion with null checking
+static void SafeDeleteGDIObject(HGDIOBJ obj) {
+    if (obj && obj != GetStockObject(NULL_PEN) && obj != GetStockObject(NULL_BRUSH)) {
+        DeleteObject(obj);
+    }
+}
+
+// Text drawing with consistent formatting
+static void DrawTextInRect(HDC hdc, const char* text, int left, int top, int right, int bottom) {
+    if (!text || !*text) return; // Early exit for empty strings
+    
+    RECT textRect = {left, top, right, bottom};
+    DrawText(hdc, text, -1, &textRect, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+}
+
+// Point drawing helper
+static void DrawPoint(HDC hdc, int x, int y, HPEN pen) {
+    HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+    MoveToEx(hdc, x, y, NULL);
+    LineTo(hdc, x, y);
+    SelectObject(hdc, oldPen);
+}
+
+// Enhanced bounds checking for arrays
+static bool IsValidIndex(int index, int maxSize) {
+    return index >= 0 && index < maxSize;
+}
+
+// Color interpolation for smooth gradients
+static COLORREF InterpolateColor(int current, int total, COLORREF startColor, COLORREF endColor) {
+    if (total <= 0) return startColor;
+    
+    double ratio = (double)current / (double)total;
+    int r1 = GetRValue(startColor), g1 = GetGValue(startColor), b1 = GetBValue(startColor);
+    int r2 = GetRValue(endColor), g2 = GetGValue(endColor), b2 = GetBValue(endColor);
+    
+    int r = (int)(r1 + ratio * (r2 - r1));
+    int g = (int)(g1 + ratio * (g2 - g1));
+    int b = (int)(b1 + ratio * (b2 - b1));
+    
+    return RGB(r, g, b);
+}
+
+// Helper function for skip color information
+static void DrawSkipColorInfo(HDC hdc, CelBase* bCell, char* textBuffer) {
+    if (!bCell || !textBuffer || !curCell || !(*curCell)) return;
+    
+    int result = sprintf(textBuffer, INTERFACE_SKIPCOLORSTR, bCell->skip);
+    if (result > 0) {
+        DrawTextInRect(hdc, textBuffer, 250, 0, 390, UI_INFO_HEIGHT);
+    }
+
+    // Draw color swatch with improved error handling
+    if ((*curCell)->bmInfo && IsValidIndex(bCell->skip, PALETTE_TOTAL_COLORS)) {
+        RGBQUAD skipColorQuad = (*curCell)->bmInfo->bmiColors[bCell->skip];
+        HBRUSH colorBrush = CreateSolidBrush(RGB(skipColorQuad.rgbRed, skipColorQuad.rgbGreen, skipColorQuad.rgbBlue));
+        HPEN outline = CreatePen(PS_SOLID, 1, COLOR_BLACK);
+        
+        HPEN oldPen = (HPEN)SelectObject(hdc, outline);
+        HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, colorBrush);
+        
+        Rectangle(hdc, COLOR_SWATCH_LEFT, COLOR_SWATCH_TOP, COLOR_SWATCH_RIGHT, COLOR_SWATCH_BOTTOM);
+        
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        
+        SafeDeleteGDIObject(colorBrush);
+        SafeDeleteGDIObject(outline);
+    }
+}
+
+// Helper function for changed indicator
+static void DrawChangedIndicator(HDC hdc) {
+    COLORREF oldTextColor = SetTextColor(hdc, COLOR_RED);
+    DrawTextInRect(hdc, INTERFACE_CHANGEDSTR, 480, 0, 530, UI_INFO_HEIGHT);
+    SetTextColor(hdc, oldTextColor); // Restore original color
+}
+
+// Helper function for palette status indicators
+static void DrawPaletteStatusIndicators(HDC hdc, Palette* tpalette) {
+    if (!tpalette->palData) {
+        DrawTextInRect(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 190, 320);
+        return;
+    }
+
+    // Missing colors indicator
+    HBRUSH cyanBrush = CreateSolidBrush(COLOR_CYAN);
+    HPEN redPen = CreatePen(PS_SOLID, 1, COLOR_RED);
+    
+    RECT indicatorRect = {20, 300, 30, 310};
+    FillRect(hdc, &indicatorRect, cyanBrush);
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, redPen);
+    MoveToEx(hdc, 19, 299, NULL);
+    LineTo(hdc, 31, 311);
+    MoveToEx(hdc, 19, 310, NULL);
+    LineTo(hdc, 31, 298);
+    SelectObject(hdc, oldPen);
+
+    DrawTextInRect(hdc, INTERFACE_MISSINGCOLORSSTR, 40, 295, 190, 315);
+
+    // Locked colors indicator (only for certain palette types)
+    if (!tpalette->Head.type) {
+        RECT lockRect = {20, 320, 30, 330};
+        FillRect(hdc, &lockRect, cyanBrush);
+
+        oldPen = (HPEN)SelectObject(hdc, redPen);
+        for (int i = 1; i <= 2; i++) {
+            int yLine = lockRect.bottom + i;
+            MoveToEx(hdc, lockRect.left, yLine, NULL);
+            LineTo(hdc, lockRect.right, yLine);
+        }
+
+        SelectObject(hdc, GetStockObject(WHITE_PEN));
+        MoveToEx(hdc, lockRect.left, lockRect.bottom, NULL);
+        LineTo(hdc, lockRect.right, lockRect.bottom);
+        SelectObject(hdc, oldPen);
+
+        DrawTextInRect(hdc, INTERFACE_LOCKEDCOLORSSTR, 40, 316, 190, 336);
+    }
+    
+    SafeDeleteGDIObject(cyanBrush);
+    SafeDeleteGDIObject(redPen);
+}
+
+RGBQUAD ExtractPaletteIndexFromBM(char *image, int index) {
+    // Early validation
+    if (!image || index < 0 || index >= PALETTE_TOTAL_COLORS) {
+        RGBQUAD defaultColor = {0, 0, 0, 0};
+        return defaultColor;
+    }
+
+    char bmPath[_MAX_PATH];
+    int result = sprintf(bmPath, "%s\\%s", gAppPath ? gAppPath : "", image);
+    if (result <= 0 || result >= _MAX_PATH) {
+        RGBQUAD errorColor = {0, 0, 0, 0};
+        return errorColor;
+    }
+
+    static RGBQUAD rgbQuad[PALETTE_TOTAL_COLORS];
+    static char lastImagePath[_MAX_PATH] = "";
+    
+    // Cache optimization - only reload if different image
+    if (strcmp(lastImagePath, bmPath) != 0) {
+        memset(rgbQuad, 0, sizeof(rgbQuad));
+        
+        FILE *tempfile = fopen(bmPath, "rb");
+        if (tempfile) {
+            BITMAPFILEHEADER tfh;
+            BITMAPINFOHEADER tbih;
+            
+            // Read headers with error checking
+            if (fread(&tfh, sizeof(BITMAPFILEHEADER), 1, tempfile) == 1 &&
+                fread(&tbih, sizeof(BITMAPINFOHEADER), 1, tempfile) == 1) {
+                
+                // Validate bitmap format
+                if (tfh.bfType == 0x4D42) { // "BM" signature
+                    fread(rgbQuad, sizeof(RGBQUAD), PALETTE_TOTAL_COLORS, tempfile);
+                    strncpy(lastImagePath, bmPath, _MAX_PATH - 1);
+                    lastImagePath[_MAX_PATH - 1] = '\0';
+                }
+            }
+            fclose(tempfile);
+        }
+    }
     
     return rgbQuad[index];
 }
 
-void DisplayReferenceImage(HDC hdc)
-{
-	CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-	HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+void DisplayReferenceImage(HDC hdc) {
+    if (!curCell || !(*curCell) || !gReferenceBM) return;
+    
+    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+    HBITMAP hbm = (HBITMAP)LoadImage(NULL, gReferenceBM, IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
 
-	if (hbm)
-	{
-		BITMAP bm;
-		GetObject(hbm, sizeof(BITMAP), &bm);
+    if (!hbm) return;
 
-		HDC memdc = CreateCompatibleDC(hdc);
-		SelectObject(memdc, hbm);
+    BITMAP bm;
+    GetObject(hbm, sizeof(BITMAP), &bm);
 
-		int scaleX = (bm.bmWidth * MagnifyFactor * gReferenceScaleX) / 10000;
-		int scaleY = (bm.bmHeight * MagnifyFactor * gReferenceScaleY) / 10000;
+    HDC memdc = CreateCompatibleDC(hdc);
+    if (!memdc) {
+        DeleteObject(hbm);
+        return;
+    }
+    
+    HBITMAP oldBitmap = (HBITMAP)SelectObject(memdc, hbm);
 
-		int xOrigin = (scaleX >> 1) - (gReferenceXHot * MagnifyFactor / 100);
-		int yOrigin = scaleY - (gReferenceYHot * MagnifyFactor / 100);
+    // Calculate scaling with overflow protection
+    int baseScaleX = (bm.bmWidth * gReferenceScaleX) / 10000;
+    int baseScaleY = (bm.bmHeight * gReferenceScaleY) / 10000;
+    
+    // Prevent zero or negative scaling
+    if (baseScaleX < 1) baseScaleX = 1;
+    if (baseScaleY < 1) baseScaleY = 1;
+    
+    int scaleX = ScaleCoordinate(baseScaleX, MagnifyFactor);
+    int scaleY = ScaleCoordinate(baseScaleY, MagnifyFactor);
 
-		int xHot = bCell->xHot * MagnifyFactor / 100;
-		int yHot = bCell->yHot * MagnifyFactor / 100;
+    int xOrigin = (scaleX >> 1) - ScaleCoordinate(gReferenceXHot, MagnifyFactor);
+    int yOrigin = scaleY - ScaleCoordinate(gReferenceYHot, MagnifyFactor);
 
-		int xPos = gReferenceLinkPointX - xOrigin + xHot;
-		int yPos = gReferenceLinkPointY - yOrigin + yHot;
+    int xHot = ScaleCoordinate(bCell->xHot, MagnifyFactor);
+    int yHot = ScaleCoordinate(bCell->yHot, MagnifyFactor);
 
-		if (gReferenceLinkPoint && gReferenceLinkPoint < 12)
-		{
-			xPos = ((*curCell)->linkPoints[gReferenceLinkPoint - 1].x * MagnifyFactor / 100) - xOrigin + xHot;
-			yPos = ((*curCell)->linkPoints[gReferenceLinkPoint - 1].y * MagnifyFactor / 100) - yOrigin + yHot;
-		}
+    // Calculate position with bounds checking
+    int xPos = gReferenceLinkPointX - xOrigin + xHot;
+    int yPos = gReferenceLinkPointY - yOrigin + yHot;
 
-		int posX = 10 + picX + tableX + xPos;
-		int posY = 30 + picY + yPos;
+    // Safe link point access
+    if (IsValidIndex(gReferenceLinkPoint - 1, MAX_LINK_POINTS) && gReferenceLinkPoint > 0) {
+        int linkIndex = gReferenceLinkPoint - 1;
+        xPos = ScaleCoordinate((*curCell)->linkPoints[linkIndex].x, MagnifyFactor) - xOrigin + xHot;
+        yPos = ScaleCoordinate((*curCell)->linkPoints[linkIndex].y, MagnifyFactor) - yOrigin + yHot;
+    }
 
-		RGBQUAD refSkip = ExtractPaletteIndexFromBM(gReferenceBM, gReferenceTransparentIndex);
+    POINT origin = GetDisplayOrigin();
+    int posX = origin.x + xPos;
+    int posY = origin.y + yPos;
 
-		TransparentBlt(hdc, posX, posY, scaleX, scaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight,
-					   RGB(refSkip.rgbRed, refSkip.rgbGreen, refSkip.rgbBlue));
-	}
+    RGBQUAD refSkip = ExtractPaletteIndexFromBM(gReferenceBM, gReferenceTransparentIndex);
+
+    TransparentBlt(hdc, posX, posY, scaleX, scaleY, memdc, 0, 0, bm.bmWidth, bm.bmHeight,
+                   RGBQUADToColorRef(refSkip));
+
+    // Cleanup
+    SelectObject(memdc, oldBitmap);
+    DeleteDC(memdc);
+    DeleteObject(hbm);
 }
 
-void DisplayImage(HDC hdc, unsigned char *bmImage, BITMAPINFO *bmInfo, int xPos, int yPos)
-{
-	int xOrigin = 10 + picX + tableX;
-	int yOrigin = 30 + picY;
+void DisplayImage(HDC hdc, unsigned char *bmImage, BITMAPINFO *bmInfo, int xPos, int yPos) {
+    if (!bmImage || !bmInfo) return;
 
-	xPos = xOrigin + (xPos * MagnifyFactor) / 100;
-	yPos = yOrigin + (yPos * MagnifyFactor) / 100;
+    POINT origin = GetDisplayOrigin();
+    
+    int scaledX = origin.x + ScaleCoordinate(xPos, MagnifyFactor);
+    int scaledY = origin.y + ScaleCoordinate(yPos, MagnifyFactor);
 
-	int bmWidth = bmInfo->bmiHeader.biWidth;
-	int bmHeight = bmInfo->bmiHeader.biHeight;
+    int bmWidth = bmInfo->bmiHeader.biWidth;
+    int bmHeight = bmInfo->bmiHeader.biHeight;
 
-	HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
-	HDC memdc = CreateCompatibleDC(hdc);
-	SelectObject(memdc, hbm);
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
+    HDC memdc = CreateCompatibleDC(hdc);
+    HBITMAP oldBitmap = (HBITMAP)SelectObject(memdc, hbm);
 
-	SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-					  bmImage, bmInfo, DIB_RGB_COLORS);
+    SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
+                      bmImage, bmInfo, DIB_RGB_COLORS);
 
-	TransparentBlt(hdc, xPos, yPos, (bmWidth * MagnifyFactor) / 100, (-bmHeight * MagnifyFactor) / 100, memdc, 0, 0, bmWidth, -bmHeight, RGB(skipColor.rgbRed, skipColor.rgbGreen, skipColor.rgbBlue));
+    int scaledWidth = ScaleCoordinate(bmWidth, MagnifyFactor);
+    int scaledHeight = ScaleCoordinate(-bmHeight, MagnifyFactor);
 
-	DeleteDC(memdc);
+    TransparentBlt(hdc, scaledX, scaledY, scaledWidth, scaledHeight, 
+                   memdc, 0, 0, bmWidth, -bmHeight, 
+                   RGBQUADToColorRef(skipColor));
+
+    // Cleanup
+    SelectObject(memdc, oldBitmap);
+    DeleteObject(hbm);
+    DeleteDC(memdc);
 }
 
-void DisplayCell(HDC hdc, int index)
-{
-	if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage)
-	{
-		delete globalPicture->cells[index]->bmImage;
+void DisplayCell(HDC hdc, int index) {
+    if (!globalPicture || index < 0 || index >= globalPicture->CellsCount()) return;
 
-		if (globalPicture->cells[index]->bmInfo)
-			delete globalPicture->cells[index]->bmInfo;
+    // Using C-style cast to avoid auto keyword issues
+    void* cellPtr = globalPicture->cells[index];
+    if (!cellPtr) return;
 
-		globalPicture->cells[index]->bmInfo = 0;
-		globalPicture->cells[index]->bmImage = 0;
-	}
+    // Refresh bitmap data if needed
+    if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage) {
+        delete globalPicture->cells[index]->bmImage;
+        if (globalPicture->cells[index]->bmInfo) {
+            delete globalPicture->cells[index]->bmInfo;
+        }
+        globalPicture->cells[index]->bmInfo = 0;
+        globalPicture->cells[index]->bmImage = 0;
+    }
 
-	if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage)
-		globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);	
+    if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage) {
+        globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);
+    }
 
-	if (globalPicture->cells[index]->bmInfo)
-	{
-		CelHeaderPic *bCell;
-		bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
+    if (!globalPicture->cells[index]->bmInfo) return;
 
-		skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+    CelHeaderPic *bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
+    skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
 
-		DisplayImage(hdc, globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, bCell->xpos, bCell->ypos);
-	}
+    DisplayImage(hdc, globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, bCell->xpos, bCell->ypos);
 }
 
+void DisplayCurrentView(HDC hdc) {
+    if (!curCell || !(*curCell)) return;
 
-void DisplayCurrentView(HDC hdc)
-{
-	if ((*curCell)->cellImage->image != (*curCell)->bmImage)
-	{
-		delete (*curCell)->bmImage;
+    // Refresh bitmap data if needed
+    if ((*curCell)->cellImage->image != (*curCell)->bmImage) {
+        delete (*curCell)->bmImage;
+        if ((*curCell)->bmInfo) {
+            delete (*curCell)->bmInfo;
+        }
+        (*curCell)->bmInfo = 0;
+        (*curCell)->bmImage = 0;
+    }
 
-		if ((*curCell)->bmInfo)
-			delete (*curCell)->bmInfo;
+    if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+        (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+    }
 
-		(*curCell)->bmInfo = 0;
-		(*curCell)->bmImage = 0;
-	}
+    if (!(*curCell)->bmInfo) return;
 
-	if (!(*curCell)->bmInfo || !(*curCell)->bmImage)
-		(*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+    skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
 
-	CelHeaderView *bCell;
-	bCell = (CelHeaderView *)&(*curCell)->Head;
-	skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
-
-	DisplayImage(hdc, (*curCell)->bmImage, (*curCell)->bmInfo, bCell->xHot, bCell->yHot);
+    DisplayImage(hdc, (*curCell)->bmImage, (*curCell)->bmInfo, bCell->xHot, bCell->yHot);
 }
 
-void DisplayLinkPoints(HDC hdc)
-{
-	CelHeaderView *bCell;
-	bCell = (CelHeaderView *)&(*curCell)->Head;
+void DisplayLinkPoints(HDC hdc) {
+    if (!curCell || !(*curCell)) return;
 
-	int xOrigin = 10 + picX + tableX;
-	int yOrigin = 30 + picY;
+    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+    if (bCell->linkTableCount <= 0) return;
 
-	int xHot = (bCell->xHot * MagnifyFactor) / 100;
-	int yHot = (bCell->yHot * MagnifyFactor) / 100;
+    POINT origin = GetDisplayOrigin();
+    
+    int xHot = ScaleCoordinate(bCell->xHot, MagnifyFactor);
+    int yHot = ScaleCoordinate(bCell->yHot, MagnifyFactor);
+    int pointSize = ScaleCoordinate(LINK_POINT_BASE_SIZE, MagnifyFactor);
 
-	int linkX = ((*curCell)->linkPoints[bCell->linkTableCount - 1].x * MagnifyFactor) / 100;
-	int linkY = ((*curCell)->linkPoints[bCell->linkTableCount - 1].y * MagnifyFactor) / 100;
+    // Create base pens
+    HPEN accentPen = CreatePen(PS_SOLID, pointSize + LINK_POINT_ACCENT_THICKNESS, COLOR_WHITE);
+    
+    // Calculate and draw last link point with accent
+    int lastIndex = (bCell->linkTableCount - 1 < MAX_LINK_POINTS - 1) ? bCell->linkTableCount - 1 : MAX_LINK_POINTS - 1;
+    int linkX = ScaleCoordinate((*curCell)->linkPoints[lastIndex].x, MagnifyFactor);
+    int linkY = ScaleCoordinate((*curCell)->linkPoints[lastIndex].y, MagnifyFactor);
+    int xPos = origin.x + xHot + linkX;
+    int yPos = origin.y + yHot + linkY;
 
-	int xPos = xOrigin + xHot + linkX;
-	int yPos = yOrigin + yHot + linkY;
+    HPEN lastPointPen = CreatePen(PS_SOLID, pointSize, COLOR_RED);
+    DrawPoint(hdc, xPos, yPos, accentPen);
+    DrawPoint(hdc, xPos, yPos, lastPointPen);
 
-	int pointSize = (4 * MagnifyFactor) / 100;
-	int dottedSize = 1;
+    // Early exit if only one point
+    if (bCell->linkTableCount <= 1) {
+        SafeDeleteGDIObject(accentPen);
+        SafeDeleteGDIObject(lastPointPen);
+        return;
+    }
 
-	HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(255, 0, 0));
-	HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(255, 0, 0));
-	HPEN accentPen = CreatePen(PS_SOLID, pointSize + 2, RGB(255, 255, 255));
+    // Set up for line drawing
+    HPEN oldPen = (HPEN)SelectObject(hdc, accentPen);
 
-	// Select the accent pen for drawing and draw a point at the position of the last link point
-	SelectObject(hdc, accentPen);
-	MoveToEx(hdc, xPos,  yPos, NULL);
-	LineTo(hdc, xPos, yPos);
+    // Draw trail through all link points with improved color interpolation
+    int maxPoints = (bCell->linkTableCount < MAX_LINK_POINTS) ? bCell->linkTableCount : MAX_LINK_POINTS;
+    for (int i = 0; i < maxPoints; i++) {
+        // Calculate coordinates for current link point
+        linkX = ScaleCoordinate((*curCell)->linkPoints[i].x, MagnifyFactor);
+        linkY = ScaleCoordinate((*curCell)->linkPoints[i].y, MagnifyFactor);
+        xPos = origin.x + xHot + linkX;
+        yPos = origin.y + yHot + linkY;
 
-	// Select the solid pen for drawing and draw a point at the position of the last link point
-	SelectObject(hdc, solidPointPen);
-	MoveToEx(hdc, xPos, yPos, NULL);
-	LineTo(hdc, xPos, yPos);
+        // Use smooth color interpolation instead of stepped
+        COLORREF pointColor = InterpolateColor(i, bCell->linkTableCount - 1, COLOR_RED, RGB(0, 0, 255));
+        
+        // Create colored pens for this point
+        HPEN coloredDottedPen = CreatePen(PS_DOT, DOTTED_LINE_THICKNESS, pointColor);
+        HPEN coloredSolidPen = CreatePen(PS_SOLID, pointSize, pointColor);
 
-	// Select the dotted pen for drawing
-	SelectObject(hdc, dottedPen);
+        // Draw dotted line to current point
+        SelectObject(hdc, coloredDottedPen);
+        LineTo(hdc, xPos, yPos);
 
-	// Iterate through all the link points and draw lines between them
-	for (int i = 0; i < bCell->linkTableCount; i++)
-	{
-		bCell = (CelHeaderView *)&globalView->loops[curLoopIndex]->cells[curCellIndex]->Head;
+        // Draw accent and colored point
+        DrawPoint(hdc, xPos, yPos, accentPen);
+        DrawPoint(hdc, xPos, yPos, coloredSolidPen);
+        
+        // Cleanup colored pens
+        SafeDeleteGDIObject(coloredDottedPen);
+        SafeDeleteGDIObject(coloredSolidPen);
+    }
 
-		// Calculate the x and y coordinates for the current link point
-		linkX = ((*curCell)->linkPoints[i].x * MagnifyFactor) / 100;
-		linkY = ((*curCell)->linkPoints[i].y * MagnifyFactor) / 100;
-
-		// Calculate the x and y shift values for the current cell
-		xPos = xOrigin + xHot + linkX;
-		yPos = yOrigin + yHot + linkY;
-
-		// Calculate the color of the pen for the current link point
-		int colorStep = 255 / bCell->linkTableCount;
-		int colorRed = 255 - (colorStep * i);
-		int colorBlue = (colorStep * i);
-
-		// Create a dotted pen with the calculated color and size
-		HPEN dottedPen = CreatePen(PS_DOT, dottedSize, RGB(colorRed, 0, colorBlue));
-
-		// Select the dotted pen for drawing
-		SelectObject(hdc, dottedPen);
-
-		// Draw a dotted line from the previous link point to the current one
-		LineTo(hdc, xPos, yPos);
-
-		// Select the accent pen for drawing and draw a point at the position of the last link point
-		SelectObject(hdc, accentPen);
-		MoveToEx(hdc, xPos, yPos, NULL);
-		LineTo(hdc, xPos, yPos);
-
-		// Create a solid point pen with the calculated color and size
-		HPEN solidPointPen = CreatePen(PS_SOLID, pointSize, RGB(colorRed, 0, colorBlue));
-
-		// Select the solid point pen for drawing
-		SelectObject(hdc, solidPointPen);
-
-		// Draw a solid point at the current link point
-		MoveToEx(hdc, xPos, yPos, NULL);
-		LineTo(hdc, xPos, yPos);
-	}
+    SelectObject(hdc, oldPen);
+    SafeDeleteGDIObject(accentPen);
+    SafeDeleteGDIObject(lastPointPen);
 }
 
-void DisplayCurrentPic(HDC hdc)
-{
-	if (curCellIndex == 0)
-		for (int i = 0; i < globalPicture->CellsCount(); i++)
-			DisplayCell(hdc, i);
-	else
-		DisplayCell(hdc, curCellIndex);
+void DisplayCurrentPic(HDC hdc) {
+    if (!globalPicture) return;
+
+    if (curCellIndex == 0) {
+        // Display all cells
+        for (int i = 0; i < globalPicture->CellsCount(); i++) {
+            DisplayCell(hdc, i);
+        }
+    } else {
+        // Display specific cell
+        DisplayCell(hdc, curCellIndex);
+    }
 }
 
-void DisplayPriorityBars(HDC hdc)
-{
-	CelHeaderPic *bCell;
-	bCell = (CelHeaderPic *)&(*curCell)->Head;
+void DisplayPriorityBars(HDC hdc) {
+    if (!globalPicture || !curCell || !(*curCell)) return;
 
-	int xOrigin = 5 + picX + tableX;
-	int yOrigin = 30 + picY;
+    int xOrigin = UI_PRIORITY_MARGIN + picX + tableX;
+    int yOrigin = UI_TOP_MARGIN + picY;
 
-	HPEN redpen = CreatePen(PS_SOLID, (1 * MagnifyFactor) / 100, RGB(255, 0, 0));
-	SelectObject(hdc, redpen);
+    HPEN redpen = CreatePen(PS_SOLID, ScaleCoordinate(1, MagnifyFactor), COLOR_RED);
+    HPEN oldPen = (HPEN)SelectObject(hdc, redpen);
 
-	if (globalPicture->format == _PIC_11)
-	{
-		for (int i = 0; i < 14; i++)
-		{
-			CelBase *bCell;
-			bCell = (CelBase *)&globalPicture->cells[curCellIndex]->Head;
+    if (globalPicture->format == _PIC_11) {
+        // SCI 1.1 priority lines - validate cell index
+        if (!IsValidIndex(curCellIndex, globalPicture->CellsCount())) {
+            SelectObject(hdc, oldPen);
+            SafeDeleteGDIObject(redpen);
+            return;
+        }
+        
+        CelBase *bCell = (CelBase *)&globalPicture->cells[curCellIndex]->Head;
+        int xSpan = xOrigin + ScaleCoordinate(bCell->xDim, MagnifyFactor);
+        
+        for (int i = 0; i < MAX_PRIORITY_LINES; i++) {
+            int yPos = yOrigin + ScaleCoordinate(globalPicture->Head.pic11.priLines[i], MagnifyFactor);
+            
+            MoveToEx(hdc, xOrigin, yPos, NULL);
+            LineTo(hdc, xSpan, yPos);
+        }
+    } else {
+        // SCI32 priority lines - optimized loop
+        int cellCount = globalPicture->CellsCount();
+        
+        for (int i = 1; i < cellCount; i++) {
+            // Skip if not displaying this cell
+            if (curCellIndex != i && curCellIndex != 0) continue;
+            
+            CelHeaderPic *bCell = (CelHeaderPic *)&globalPicture->cells[i]->Head;
 
-			MoveToEx(hdc, xOrigin, yOrigin + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100, NULL);
-			LineTo(hdc, xOrigin + (bCell->xDim * MagnifyFactor) / 100, yOrigin + (globalPicture->Head.pic11.priLines[i] * MagnifyFactor) / 100);
-		}
-	}
+            int xPos = xOrigin + ScaleCoordinate(bCell->xpos, MagnifyFactor);
+            int xSpan = xPos + ScaleCoordinate(bCell->xDim, MagnifyFactor);
+            
+            // Prevent division by zero
+            int priorityScale = (zScale > 0) ? zScale : 100;
+            int zOffset = bCell->ypos + bCell->yDim - (bCell->priority * priorityScale / 100);
+            int zDepth = bCell->ypos + bCell->yDim - zOffset;
+            int yPos = yOrigin + ScaleCoordinate(zDepth, MagnifyFactor);
+            
+            MoveToEx(hdc, xPos, yPos, NULL);
+            LineTo(hdc, xSpan, yPos);
+        }
+    }
 
-	if (globalPicture->format != _PIC_11)
-	{
-		for (int i = 1; i < globalPicture->CellsCount(); i++)
-		{
-			CelHeaderPic *bCell;
-			bCell = (CelHeaderPic *)&globalPicture->cells[i]->Head;
-
-			int xPos = xOrigin + (bCell->xpos * MagnifyFactor / 100 );
-			int xSpan = xPos + (bCell->xDim * MagnifyFactor / 100);
-						
-			int zOffset = bCell->ypos + bCell->yDim - (bCell->priority * zScale / 100);
-			int zDepth = bCell->ypos + bCell->yDim - zOffset;
-			int yPos = yOrigin + (zDepth * MagnifyFactor / 100);
-			
-			if (curCellIndex == i || curCellIndex == 0)
-			{
-				MoveToEx(hdc, xPos,  yPos, NULL);
-				LineTo(hdc, xSpan, yPos);
-			}
-		}
-	}
+    SelectObject(hdc, oldPen);
+    SafeDeleteGDIObject(redpen);
 }
 
-void DrawPaletteTable (HDC hdc)
-{
-	HPEN redpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
+void DrawPaletteTable(HDC hdc) {
+    HPEN redpen = CreatePen(PS_SOLID, 1, COLOR_RED);
+    
+    Palette *tpalette = (isPicture ? globalPicture->palSCI : globalView->palSCI);
+    
+    if (!tpalette) {
+        DrawTextInRect(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 190, 320);
+        SafeDeleteGDIObject(redpen);
+        return;
+    }
 
-	HBRUSH tbrush;
-	Palette *tpalette = (isPicture ? globalPicture->palSCI : globalView->palSCI);
-	for (int i = 0; i < 16; i++)
-		for (int j = 0; j < 16; j++)
-		{
-			PalEntry *tentry = tpalette->GetPalEntry(i * 16 + j);
+    // Draw palette grid with optimized drawing
+    for (int i = 0; i < PALETTE_COLORS_PER_ROW; i++) {
+        for (int j = 0; j < PALETTE_COLORS_PER_ROW; j++) {
+            int colorIndex = i * PALETTE_COLORS_PER_ROW + j;
+            PalEntry *tentry = tpalette->GetPalEntry(colorIndex);
+            
+            if (!tentry) continue; // Safety check
 
-			tbrush = CreateSolidBrush(RGB(tentry->red, tentry->green, tentry->blue));
+            // Calculate cell rectangle once
+            RECT cellRect = {
+                UI_LEFT_MARGIN + (j * PALETTE_CELL_WIDTH), 
+                UI_TOP_MARGIN + (i * PALETTE_CELL_HEIGHT), 
+                UI_LEFT_MARGIN + (j * PALETTE_CELL_WIDTH) + PALETTE_CELL_DISPLAY_SIZE, 
+                UI_TOP_MARGIN + (i * PALETTE_CELL_HEIGHT) + PALETTE_CELL_DISPLAY_SIZE
+            };
 
-			SetRect(&rc, 10 + (j * 11), 30 + (i * 16), 20 + (j * 11), 40 + (i * 16));
-			FillRect(hdc, &rc, tbrush);
-			DeleteObject(tbrush);
+            // Fill color cell
+            HBRUSH tbrush = CreateSolidBrush(RGB(tentry->red, tentry->green, tentry->blue));
+            FillRect(hdc, &cellRect, tbrush);
+            SafeDeleteGDIObject(tbrush);
 
-			if (tentry->remap == 1)
-			{
-				HPEN tpen = CreatePen(PS_SOLID, 1, RGB(255, 0, 0));
-				SelectObject(hdc, tpen);
-				MoveToEx(hdc, 10 + (j * 11), 41 + (i * 16), NULL);
-				LineTo(hdc, 20 + (j * 11), 41 + (i * 16));
+            // Draw remap indicator with optimized pen management
+            if (tentry->remap == 1) {
+                HPEN remapRedPen = CreatePen(PS_SOLID, 1, COLOR_RED);
+                HPEN oldPen = (HPEN)SelectObject(hdc, remapRedPen);
+                
+                // Red indicator lines
+                for (int lineOffset = 1; lineOffset <= 2; lineOffset++) {
+                    int yLine = cellRect.bottom + lineOffset;
+                    MoveToEx(hdc, cellRect.left, yLine, NULL);
+                    LineTo(hdc, cellRect.right, yLine);
+                }
+                
+                // White line
+                SelectObject(hdc, GetStockObject(WHITE_PEN));
+                MoveToEx(hdc, cellRect.left, cellRect.bottom - 1, NULL);
+                LineTo(hdc, cellRect.right, cellRect.bottom - 1);
+                
+                SelectObject(hdc, oldPen);
+                SafeDeleteGDIObject(remapRedPen);
+            }
 
-				MoveToEx(hdc, 10 + (j * 11), 40 + (i * 16), NULL);
-				LineTo(hdc, 20 + (j * 11), 40 + (i * 16));
-				SelectObject(hdc, GetStockObject(WHITE_PEN));
-				DeleteObject(tpen);
-				MoveToEx(hdc, 10 + (j * 11), 39 + (i * 16), NULL);
-				LineTo(hdc, 20 + (j * 11), 39 + (i * 16));
-				SelectObject(hdc, GetStockObject(BLACK_PEN));
-			}
+            // Draw invalid color indicator
+            bool isOutOfRange = (colorIndex < tpalette->Head.startOffset) ||
+                               (colorIndex >= tpalette->Head.startOffset + tpalette->Head.nColors);
+                               
+            if (isOutOfRange) {
+                HPEN oldPen = (HPEN)SelectObject(hdc, redpen);
+                
+                // Draw X pattern with extended bounds for visibility
+                MoveToEx(hdc, cellRect.left - 1, cellRect.top - 1, NULL);
+                LineTo(hdc, cellRect.right + 1, cellRect.bottom + 1);
+                MoveToEx(hdc, cellRect.left - 1, cellRect.bottom, NULL);
+                LineTo(hdc, cellRect.right + 1, cellRect.top - 2);
+                
+                SelectObject(hdc, oldPen);
+            }
+        }
+    }
 
-			if (((i * 16 + j) < tpalette->Head.startOffset) ||
-				((i * 16 + j) >= tpalette->Head.startOffset + tpalette->Head.nColors))
-			{
-				SelectObject(hdc, redpen);
-				MoveToEx(hdc, 9 + (j * 11), 29 + (i * 16), NULL);
-				LineTo(hdc, 21 + (j * 11), 41 + (i * 16));
-				MoveToEx(hdc, 9 + (j * 11), 40 + (i * 16), NULL);
-				LineTo(hdc, 21 + (j * 11), 28 + (i * 16));
-				SelectObject(hdc, GetStockObject(BLACK_PEN));
-			}
-		}
-
-	if (tpalette->palData)
-	{
-		tbrush = CreateSolidBrush(RGB(0, 255, 255));
-
-		SetRect(&rc, 20, 300, 30, 310);
-		FillRect(hdc, &rc, tbrush);
-		DeleteObject(tbrush);
-
-		SelectObject(hdc, redpen);
-		MoveToEx(hdc, 19, 299, NULL);
-		LineTo(hdc, 31, 311);
-		MoveToEx(hdc, 19, 310, NULL);
-		LineTo(hdc, 31, 298);
-		SelectObject(hdc, GetStockObject(BLACK_PEN));
-
-		SetRect(&rc, 40, 295, 190, 315);
-		DrawText(hdc, INTERFACE_MISSINGCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-		if (!tpalette->Head.type)
-		{
-			SetRect(&rc, 20, 320, 30, 330);
-			FillRect(hdc, &rc, tbrush);
-			DeleteObject(tbrush);
-
-			SelectObject(hdc, redpen);
-			MoveToEx(hdc, 20, 332, NULL);
-			LineTo(hdc, 30, 332);
-			MoveToEx(hdc, 20, 331, NULL);
-			LineTo(hdc, 30, 331);
-
-			SelectObject(hdc, GetStockObject(WHITE_PEN));
-
-			MoveToEx(hdc, 20, 330, NULL);
-			LineTo(hdc, 30, 330);
-			SelectObject(hdc, GetStockObject(BLACK_PEN));
-
-			SetRect(&rc, 40, 316, 190, 336);
-			DrawText(hdc, INTERFACE_LOCKEDCOLORSSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-		}
-	}
-	else
-	{
-		SetRect(&rc, 30, 300, 190, 320);
-		DrawText(hdc, INTERFACE_MISSINGPALETTE, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-	}
-
-	// SetRect(&rc, 20, 340, 440, 900);
-	// DoPropertyTable(hWnd);
-	// DrawText (hdc, INTERFACE_PROPTABLE, -1, &rc, DT_LEFT | DT_VCENTER);
-
-	DeleteObject(redpen);
+    // Draw palette status indicators
+    DrawPaletteStatusIndicators(hdc, tpalette);
+    SafeDeleteGDIObject(redpen);
 }
 
-void DrawCellInfo (HDC hdc)
-{
-	CelBase *bCell;
-	bCell = (CelBase *)&(*curCell)->Head;
+void DrawCellInfo(HDC hdc) {
+    if (!curCell || !(*curCell)) return;
 
-	if (globalView)
-	{
-		char finalstr[64];
-		sprintf(finalstr, INTERFACE_LOOPSSTR, curLoopIndex + 1, globalView->Head.view32.loopCount);
-		SetRect(&rc, 25, 0, 125, 20);
-		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+    CelBase *bCell = (CelBase *)&(*curCell)->Head;
+    
+    // Optimized text buffer to reduce sprintf calls
+    char textBuffer[128];
 
-		if (curLoop)
-		{
-			if ((*curLoop)->Head.flags)
-			{
-				char mirr[64];
-				sprintf(mirr, INTERFACE_MIRROREDSTR, (*curLoop)->Head.altLoop + 1);
-				SetRect(&rc, 125, 0, 325, 20);
-				DrawText(hdc, mirr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-			}
-			else
-			{
-				sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, (*curLoop)->Head.numCels);
-				SetRect(&rc, 125, 0, 225, 20);
-				DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-			}
-		}
+    // Draw view-specific information
+    if (globalView) {
+        // Loop count information
+        int result = sprintf(textBuffer, INTERFACE_LOOPSSTR, curLoopIndex + 1, globalView->Head.view32.loopCount);
+        if (result > 0) {
+            DrawTextInRect(hdc, textBuffer, 25, 0, 125, UI_INFO_HEIGHT);
+        }
 
-		if (!(*curLoop)->Head.flags)
-		{
+        if (curLoop && (*curLoop)) {
+            if ((*curLoop)->Head.flags) {
+                // Mirrored loop information
+                result = sprintf(textBuffer, INTERFACE_MIRROREDSTR, (*curLoop)->Head.altLoop + 1);
+                if (result > 0) {
+                    DrawTextInRect(hdc, textBuffer, 125, 0, 325, UI_INFO_HEIGHT);
+                }
+            } else {
+                // Cell count information
+                result = sprintf(textBuffer, INTERFACE_CELLSSTR, curCellIndex + 1, (*curLoop)->Head.numCels);
+                if (result > 0) {
+                    DrawTextInRect(hdc, textBuffer, 125, 0, 225, UI_INFO_HEIGHT);
+                }
+            }
+        }
 
-			char finalstr[64];
-			sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
-			SetRect(&rc, 250, 0, 390, 20);
-			DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-			// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
+        // Skip color info for non-mirrored loops
+        if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+            DrawSkipColorInfo(hdc, bCell, textBuffer);
+            
+            if ((*curCell)->changed) {
+                DrawChangedIndicator(hdc);
+            }
+        }
+    }
 
-			if ((*curCell)->bmInfo)
-			{
-				HPEN outline = CreatePen(PS_SOLID, 1, RGB(0, 0, 0));
-				SelectObject(hdc, outline);
+    // Draw picture-specific information
+    if (globalPicture) {
+        DrawSkipColorInfo(hdc, bCell, textBuffer);
 
-				RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
-				HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
-				SelectBrush(hdc, tbrush);
-				Rectangle(hdc, 225, 2, 245, 18);
+        // Version information
+        const char* versionStr = (globalPicture->format == _PIC_11) ? "SCI1.1" : "SCI32";
+        DrawTextInRect(hdc, versionStr, 25, 0, 100, UI_INFO_HEIGHT);
 
-				DeleteObject(tbrush);
-			}
+        // Cell count for pictures
+        int result = sprintf(textBuffer, INTERFACE_CELLSSTR, curCellIndex + 1, globalPicture->CellsCount());
+        if (result > 0) {
+            DrawTextInRect(hdc, textBuffer, 125, 0, 250, UI_INFO_HEIGHT);
+        }
 
-			if ((*curCell)->changed)
-			{
-				SetTextColor(hdc, RGB(255, 0, 0));
-				SetRect(&rc, 480, 0, 530, 20);
-				DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-				SetTextColor(hdc, RGB(0, 0, 0));
-			}
-		}
-	}
-
-	if (globalPicture)
-	{
-		// Draw transparency info
-		char finalstr[64];
-		sprintf(finalstr, INTERFACE_SKIPCOLORSTR, bCell->skip);
-		SetRect(&rc, 250, 0, 390, 20);
-		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-		// or TextOut(hdc, 230,0, finalstr,strlen(finalstr));
-		if ((*curCell)->bmInfo)
-		{
-			RGBQUAD tquad = (*curCell)->bmInfo->bmiColors[bCell->skip];
-			HBRUSH tbrush = CreateSolidBrush(RGB(tquad.rgbRed, tquad.rgbGreen, tquad.rgbBlue));
-			SelectBrush(hdc, tbrush);
-			Rectangle(hdc, 225, 2, 245, 18);
-
-			DeleteObject(tbrush);
-		}
-
-		// Draw version info
-		char vers[10];
-		strcpy(vers, (globalPicture->format == _PIC_11 ? "SCI1.1" : "SCI32"));
-		SetRect(&rc, 25, 0, 100, 20);
-		DrawText(hdc, vers, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-		// char finalstr[64];
-		sprintf(finalstr, INTERFACE_CELLSSTR, curCellIndex + 1, globalPicture->CellsCount());
-		SetRect(&rc, 125, 0, 250, 20);
-		DrawText(hdc, finalstr, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-
-		if ((*curCell)->changed)
-		{
-			SetTextColor(hdc, RGB(255, 0, 0));
-			SetRect(&rc, 480, 0, 530, 20);
-			DrawText(hdc, INTERFACE_CHANGEDSTR, -1, &rc, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
-			SetTextColor(hdc, RGB(0, 0, 0));
-		}
-	}
+        if ((*curCell)->changed) {
+            DrawChangedIndicator(hdc);
+        }
+    }
 }
 
 void LoadConfig ()
