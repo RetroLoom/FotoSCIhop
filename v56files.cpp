@@ -165,47 +165,6 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
     return ID_NOERROR;
 }
 
-int V56file::addLoops( int base, int amount )
-{
-	int retVal = 0;
-
-	int loopIndex = 0;
-
-	if (amount >= 0)
-	{
-		for (int j = 0; j < Head.view32.loopCount; j++)
-		loopIndex++;
-
-		Head.view32.loopCount = Head.view32.loopCount + amount;
-
-		for (int j = 0; j < amount; j++)
-		{
-			loops[loopIndex] = loops[base];
-
-			loops[loopIndex]->Head = loops[base]->Head;
-			Head.view32.celCount = Head.view32.celCount + loops[loopIndex]->Head.numCels;
-
-			loopIndex++;
-		}
-	}
-	else
-	{
-		for (int j = 0; j < Head.view32.loopCount + amount; j++)
-			loopIndex++;
-
-		for (int j = Head.view32.loopCount + amount; j < Head.view32.loopCount; j++)
-		{
-			Head.view32.celCount = Head.view32.celCount - loops[loopIndex]->Head.numCels;
-			loopIndex++;
-		}
-
-		Head.view32.loopCount = Head.view32.loopCount + amount;		
-	}
-
-	retVal = 1;
-	return retVal;
-}
-
 int V56file::loadCellOffset(void)
 {
     if (!palSCI) {
@@ -307,6 +266,47 @@ int V56file::loadCellOffset(void)
     }
     
     return 1; // Success
+}
+
+int V56file::addLoops( int base, int amount )
+{
+	int retVal = 0;
+
+	int loopIndex = 0;
+
+	if (amount >= 0)
+	{
+		for (int j = 0; j < Head.view32.loopCount; j++)
+		loopIndex++;
+
+		Head.view32.loopCount = Head.view32.loopCount + amount;
+
+		for (int j = 0; j < amount; j++)
+		{
+			loops[loopIndex] = loops[base];
+
+			loops[loopIndex]->Head = loops[base]->Head;
+			Head.view32.celCount = Head.view32.celCount + loops[loopIndex]->Head.numCels;
+
+			loopIndex++;
+		}
+	}
+	else
+	{
+		for (int j = 0; j < Head.view32.loopCount + amount; j++)
+			loopIndex++;
+
+		for (int j = Head.view32.loopCount + amount; j < Head.view32.loopCount; j++)
+		{
+			Head.view32.celCount = Head.view32.celCount - loops[loopIndex]->Head.numCels;
+			loopIndex++;
+		}
+
+		Head.view32.loopCount = Head.view32.loopCount + amount;		
+	}
+
+	retVal = 1;
+	return retVal;
 }
 
 int V56file::addCells( int loop, int base, int amount)
