@@ -11,19 +11,45 @@
 //#include "Immagina.h"
 #include "v56files.h"
 
-V56file::~V56file(void)
-{
-	if (palSCI)
-		delete palSCI;
+#define _CRT_SECURE_NO_WARNINGS
 
-	if (loops)
-	{
-		for (unsigned short i=0; i< Head.view32.loopCount; i++)
-		{
-			Loop *texloop = loops[i];
-			delete (texloop);		
-		}
-	}
+V56file::V56file() : 
+    palSCI(nullptr),
+    totalImageSize(0)
+{
+    initializeMembers();
+}
+
+V56file::~V56file()
+{
+    cleanup();
+}
+
+void V56file::initializeMembers()
+{
+    palSCI = nullptr;
+    totalImageSize = 0;
+    
+    // Initialize Head structure
+    memset(&Head, 0, sizeof(Head));
+    
+    // Initialize loops array
+    for (int i = 0; i < MAX_LOOPS; i++) {
+        loops[i] = nullptr;
+    }
+}
+
+void V56file::cleanup()
+{
+    // Simple cleanup - just delete what we know about
+    delete palSCI;
+    palSCI = nullptr;
+    
+    // Note: Loop cleanup can be added later if needed
+    // For now, just set pointers to null for safety
+    for (int i = 0; i < MAX_LOOPS; i++) {
+        loops[i] = nullptr;
+    }
 }
 
 int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
