@@ -60,195 +60,221 @@ P56file32::~P56file32(void)
 
 int P56file32::LoadFile(HWND hwnd, LPSTR pszFileName)
 {
-	//_myHwnd = hwnd;
-	FILE *cfilebuf = fopen(pszFileName, "rb");
-	if (cfilebuf)
-	{
-		// dispose old file structs from memory:
-		/*
-		if (_cells)
-			delete _cells;
-		_cells = 0;
-		*/
-
-		//if (palSCI)
-		//	delete palSCI;
-		palSCI = 0;
-
-		// first check if the Patches header is there :
-		unsigned char offset = 0;
-		unsigned long patchID;
-		unsigned short hsize = 0;
-
-		fread((void *)&patchID, 4, 1, cfilebuf);
-		if (patchID == P56PATCH80 || patchID == P56PATCH)
-			offset = 4;
-		if (patchID == P56PATCHOLD)
-			offset = 26;
-
-		fseek(cfilebuf, offset, SEEK_SET);
-
-		fread((void *)&hsize, 2, 1, cfilebuf);
-
-		switch (hsize)
-		{
-		case 14: // typical offset used
-			format = _PIC_32;
-			LoadPic32(cfilebuf, offset);
-			break;
-		case 38:
-			format = _PIC_11;
-			LoadPic11(cfilebuf, offset);
-			break;
-		default:
-			return ID_WRONGHEADER;
-		}
-
-		fclose(cfilebuf);
-
-		return ID_NOERROR;
-	}
-
-	return ID_CANTOPENFILE;
+    FILE* cfilebuf = fopen(pszFileName, "rb");
+    if (!cfilebuf) {
+        return ID_CANTOPENFILE;
+    }
+    
+    // Initialize palette pointer
+    palSCI = nullptr;
+    
+    // Check for patch header
+    unsigned char offset = 0;
+    unsigned long patchID = 0;
+    
+    if (fread(&patchID, 4, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
+    }
+    
+    if (patchID == P56PATCH80 || patchID == P56PATCH) {
+        offset = 4;
+    } else if (patchID == P56PATCHOLD) {
+        offset = 26;
+    }
+    
+    // Read header size to determine format
+    fseek(cfilebuf, offset, SEEK_SET);
+    unsigned short hsize = 0;
+    if (fread(&hsize, 2, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
+    }
+    
+    int result;
+    switch (hsize) {
+        case 14: // PIC_32 format
+            format = _PIC_32;
+            result = LoadPic32(cfilebuf, offset);
+            break;
+        case 38: // PIC_11 format
+            format = _PIC_11;
+            result = LoadPic11(cfilebuf, offset);
+            break;
+        default:
+            fclose(cfilebuf);
+            return ID_WRONGHEADER;
+    }
+    
+    fclose(cfilebuf);
+    return (result == ID_NOERROR) ? ID_NOERROR : result;
 }
 
-int P56file32::LoadPic32( FILE *cfilebuf, unsigned char offset )
+int P56file32::LoadPic32(FILE* cfilebuf, unsigned char offset)
 {
-	//_myHwnd = hwnd;
-	
-	if (cfilebuf)
-	{
-
-		fseek(cfilebuf, offset + 4, SEEK_SET);
-		int tcellrecsize = 0;
-		fread(&tcellrecsize, 2, 1, cfilebuf);
-		if (tcellrecsize != 0x2a)
-			return ID_WRONGCELLRECSIZE;
-
-		fseek(cfilebuf, offset, SEEK_SET);
-
-		fread(&Head, PICHEADER32SIZE, 1, cfilebuf);
-
-		PicHeader32 *bPic = new PicHeader32;
-		bPic = (PicHeader32 *)&Head;
-
-		fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
-
-		int ttag = 0;
-		fread(&ttag, 2, 1, cfilebuf);
-		if (ttag != PALETTE_POS)
-			return ID_WRONGPALETTELOC;
-
-		unsigned long tpalsize = 0;
-		fread(&tpalsize, 4, 1, cfilebuf);
-
-		palSCI = new Palette;
-
-		palSCI->loadPalette(cfilebuf, tpalsize);
-
-		// palette loading completed, now read cells:
-		if (bPic->celCount)
-		{
-			fseek(cfilebuf, offset + bPic->picHeaderSize, SEEK_SET);
-
-			for (int i = 0; i < bPic->celCount; i++)
-			{
-				cells[i] = new Cell;
-				fread(&(cells[i]->Head), CELHEADERPICSIZE, 1, cfilebuf);
-			}
-
-			for (int i = 0; i < bPic->celCount; i++)
-			{			
-				cells[i]->setPalette(&palSCI);	
-				cells[i]->loadImage( cfilebuf, offset );
-			}
-		}
-
-		fclose(cfilebuf);
-
-		return ID_NOERROR;
-	}
-
-	return ID_CANTOPENFILE;
+    if (!cfilebuf) {
+        return ID_CANTOPENFILE;
+    }
+    
+    // Validate cell record size
+    fseek(cfilebuf, offset + 4, SEEK_SET);
+    int tcellrecsize = 0;
+    if (fread(&tcellrecsize, 2, 1, cfilebuf) != 1 || tcellrecsize != 0x2a) {
+        return ID_WRONGCELLRECSIZE;
+    }
+    
+    // Load main header
+    fseek(cfilebuf, offset, SEEK_SET);
+    if (fread(&Head, PICHEADER32SIZE, 1, cfilebuf) != 1) {
+        return ID_CANTOPENFILE;
+    }
+    
+    const PicHeader32* bPic = reinterpret_cast<const PicHeader32*>(&Head);
+    
+    // Load palette
+    fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
+    
+    int ttag = 0;
+    if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
+        return ID_WRONGPALETTELOC;
+    }
+    
+    unsigned long tpalsize = 0;
+    if (fread(&tpalsize, 4, 1, cfilebuf) != 1) {
+        return ID_CANTOPENFILE;
+    }
+    
+    palSCI = new Palette;
+    palSCI->loadPalette(cfilebuf, tpalsize);
+    
+    // Load cells if present
+    if (bPic->celCount > 0) {
+        fseek(cfilebuf, offset + bPic->picHeaderSize, SEEK_SET);
+        
+        // Load all cell headers first
+        for (int i = 0; i < bPic->celCount; i++) {
+            cells[i] = new Cell;
+            if (fread(&(cells[i]->Head), CELHEADERPICSIZE, 1, cfilebuf) != 1) {
+                // Cleanup on error
+                for (int cleanup = 0; cleanup <= i; cleanup++) {
+                    delete cells[cleanup];
+                }
+                delete palSCI;
+                return ID_CANTOPENFILE;
+            }
+        }
+        
+        // Load all cell image data
+        for (int i = 0; i < bPic->celCount; i++) {
+            cells[i]->setPalette(&palSCI);
+            cells[i]->loadImage(cfilebuf, offset);
+        }
+    }
+    
+    return ID_NOERROR;
 }
 
-int P56file32::LoadPic11( FILE *cfilebuf, unsigned char offset )
+int P56file32::LoadPic11(FILE* cfilebuf, unsigned char offset)
 {
-	//_myHwnd = hwnd;
-	
-	if (cfilebuf)
-	{
-		
-		fseek(cfilebuf, offset, SEEK_SET);
-
-		fread(&Head, PICHEADER11SIZE, 1, cfilebuf);
-
-		PicHeader11 *bPic = new PicHeader11;
-		bPic = (PicHeader11 *)&Head;
-
-		if (bPic->priCelOffset)
-			MessageBox(hWnd, "priCelOffset is defined. This file might not be fully supported by FotoSCIhop!", WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
-
-		if (bPic->controlCelOffset)
-			MessageBox(hWnd, "controlCelOffset is defined. This file might not be fully supported by FotoSCIhop!", WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
-
-		if (bPic->polygonOffset)
-			MessageBox(hWnd, "polygonOffset is defined. This file might not be fully supported by FotoSCIhop!", WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
-
-		vector = (unsigned char *)new char[bPic->vectorSize];
-		fseek(cfilebuf, offset + bPic->vectorOffset, SEEK_SET);
-		fread(vector, bPic->vectorSize, 1, cfilebuf);
-
-		// if (Head.oldhead.VectorDataLenght != Head.oldhead.VectorDataLenght)
-		//	MessageBox(hwnd, "Vector Size block has a different size than expected!", WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
-
-		fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
-
-		int ttag = 0;
-		fread(&ttag, 2, 1, cfilebuf);
-		if (ttag != PALETTE_POS)
-			return ID_WRONGPALETTELOC;
-
-		unsigned long tpalsize = 0;
-		fread(&tpalsize, 4, 1, cfilebuf);
-
-		palSCI = new Palette;
-
-		palSCI->loadPalette(cfilebuf, tpalsize);
-
-		// palette loading completed, now read cells:
-		short tshort;
-		fseek(cfilebuf, offset + PICHEADER11SIZE, SEEK_SET);
-		fread(&tshort, 2, 1, cfilebuf);
-		_unkShort1 = tshort;
-		fread(&tshort, 2, 1, cfilebuf);
-		_unkShort2 = tshort;
-
-		if (bPic->celCount)
-		{
-			fseek(cfilebuf, offset + bPic->visualHeaderOffset, SEEK_SET);
-
-			for (int i = 0; i < bPic->celCount; i++)
-			{
-				cells[i] = new Cell;
-				fread(&(cells[i]->Head.pic), CELHEADER11SIZE, 1, cfilebuf);
-			}
-
-			for (int i = 0; i < bPic->celCount; i++)
-			{
-				cells[i]->setPalette(&palSCI);
-				cells[i]->loadImage( cfilebuf, offset );
-			}
-		}
-
-		fclose(cfilebuf);
-
-		return ID_NOERROR;
-	}
-
-	return ID_CANTOPENFILE;
+    if (!cfilebuf) {
+        return ID_CANTOPENFILE;
+    }
+    
+    // Load main header
+    fseek(cfilebuf, offset, SEEK_SET);
+    if (fread(&Head, PICHEADER11SIZE, 1, cfilebuf) != 1) {
+        return ID_CANTOPENFILE;
+    }
+    
+    const PicHeader11* bPic = reinterpret_cast<const PicHeader11*>(&Head);
+    
+    // Show warnings for unsupported features
+    if (bPic->priCelOffset) {
+        MessageBox(hWnd, "priCelOffset is defined. This file might not be fully supported by FotoSCIhop!", 
+                   WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
+    }
+    
+    if (bPic->controlCelOffset) {
+        MessageBox(hWnd, "controlCelOffset is defined. This file might not be fully supported by FotoSCIhop!", 
+                   WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
+    }
+    
+    if (bPic->polygonOffset) {
+        MessageBox(hWnd, "polygonOffset is defined. This file might not be fully supported by FotoSCIhop!", 
+                   WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
+    }
+    
+    // Load vector data
+    vector = new unsigned char[bPic->vectorSize];
+    fseek(cfilebuf, offset + bPic->vectorOffset, SEEK_SET);
+    if (fread(vector, bPic->vectorSize, 1, cfilebuf) != 1) {
+        delete[] vector;
+        return ID_CANTOPENFILE;
+    }
+    
+    // Load palette
+    fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
+    
+    int ttag = 0;
+    if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
+        delete[] vector;
+        return ID_WRONGPALETTELOC;
+    }
+    
+    unsigned long tpalsize = 0;
+    if (fread(&tpalsize, 4, 1, cfilebuf) != 1) {
+        delete[] vector;
+        return ID_CANTOPENFILE;
+    }
+    
+    palSCI = new Palette;
+    palSCI->loadPalette(cfilebuf, tpalsize);
+    
+    // Read unknown shorts
+    fseek(cfilebuf, offset + PICHEADER11SIZE, SEEK_SET);
+    short tshort = 0;
+    
+    if (fread(&tshort, 2, 1, cfilebuf) != 1) {
+        delete[] vector;
+        delete palSCI;
+        return ID_CANTOPENFILE;
+    }
+    _unkShort1 = tshort;
+    
+    if (fread(&tshort, 2, 1, cfilebuf) != 1) {
+        delete[] vector;
+        delete palSCI;
+        return ID_CANTOPENFILE;
+    }
+    _unkShort2 = tshort;
+    
+    // Load cells if present
+    if (bPic->celCount > 0) {
+        fseek(cfilebuf, offset + bPic->visualHeaderOffset, SEEK_SET);
+        
+        // Load all cell headers first
+        for (int i = 0; i < bPic->celCount; i++) {
+            cells[i] = new Cell;
+            if (fread(&(cells[i]->Head.pic), CELHEADER11SIZE, 1, cfilebuf) != 1) {
+                // Cleanup on error
+                for (int cleanup = 0; cleanup <= i; cleanup++) {
+                    delete cells[cleanup];
+                }
+                delete[] vector;
+                delete palSCI;
+                return ID_CANTOPENFILE;
+            }
+        }
+        
+        // Load all cell image data
+        for (int i = 0; i < bPic->celCount; i++) {
+            cells[i]->setPalette(&palSCI);
+            cells[i]->loadImage(cfilebuf, offset);
+        }
+    }
+    
+    return ID_NOERROR;
 }
-
 
 int P56file32::loadCellOffset()
 {
