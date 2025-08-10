@@ -278,107 +278,133 @@ int P56file32::LoadPic11(FILE* cfilebuf, unsigned char offset)
 
 int P56file32::loadCellOffset()
 {
-	int retVal = 0;
-
-	unsigned long paletteSize = COMPPALSIZE + (palSCI->Head.nColors * (!palSCI->Head.type ? 4 : 3));
-	unsigned long imagepos;
-
-	unsigned long tagsTotalSize = 0;
-
-	
-	CelBase *bCell = new CelBase;
-
-	PicHeader32 *bPic32 = new PicHeader32;
-	PicHeader11 *bPic11 = new PicHeader11;
-
-	int cellCount = 0;
-
-	switch (format)
-	{
-
-	case _PIC_32:
-
-		bPic32 = (PicHeader32 *)&Head;
-
-		cellCount = bPic32->celCount;
-
-		for (int i = 0; i < cellCount; i++)
-		{
-			bCell = (CelBase *)&cells[i]->Head;
-
-			imageAllSize += cells[i]->cellImage->imageSize + cells[i]->cellImage->packSize;
-			tagsTotalSize += cells[i]->cellImage->imageSize;
-		}
-
-		bPic32->paletteOffset = bPic32->picHeaderSize + CELHEADERPICSIZE * cellCount + 6;
-
-		imagepos = bPic32->paletteOffset + paletteSize + 6;
-
-		break;
-
-	case _PIC_11:
-
-		bPic11 = (PicHeader11 *)&Head;
-
-		cellCount = bPic11->celCount;
-
-		for (int i = 0; i < cellCount; i++)
-		{
-
-			imageAllSize += cells[i]->cellImage->imageSize + cells[i]->cellImage->packSize;
-			tagsTotalSize += cells[i]->cellImage->imageSize;
-		}
-
-		bPic11->picHeaderSize = 38;
-
-		bPic11->visualHeaderOffset = 68;
-		if (cellCount)
-			bPic11->visualHeaderOffset += 4;
-
-		bPic11->paletteOffset = bPic11->visualHeaderOffset + CELHEADER11SIZE * cellCount + 6;
-
-		if (imageAllSize)
-			bPic11->paletteOffset += imageAllSize + 6;
-
-		bPic11->vectorOffset = bPic11->paletteOffset + paletteSize + 6;
-
-		imagepos = bPic11->visualHeaderOffset + cellCount * PIC11CELLRECSIZE + 6;
-
-		break;
-	default:
-		return ID_WRONGHEADER;
-	}
-
-	// loading cells now:
-	unsigned long packpos = (bCell->compressType ? imagepos + tagsTotalSize : 0); // TODO check 0!!
-	unsigned long linespos = imagepos + imageAllSize + 6;
-
-	for (int i = 0; i < cellCount; i++)
-	{
-		bCell = (CelBase *)&cells[i]->Head;
-
-		CellImage *bImage = cells[i]->cellImage;
-		bCell->dataByteCount = (bCell->compressType ? bImage->imageSize + bImage->packSize : bImage->imageSize);
-		bCell->controlByteCount = (bCell->compressType ? bImage->imageSize : 0); // TODO CHECK DUNNO IF IT'S 0 or 6... in GK2 it's 0
-
-		bCell->controlOffset = imagepos;
-		bCell->colorOffset = packpos;
-		
-		imagepos += (bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount);
-		packpos += (bCell->compressType ? bCell->dataByteCount - bCell->controlByteCount : 0);
-
-		if (format != _PIC_11 && bCell->compressType)
-		{
-			bCell->rowTableOffset = linespos;
-			linespos += bCell->yDim * 4 * 2;
-		}
-
-		bCell->paletteOffset = (format == _PIC_11 ? bPic11->paletteOffset : 0);
-	}
-
-	retVal = 1;
-
-	return retVal;
+    if (!palSCI) {
+        return 0; // Error: no palette loaded
+    }
+    
+    // Calculate palette size
+    const unsigned long paletteSize = COMPPALSIZE + 
+        (palSCI->Head.nColors * (palSCI->Head.type ? 3 : 4));
+    
+    unsigned long imagepos = 0;
+    unsigned long tagsTotalSize = 0;
+    int cellCount = 0;
+    
+    // Calculate total image sizes and determine format-specific offsets
+    switch (format) {
+        case _PIC_32:
+        {
+            PicHeader32* bPic32 = reinterpret_cast<PicHeader32*>(&Head);
+            cellCount = bPic32->celCount;
+            
+            // Calculate total sizes for all cells
+            for (int i = 0; i < cellCount; i++) {
+                if (cells[i] && cells[i]->cellImage) {
+                    const CellImage* cellImg = cells[i]->cellImage;
+                    imageAllSize += cellImg->imageSize + cellImg->packSize;
+                    tagsTotalSize += cellImg->imageSize;
+                }
+            }
+            
+            // Set format-specific offsets
+            bPic32->paletteOffset = bPic32->picHeaderSize + CELHEADERPICSIZE * cellCount + 6;
+            imagepos = bPic32->paletteOffset + paletteSize + 6;
+            break;
+        }
+        
+        case _PIC_11:
+        {
+            PicHeader11* bPic11 = reinterpret_cast<PicHeader11*>(&Head);
+            cellCount = bPic11->celCount;
+            
+            // Calculate total sizes for all cells
+            for (int i = 0; i < cellCount; i++) {
+                if (cells[i] && cells[i]->cellImage) {
+                    const CellImage* cellImg = cells[i]->cellImage;
+                    imageAllSize += cellImg->imageSize + cellImg->packSize;
+                    tagsTotalSize += cellImg->imageSize;
+                }
+            }
+            
+            // Set PIC_11 specific header values
+            bPic11->picHeaderSize = 38;
+            bPic11->visualHeaderOffset = 68;
+            if (cellCount > 0) {
+                bPic11->visualHeaderOffset += 4;
+            }
+            
+            bPic11->paletteOffset = bPic11->visualHeaderOffset + CELHEADER11SIZE * cellCount + 6;
+            if (imageAllSize > 0) {
+                bPic11->paletteOffset += imageAllSize + 6;
+            }
+            
+            bPic11->vectorOffset = bPic11->paletteOffset + paletteSize + 6;
+            imagepos = bPic11->visualHeaderOffset + cellCount * PIC11CELLRECSIZE + 6;
+            break;
+        }
+        
+        default:
+            return 0; // Error: unknown format
+    }
+    
+    // Calculate cell-specific offsets
+    unsigned long packpos = 0;
+    unsigned long linespos = 0;
+    
+    // Find first compressed cell to determine if we need pack data
+    bool hasCompressedCells = false;
+    for (int i = 0; i < cellCount; i++) {
+        if (cells[i]) {
+            const CelBase* bCell = reinterpret_cast<const CelBase*>(&cells[i]->Head);
+            if (bCell->compressType) {
+                hasCompressedCells = true;
+                break;
+            }
+        }
+    }
+    
+    packpos = hasCompressedCells ? (imagepos + tagsTotalSize) : 0;
+    linespos = imagepos + imageAllSize + 6;
+    
+    // Set offsets for each cell
+    for (int i = 0; i < cellCount; i++) {
+        if (!cells[i] || !cells[i]->cellImage) {
+            continue; // Skip invalid cells
+        }
+        
+        CelBase* bCell = reinterpret_cast<CelBase*>(&cells[i]->Head);
+        const CellImage* bImage = cells[i]->cellImage;
+        
+        // Calculate data sizes
+        bCell->dataByteCount = bImage->imageSize + (bCell->compressType ? bImage->packSize : 0);
+        bCell->controlByteCount = bCell->compressType ? bImage->imageSize : 0;
+        
+        // Set file offsets
+        bCell->controlOffset = imagepos;
+        bCell->colorOffset = packpos;
+        
+        // Update positions for next cell
+        imagepos += (bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount);
+        if (bCell->compressType) {
+            packpos += (bCell->dataByteCount - bCell->controlByteCount);
+        }
+        
+        // Set row table offset for compressed PIC_32 cells
+        if (format != _PIC_11 && bCell->compressType) {
+            bCell->rowTableOffset = linespos;
+            linespos += bCell->yDim * 8; // 4 * 2 = 8 bytes per line
+        }
+        
+        // Set palette offset for PIC_11 format
+        if (format == _PIC_11) {
+            const PicHeader11* bPic11 = reinterpret_cast<const PicHeader11*>(&Head);
+            bCell->paletteOffset = bPic11->paletteOffset;
+        } else {
+            bCell->paletteOffset = 0;
+        }
+    }
+    
+    return 1; // Success
 }
 
 int P56file32::addCells(int base, int amount)
