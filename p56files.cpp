@@ -407,18 +407,72 @@ int P56file32::loadCellOffset()
     return 1; // Success
 }
 
+// Drop-in replacement for P56file32::addCells - fixes the shallow copy bug
 int P56file32::addCells(int base, int amount)
 {
-	int cellIndex = Head.pic32.celCount;
-	Head.pic32.celCount += amount;
-	for (int i = 0; i < amount; i++)
-	{
-		Cell *newCell = cells[base];
-		newCell->isClone = true;
-		cells[cellIndex++] = newCell;
-	}
-
-	return 1;
+    // Validate input parameters
+    if (base < 0 || amount <= 0) {
+        return 0;
+    }
+    
+    // Check if base cell exists
+    if (base >= Head.pic32.celCount || !cells[base]) {
+        return 0;
+    }
+    
+    int cellIndex = Head.pic32.celCount;
+    Head.pic32.celCount += amount;
+    
+    for (int i = 0; i < amount; i++) {
+        // Create new Cell object (deep copy) instead of shallow copy
+        Cell* newCell = new Cell;
+        newCell->Head = cells[base]->Head;
+        newCell->isClone = true; // Maintain original behavior
+        
+        // Deep copy the cell image data
+        if (cells[base]->cellImage) {
+            newCell->cellImage = new CellImage;
+            CellImage* srcImg = cells[base]->cellImage;
+            CellImage* dstImg = newCell->cellImage;
+            
+            // Copy image data
+            dstImg->imageSize = srcImg->imageSize;
+            if (srcImg->image && srcImg->imageSize > 0) {
+                dstImg->image = new unsigned char[srcImg->imageSize];
+                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+            } else {
+                dstImg->image = nullptr;
+            }
+            
+            // Copy pack data
+            dstImg->packSize = srcImg->packSize;
+            if (srcImg->pack && srcImg->packSize > 0) {
+                dstImg->pack = new unsigned char[srcImg->packSize];
+                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+            } else {
+                dstImg->pack = nullptr;
+            }
+            
+            // Copy lines data
+            dstImg->lineSize = srcImg->lineSize;
+            if (srcImg->lines && srcImg->lineSize > 0) {
+                dstImg->lines = new unsigned char[srcImg->lineSize];
+                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+            } else {
+                dstImg->lines = nullptr;
+            }
+        } else {
+            newCell->cellImage = nullptr;
+        }
+        
+        // Set palette reference (shallow copy is OK for palette)
+        newCell->setPalette(&palSCI);
+        
+        // Add to cells array
+        cells[cellIndex++] = newCell;
+    }
+    
+    return 1;
 }
 
 int P56file32::writeFileHeader(FILE *cfilebuf)
