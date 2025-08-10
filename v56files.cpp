@@ -268,86 +268,228 @@ int V56file::loadCellOffset(void)
     return 1; // Success
 }
 
-int V56file::addLoops( int base, int amount )
+// Drop-in replacement for addLoops - fixes the shallow copy bug
+int V56file::addLoops(int base, int amount)
 {
-	int retVal = 0;
-
-	int loopIndex = 0;
-
-	if (amount >= 0)
-	{
-		for (int j = 0; j < Head.view32.loopCount; j++)
-		loopIndex++;
-
-		Head.view32.loopCount = Head.view32.loopCount + amount;
-
-		for (int j = 0; j < amount; j++)
-		{
-			loops[loopIndex] = loops[base];
-
-			loops[loopIndex]->Head = loops[base]->Head;
-			Head.view32.celCount = Head.view32.celCount + loops[loopIndex]->Head.numCels;
-
-			loopIndex++;
-		}
-	}
-	else
-	{
-		for (int j = 0; j < Head.view32.loopCount + amount; j++)
-			loopIndex++;
-
-		for (int j = Head.view32.loopCount + amount; j < Head.view32.loopCount; j++)
-		{
-			Head.view32.celCount = Head.view32.celCount - loops[loopIndex]->Head.numCels;
-			loopIndex++;
-		}
-
-		Head.view32.loopCount = Head.view32.loopCount + amount;		
-	}
-
-	retVal = 1;
-	return retVal;
+    // Validate input parameters
+    if (base < 0 || base >= Head.view32.loopCount || amount == 0) {
+        return 0;
+    }
+    
+    if (amount > 0) {
+        // Adding loops
+        const int oldLoopCount = Head.view32.loopCount;
+        const int newLoopCount = oldLoopCount + amount;
+        
+        // Validate base loop exists
+        if (!loops[base]) {
+            return 0;
+        }
+        
+        // Add new loops by creating deep copies of the base loop
+        for (int j = 0; j < amount; j++) {
+            const int newIndex = oldLoopCount + j;
+            
+            // Create new Loop object (deep copy)
+            loops[newIndex] = new Loop;
+            loops[newIndex]->Head = loops[base]->Head;
+            
+            // Deep copy all cells in this loop
+            for (int i = 0; i < loops[base]->Head.numCels; i++) {
+                if (loops[base]->cells[i]) {
+                    // Create new Cell object (deep copy)
+                    loops[newIndex]->cells[i] = new Cell;
+                    loops[newIndex]->cells[i]->Head = loops[base]->cells[i]->Head;
+                    
+                    // Deep copy the cell image data
+                    if (loops[base]->cells[i]->cellImage) {
+                        loops[newIndex]->cells[i]->cellImage = new CellImage;
+                        CellImage* srcImg = loops[base]->cells[i]->cellImage;
+                        CellImage* dstImg = loops[newIndex]->cells[i]->cellImage;
+                        
+                        // Copy image data
+                        dstImg->imageSize = srcImg->imageSize;
+                        if (srcImg->image && srcImg->imageSize > 0) {
+                            dstImg->image = new unsigned char[srcImg->imageSize];
+                            memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+                        } else {
+                            dstImg->image = nullptr;
+                        }
+                        
+                        // Copy pack data
+                        dstImg->packSize = srcImg->packSize;
+                        if (srcImg->pack && srcImg->packSize > 0) {
+                            dstImg->pack = new unsigned char[srcImg->packSize];
+                            memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+                        } else {
+                            dstImg->pack = nullptr;
+                        }
+                        
+                        // Copy lines data
+                        dstImg->lineSize = srcImg->lineSize;
+                        if (srcImg->lines && srcImg->lineSize > 0) {
+                            dstImg->lines = new unsigned char[srcImg->lineSize];
+                            memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+                        } else {
+                            dstImg->lines = nullptr;
+                        }
+                    } else {
+                        loops[newIndex]->cells[i]->cellImage = nullptr;
+                    }
+                    
+                    // Copy link points (element by element since it's a fixed array)
+                    if (loops[base]->cells[i]->Head.view.linkTableCount > 0) {
+                        const int linkCount = loops[base]->cells[i]->Head.view.linkTableCount;
+                        for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
+                            loops[newIndex]->cells[i]->linkPoints[linkIdx] = loops[base]->cells[i]->linkPoints[linkIdx];
+                        }
+                    }
+                    
+                    // Set palette reference
+                    loops[newIndex]->cells[i]->setPalette(&palSCI);
+                }
+            }
+            
+            // Update total cell count
+            Head.view32.celCount += loops[newIndex]->Head.numCels;
+        }
+        
+        // Update loop count
+        Head.view32.loopCount = newLoopCount;
+    } else {
+        // Removing loops (amount is negative)
+        const int oldLoopCount = Head.view32.loopCount;
+        const int newLoopCount = oldLoopCount + amount; // amount is negative
+        
+        // Validate we won't go below zero
+        if (newLoopCount < 0) {
+            return 0;
+        }
+        
+        // Subtract cell counts from loops being removed and clean up
+        for (int j = newLoopCount; j < oldLoopCount; j++) {
+            if (loops[j]) {
+                Head.view32.celCount -= loops[j]->Head.numCels;
+                
+                // Delete all cells in this loop
+                for (int i = 0; i < loops[j]->Head.numCels; i++) {
+                    if (loops[j]->cells[i]) {
+                        // Delete cell image data
+                        if (loops[j]->cells[i]->cellImage) {
+                            delete[] loops[j]->cells[i]->cellImage->image;
+                            delete[] loops[j]->cells[i]->cellImage->pack;
+                            delete[] loops[j]->cells[i]->cellImage->lines;
+                            delete loops[j]->cells[i]->cellImage;
+                        }
+                        
+                        // Delete cell
+                        delete loops[j]->cells[i];
+                        loops[j]->cells[i] = nullptr;
+                    }
+                }
+                
+                // Delete loop
+                delete loops[j];
+                loops[j] = nullptr;
+            }
+        }
+        
+        // Update loop count
+        Head.view32.loopCount = newLoopCount;
+    }
+    
+    return 1;
 }
 
-int V56file::addCells( int loop, int base, int amount)
+// Drop-in replacement for addCells - fixes the shallow copy bug
+int V56file::addCells(int loop, int base, int amount)
 {
-	int retVal = 0;
-	
-	for (int j = 0; j < Head.view32.loopCount; j++)
-	{
-		int cellHeaderIndex = 0;
-		
-		if (j == loop)
-		{
-			int loopCellIndex = 0;
-
-			loops[j]->Head.numCels = loops[j]->Head.numCels + amount;
-
-			Head.view32.celCount = Head.view32.celCount + amount;
-
-			for (int i = 0; i < loops[j]->Head.numCels - amount; i++)
-			{				
-				cellHeaderIndex++;
-				loopCellIndex++;			
-			}
-
-			for (int i = 0; i < amount; i++)
-			{
-				loops[j]->cells[loopCellIndex] = loops[j]->cells[base];
-				cellHeaderIndex++;
-				loopCellIndex++;
-			}
-
-		}
-		else
-		{
-			for (int i = 0; i < loops[j]->Head.numCels; i++)		
-				cellHeaderIndex++;
-		}
-	}
-	
-	retVal = 1;
-	return retVal;
+    // Validate input parameters
+    if (loop < 0 || loop >= Head.view32.loopCount || amount <= 0) {
+        return 0;
+    }
+    
+    if (!loops[loop]) {
+        return 0;
+    }
+    
+    if (base < 0 || base >= loops[loop]->Head.numCels) {
+        return 0;
+    }
+    
+    if (!loops[loop]->cells[base]) {
+        return 0;
+    }
+    
+    const int oldCelCount = loops[loop]->Head.numCels;
+    const int newCelCount = oldCelCount + amount;
+    
+    // Simple bounds check (assuming reasonable limits)
+    if (newCelCount > 256) {
+        return 0;
+    }
+    
+    // Append new cells at the end (matching original behavior)
+    for (int i = 0; i < amount; i++) {
+        const int newIndex = oldCelCount + i;
+        
+        // Create new Cell object (deep copy)
+        loops[loop]->cells[newIndex] = new Cell;
+        loops[loop]->cells[newIndex]->Head = loops[loop]->cells[base]->Head;
+        
+        // Deep copy the cell image data
+        if (loops[loop]->cells[base]->cellImage) {
+            loops[loop]->cells[newIndex]->cellImage = new CellImage;
+            CellImage* srcImg = loops[loop]->cells[base]->cellImage;
+            CellImage* dstImg = loops[loop]->cells[newIndex]->cellImage;
+            
+            // Copy image data
+            dstImg->imageSize = srcImg->imageSize;
+            if (srcImg->image && srcImg->imageSize > 0) {
+                dstImg->image = new unsigned char[srcImg->imageSize];
+                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+            } else {
+                dstImg->image = nullptr;
+            }
+            
+            // Copy pack data
+            dstImg->packSize = srcImg->packSize;
+            if (srcImg->pack && srcImg->packSize > 0) {
+                dstImg->pack = new unsigned char[srcImg->packSize];
+                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+            } else {
+                dstImg->pack = nullptr;
+            }
+            
+            // Copy lines data
+            dstImg->lineSize = srcImg->lineSize;
+            if (srcImg->lines && srcImg->lineSize > 0) {
+                dstImg->lines = new unsigned char[srcImg->lineSize];
+                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+            } else {
+                dstImg->lines = nullptr;
+            }
+        } else {
+            loops[loop]->cells[newIndex]->cellImage = nullptr;
+        }
+        
+        // Copy link points (element by element since it's a fixed array)
+        if (loops[loop]->cells[base]->Head.view.linkTableCount > 0) {
+            const int linkCount = loops[loop]->cells[base]->Head.view.linkTableCount;
+            for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
+                loops[loop]->cells[newIndex]->linkPoints[linkIdx] = loops[loop]->cells[base]->linkPoints[linkIdx];
+            }
+        }
+        
+        // Set palette reference
+        loops[loop]->cells[newIndex]->setPalette(&palSCI);
+    }
+    
+    // Update counts
+    loops[loop]->Head.numCels = newCelCount;
+    Head.view32.celCount += amount;
+    
+    return 1;
 }
 
 int V56file::writeFileHeader(FILE *cfilebuf)
