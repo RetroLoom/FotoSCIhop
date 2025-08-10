@@ -15,203 +15,185 @@
 #include "v56files.h"
 
 void Cell::makeSCI()
-{	
-	if (bmImage && bmInfo)
-	{
-		if ( cellImage->image)
-			delete cellImage->image;
-
-		cellImage->image = 0;
-
-		if (cellImage->pack)
-			delete cellImage->pack;
-
-		cellImage->pack = 0;
-
-		bool hasLines = (cellImage->lines != 0);
-
-		if (hasLines)
-			delete cellImage->lines;
-
-		cellImage->lines = 0; 
-
-		unsigned short width = (unsigned short) bmInfo->bmiHeader.biWidth;
-		unsigned short height = (unsigned short) -bmInfo->bmiHeader.biHeight;
-
-		CelBase *bCell = new CelBase;
-		bCell = (CelBase *)&Head;
-
-		bCell->xDim = width;
-		bCell->yDim = height;
-
-		cellImage->imageSize = width*height;
-		cellImage->packSize = 0;
-
-	    cellImage->image = (unsigned char *) new char [cellImage->imageSize];
-
-
-		int dwremainder = width%4;
-		if (dwremainder)
-			dwremainder = 4-dwremainder; //bmp requires DWORD align for each scanline
-
-		unsigned short bmpwidth = width +dwremainder;
-
-		if (!bCell->compressType)
-			for (unsigned short i=0; i<height; i++)
-				for (unsigned short j=0; j<width; j++)
-					cellImage->image[i*width +j] = bmImage[i*bmpwidth +j];
-
-		else	//compressed
-		{
-			cellImage->pack = (unsigned char *) new char [cellImage->imageSize];
-			if (hasLines)
-				cellImage->lines = (unsigned char *) new char [height*4*2];
-
-			unsigned short i=0;
-			unsigned short j=0, oldj=0;
-
-			unsigned char *ppack = cellImage->pack;
-			unsigned char *pimage = cellImage->image;
-
-			unsigned long *ptaglines;
-			unsigned long *pdatalines;
-			if (hasLines)
-			{
-				ptaglines = (unsigned long *) cellImage->lines;
-				pdatalines = ((unsigned long *) cellImage->lines) +height;		
-			}
-			unsigned char *pcached = bmImage;
-						
-			for (i=0; i<height; i++)
-			{
-				j = 0;
-				pcached = bmImage + (i*bmpwidth);
-
-				if (hasLines)
-				{
-					ptaglines[i]=(unsigned long)(pimage - cellImage->image);
-					pdatalines[i]=(unsigned long)(ppack - cellImage->pack);
-				}
-
-				unsigned char b1, b2, b3, cont;
-
-				
-			
-				do
-				{
-					if (width-j>2)
-					{
-						b1 = pcached[0];
-						b2 = pcached[1];
-						b3 = pcached[2];
-						if ((b1==b2) || (b1==255))
-						{
-							pcached +=1;
-							j+=1;
-							cont =1;
-							while ((j<width) && (cont<0x3F))
-							{
-								b2=pcached[0];
-								if (b2!=b1)
-									break;
-								else
-								{
-									cont++;
-									pcached++;
-									j++;
-								}
-
-							}
-							if (b1==255)
-							{
-								pimage[0]=0xC0 + cont;
-								pimage++;
-							}
-							else
-							{
-								pimage[0]=0x80 + cont;
-								pimage++;
-								ppack[0]=b1;
-								ppack++;
-							}
-						}
-						else	//b1!=b2 || b2!=b3
-						{
-							cont =1;
-
-							while ((j+cont<width-2) && (cont<0x3F)) //NOTE WAS 0x7F in Gabriel Knight, when scanlines are used, the max value allowed is 3F even here.
-							{                                        //TODO fix, perhaps adding a HasLines switch, because it's making the file bigger than the original
-								b1=b2;                               //NOTE a better optimization, could be to use the same algorithm of Sierra's original tool
-								b2=b3;
-								b3=pcached[cont+2];
-								
-								if ((b1==b2) && ((b2==b3) || (b2 ==255)))
-									break;
-								else
-									cont++;
-							}
-                            if ((j+cont==width-2) && (cont<0x3E) && (b3!=b2)) //NOTE as in the upper note
-                               cont+=2;
-							
-							pimage[0]=cont;
-							pimage++;
-							for(int z=0;z<cont;z++)
-							{
-								ppack[0]=pcached[0];
-								ppack++;
-								pcached++;
-							}
-							j+=cont;
-						}
-				
-					}
-					else		//width-j <3
-					{
-						cont =width-j;
-						b1=pcached[0];
-                        if (cont==2)
-                           b2=pcached[1];
+{
+    if (!bmImage || !bmInfo) {
+        return;
+    }
+    
+    // Clean up existing data
+    delete cellImage->image;
+    cellImage->image = nullptr;
+    
+    delete cellImage->pack;
+    cellImage->pack = nullptr;
+    
+    const bool hasLines = (cellImage->lines != nullptr);
+    delete cellImage->lines;
+    cellImage->lines = nullptr;
+    
+    // Extract dimensions
+    const unsigned short width = static_cast<unsigned short>(bmInfo->bmiHeader.biWidth);
+    const unsigned short height = static_cast<unsigned short>(-bmInfo->bmiHeader.biHeight);
+    
+    // Setup cell base
+    CelBase* bCell = new CelBase;
+    bCell = reinterpret_cast<CelBase*>(&Head);
+    bCell->xDim = width;
+    bCell->yDim = height;
+    
+    const unsigned long totalPixels = width * height;
+    cellImage->imageSize = totalPixels;
+    cellImage->packSize = 0;
+    cellImage->image = new unsigned char[totalPixels];
+    
+    // Calculate bitmap padding (BMP requires DWORD alignment)
+    const unsigned short bmpPadding = (4 - (width % 4)) % 4;
+    const unsigned short bmpwidth = width + bmpPadding;
+    
+    if (!bCell->compressType) {
+        // Uncompressed - direct copy with optimized loop
+        if (bmpPadding == 0) {
+            // No padding - single memcpy for entire image
+            memcpy(cellImage->image, bmImage, totalPixels);
+        } else {
+            // Has padding - copy row by row
+            const unsigned char* srcRow = bmImage;
+            unsigned char* dstRow = cellImage->image;
+            
+            for (unsigned short i = 0; i < height; i++) {
+                memcpy(dstRow, srcRow, width);
+                srcRow += bmpwidth;
+                dstRow += width;
+            }
+        }
+    } else {
+        // Compressed - RLE encoding
+        cellImage->pack = new unsigned char[totalPixels];
+        if (hasLines) {
+            cellImage->lines = new unsigned char[height << 3]; // height * 8 (bit shift optimization)
+        }
+        
+        unsigned char* ppack = cellImage->pack;
+        unsigned char* pimage = cellImage->image;
+        unsigned long* ptaglines = nullptr;
+        unsigned long* pdatalines = nullptr;
+        
+        if (hasLines) {
+            ptaglines = reinterpret_cast<unsigned long*>(cellImage->lines);
+            pdatalines = ptaglines + height;
+        }
+        
+        // Process each scanline
+        for (unsigned short i = 0; i < height; i++) {
+            unsigned short j = 0;
+            const unsigned char* pcached = bmImage + (i * bmpwidth);
+            const unsigned char* const rowEnd = pcached + width; // Cache row end
+            
+            if (hasLines) {
+                ptaglines[i] = static_cast<unsigned long>(pimage - cellImage->image);
+                pdatalines[i] = static_cast<unsigned long>(ppack - cellImage->pack);
+            }
+            
+            while (j < width) {
+                const unsigned short remainingPixels = width - j;
+                
+                if (remainingPixels > 2) {
+                    const unsigned char b1 = pcached[0];
+                    const unsigned char b2 = pcached[1];
+                    const unsigned char b3 = pcached[2];
+                    
+                    if ((b1 == b2) || (b1 == 255)) {
+                        // Run-length encode identical bytes or transparency
+                        const unsigned char runValue = b1;
+                        pcached++;
+                        j++;
+                        unsigned char cont = 1;
                         
-                        if ((b1==b2) || (cont ==1))
-                        {
-                           if (b1==255)
-                           {
-	                           pimage[0]=0xC0 + cont;
-							   pimage++;  
-             			   }
-						   else
-						   {
-							   pimage[0]=0x80 + cont;
-							   pimage++;
-							   ppack[0]=b1;
-							   ppack++;
-						   }    
-						}
-						else
-                        {	
-						    pimage[0]=cont;
-						    pimage++;
-
-							ppack[0]=b1;
-							ppack[1]=b2;
-                            ppack+=cont;
-							
-						}
-      
-                        pcached+=cont;   
-						j+=cont;
-							
-					}
-				} while (j<width);
-			}
-	
-			cellImage->packSize = (unsigned long) (ppack - cellImage->pack);
-			cellImage->imageSize = (unsigned long) (pimage - cellImage->image);
-			
-		}
-
-		
-	}
+                        // Optimized run detection - check 4 bytes at a time when possible
+                        while ((j < width) && (cont < 0x3F)) {
+                            if (*pcached != runValue) break;
+                            
+                            // Check if we can process 4 bytes at once
+                            if ((j + 3 < width) && (cont <= 0x3C) && 
+                                (pcached[0] == runValue) && (pcached[1] == runValue) && 
+                                (pcached[2] == runValue) && (pcached[3] == runValue)) {
+                                cont += 4;
+                                pcached += 4;
+                                j += 4;
+                            } else {
+                                cont++;
+                                pcached++;
+                                j++;
+                            }
+                        }
+                        
+                        if (runValue == 255) {
+                            *pimage++ = 0xC0 + cont; // Transparency run
+                        } else {
+                            *pimage++ = 0x80 + cont; // Color run
+                            *ppack++ = runValue;
+                        }
+                    } else {
+                        // Encode literal sequence
+                        unsigned char cont = 1;
+                        const unsigned char* literalStart = pcached;
+                        
+                        // Find literal sequence length (max 0x3F = 63)
+                        while ((j + cont < width - 2) && (cont < 0x3F)) {
+                            const unsigned char next1 = pcached[cont];
+                            const unsigned char next2 = pcached[cont + 1];
+                            const unsigned char next3 = pcached[cont + 2];
+                            
+                            if ((next1 == next2) && ((next2 == next3) || (next2 == 255))) {
+                                break; // Found start of a run
+                            }
+                            cont++;
+                        }
+                        
+                        // Handle edge case at end of scanline
+                        if ((j + cont == width - 2) && (cont < 0x3E) && (pcached[cont + 1] != pcached[cont])) {
+                            cont += 2;
+                        }
+                        
+                        *pimage++ = cont; // Literal count
+                        
+                        // Copy literal bytes efficiently
+                        memcpy(ppack, literalStart, cont);
+                        ppack += cont;
+                        pcached += cont;
+                        j += cont;
+                    }
+                } else {
+                    // Handle remaining 1-2 pixels at end of scanline
+                    const unsigned char cont = static_cast<unsigned char>(remainingPixels);
+                    const unsigned char b1 = pcached[0];
+                    const unsigned char b2 = (cont == 2) ? pcached[1] : b1;
+                    
+                    if ((b1 == b2) || (cont == 1)) {
+                        // Single byte or identical pair
+                        if (b1 == 255) {
+                            *pimage++ = 0xC0 + cont; // Transparency
+                        } else {
+                            *pimage++ = 0x80 + cont; // Color run
+                            *ppack++ = b1;
+                        }
+                    } else {
+                        // Two different bytes - optimized assignment
+                        *pimage++ = cont;
+                        *ppack++ = b1;
+                        *ppack++ = b2;
+                    }
+                    
+                    pcached += cont;
+                    j += cont;
+                }
+            }
+        }
+        
+        // Update final sizes
+        cellImage->packSize = static_cast<unsigned long>(ppack - cellImage->pack);
+        cellImage->imageSize = static_cast<unsigned long>(pimage - cellImage->image);
+    }
 }
 
 long Cell::makeBitmap()
