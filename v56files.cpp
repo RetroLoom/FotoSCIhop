@@ -208,90 +208,105 @@ int V56file::addLoops( int base, int amount )
 
 int V56file::loadCellOffset(void)
 {
-	int retVal = 0;
-
-	// Initialize variables
-	totalImageSize = 0;
-	unsigned long tagsTotalSize = 0;
-	unsigned long paletteOffset = 0;
-	unsigned long paletteSize = 0;
-	unsigned long linesTotalSize = 0;
-
-	// Check if palette is present and calculate palette size
-	if (palSCI->palData)
-	{
-		paletteSize = COMPPALSIZE + (palSCI->Head.nColors * (!palSCI->Head.type ? 4 : 3));
-	}
-
-	paletteOffset = 2 + Head.view32.viewHeaderSize + Head.view32.loopHeaderSize * Head.view32.loopCount + Head.view32.celHeaderSize * Head.view32.celCount + 6;
-	Head.view32.paletteOffset = (palSCI->palData ? paletteOffset : 0);
-
-	// Loop through all loops
-	for (int l = 0; l < Head.view32.loopCount; l++)
-	{		
-		// Loop through all cells in current loop
-		for (int i = 0; i < loops[l]->Head.numCels; i++)
-		{
-			CellImage *bImage = loops[l]->cells[i]->cellImage;
-
-			totalImageSize += bImage->imageSize + bImage->packSize;
-			tagsTotalSize += bImage->imageSize;
-
-			if (loops[l]->cells[i]->cellImage->lines)
-			{
-				linesTotalSize += loops[l]->cells[i]->Head.view.yDim * 4 * 2;
-			}
-		}
-	}
-
-	// Calculate offsets for various data
-	unsigned long cellpos = VIEW32_HEADER_LINK_SIZE + LOOPHEADERSIZE * Head.view32.loopCount;
-	unsigned long imagepos = paletteOffset + paletteSize + (palSCI->palData ? 6 : 0);
-	unsigned long packpos = (Head.view32.splitView ? imagepos + tagsTotalSize : 0);
-	unsigned long linespos = imagepos + totalImageSize + 6;
-	unsigned long linkspos = linespos + linesTotalSize + 6; 
-
-	// Loop through all loops again
-	for (int l = 0; l < Head.view32.loopCount; l++)
-	{
-		loops[l]->Head.celOffset = cellpos;
-		cellpos += Head.view32.celHeaderSize * loops[l]->Head.numCels;
-
-		// Loop through all cells in current loop
-		for (int i = 0; i < loops[l]->Head.numCels; i++)
-		{
-			CelHeaderView *bCell = (CelHeaderView *)&loops[l]->cells[i]->Head;
-
-			CellImage *bImage = loops[l]->cells[i]->cellImage;
-
-			bCell->dataByteCount = (bCell->compressType ? bImage->imageSize + bImage->packSize : bImage->imageSize);
-			bCell->controlByteCount = (bCell->compressType ? bImage->imageSize : 0); // TODO CHECK DUNNO IF IT'S 0 or 6... in GK2 it's 0
-	
-			// memset(&(loops[l]->cells[i]->Head.view.unknown), 0, 10);
-			bCell->controlOffset = imagepos;
-			bCell->colorOffset = packpos;
-
-			// Update offsets
-			imagepos += (bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount);
-			packpos += (Head.view32.splitView ? bCell->dataByteCount - bCell->controlByteCount : 0);
-
-			if (bCell->compressType)
-			{	
-				bCell->rowTableOffset = (loops[l]->cells[i]->cellImage->lines ? linespos : 0);
-				linespos += bCell->yDim * 4 * 2;
-			}
-
-			if (bCell->linkTableCount)
-			{
-				bCell->linkTableOffset = linkspos;
-
-				linkspos += sizeof(LinkPoint) * bCell->linkTableCount;
-			}
-		}
-	}
-
-	retVal = 1;
-	return retVal;
+    if (!palSCI) {
+        return 0; // Error: no palette loaded
+    }
+    
+    // Initialize variables
+    totalImageSize = 0;
+    unsigned long tagsTotalSize = 0;
+    unsigned long linesTotalSize = 0;
+    
+    // Calculate palette size if palette data exists
+    unsigned long paletteSize = 0;
+    if (palSCI->palData) {
+        paletteSize = COMPPALSIZE + (palSCI->Head.nColors * (palSCI->Head.type ? 3 : 4));
+    }
+    
+    // Calculate palette offset
+    const unsigned long paletteOffset = 2 + Head.view32.viewHeaderSize + 
+        Head.view32.loopHeaderSize * Head.view32.loopCount + 
+        Head.view32.celHeaderSize * Head.view32.celCount + 6;
+    
+    Head.view32.paletteOffset = palSCI->palData ? paletteOffset : 0;
+    
+    // First pass: calculate total sizes for all cells
+    for (int l = 0; l < Head.view32.loopCount; l++) {
+        if (!loops[l]) continue; // Skip invalid loops
+        
+        for (int i = 0; i < loops[l]->Head.numCels; i++) {
+            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) {
+                continue; // Skip invalid cells
+            }
+            
+            const CellImage* bImage = loops[l]->cells[i]->cellImage;
+            totalImageSize += bImage->imageSize + bImage->packSize;
+            tagsTotalSize += bImage->imageSize;
+            
+            if (bImage->lines) {
+                linesTotalSize += loops[l]->cells[i]->Head.view.yDim * 8; // 4 * 2 = 8
+            }
+        }
+    }
+    
+    // Calculate base offsets for various data sections
+    const unsigned long cellpos_base = VIEW32_HEADER_LINK_SIZE + LOOPHEADERSIZE * Head.view32.loopCount;
+    const unsigned long imagepos_base = paletteOffset + paletteSize + (palSCI->palData ? 6 : 0);
+    const unsigned long packpos_base = Head.view32.splitView ? (imagepos_base + tagsTotalSize) : 0;
+    const unsigned long linespos_base = imagepos_base + totalImageSize + 6;
+    const unsigned long linkspos_base = linespos_base + linesTotalSize + 6;
+    
+    // Working offsets (will be updated as we process cells)
+    unsigned long cellpos = cellpos_base;
+    unsigned long imagepos = imagepos_base;
+    unsigned long packpos = packpos_base;
+    unsigned long linespos = linespos_base;
+    unsigned long linkspos = linkspos_base;
+    
+    // Second pass: assign offsets to all cells
+    for (int l = 0; l < Head.view32.loopCount; l++) {
+        if (!loops[l]) continue; // Skip invalid loops
+        
+        loops[l]->Head.celOffset = cellpos;
+        cellpos += Head.view32.celHeaderSize * loops[l]->Head.numCels;
+        
+        for (int i = 0; i < loops[l]->Head.numCels; i++) {
+            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) {
+                continue; // Skip invalid cells
+            }
+            
+            CelHeaderView* bCell = reinterpret_cast<CelHeaderView*>(&loops[l]->cells[i]->Head);
+            const CellImage* bImage = loops[l]->cells[i]->cellImage;
+            
+            // Calculate data sizes
+            bCell->dataByteCount = bImage->imageSize + (bCell->compressType ? bImage->packSize : 0);
+            bCell->controlByteCount = bCell->compressType ? bImage->imageSize : 0;
+            
+            // Set file offsets
+            bCell->controlOffset = imagepos;
+            bCell->colorOffset = packpos;
+            
+            // Update positions for next cell
+            imagepos += (bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount);
+            if (Head.view32.splitView) {
+                packpos += (bCell->dataByteCount - bCell->controlByteCount);
+            }
+            
+            // Set row table offset for compressed cells
+            if (bCell->compressType) {
+                bCell->rowTableOffset = bImage->lines ? linespos : 0;
+                linespos += bCell->yDim * 8; // 4 * 2 = 8 bytes per line
+            }
+            
+            // Set link table offset if links exist
+            if (bCell->linkTableCount > 0) {
+                bCell->linkTableOffset = linkspos;
+                linkspos += sizeof(LinkPoint) * bCell->linkTableCount;
+            }
+        }
+    }
+    
+    return 1; // Success
 }
 
 int V56file::addCells( int loop, int base, int amount)
