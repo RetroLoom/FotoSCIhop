@@ -417,64 +417,59 @@ void Cell::loadImage(FILE* cfilebuf, unsigned char offset)
     cellImage = sciImage;
 }
 	
-void Cell::WriteImage(FILE *cfb)
+void Cell::WriteImage(FILE* cfb)
 {
-	if (cfb)
-	{
-		fwrite(cellImage->image, cellImage->imageSize, 1, cfb);
-		changed = false;
-	}
+    if (cfb && cellImage && cellImage->image && cellImage->imageSize > 0) {
+        fwrite(cellImage->image, cellImage->imageSize, 1, cfb);
+        changed = false;
+    }
 }
 
-void Cell::WritePack(FILE *cfb)
+void Cell::WritePack(FILE* cfb)
 {
-	CelBase *bCell = new CelBase;
-	bCell = (CelBase *)&Head;
-	
-	if (cfb)
-	{
-		if (bCell->compressType)
-			fwrite(cellImage->pack, cellImage->packSize, 1, cfb);
-	}
+    if (!cfb) return;
+    
+    const CelBase* bCell = reinterpret_cast<const CelBase*>(&Head);
+    
+    if (bCell->compressType && cellImage && cellImage->pack && cellImage->packSize > 0) {
+        fwrite(cellImage->pack, cellImage->packSize, 1, cfb);
+    }
 }
 
-void Cell::WriteScanLines(FILE *cfb)
+void Cell::WriteScanLines(FILE* cfb)
 {
-	CelBase *bCell = new CelBase;
-	bCell = (CelBase *)&Head;
-
-	if (cfb)
-	{
-		if (cellImage->lines)
-		{
-
-			fwrite(cellImage->lines, bCell->yDim *4*2, 1, cfb);
-		}
-	}
+    if (!cfb) return;
+    
+    const CelBase* bCell = reinterpret_cast<const CelBase*>(&Head);
+    
+    if (cellImage && cellImage->lines && bCell->yDim > 0) {
+        const size_t lineDataSize = bCell->yDim * 8; // 4 * 2 = 8 bytes per line
+        fwrite(cellImage->lines, lineDataSize, 1, cfb);
+    }
 }
 
-void Cell::ReadLinks(FILE *cfb)
+void Cell::ReadLinks(FILE* cfb)
 {
-	CelHeaderView *bCell = new CelHeaderView;
-	bCell = (CelHeaderView *)&Head;
-
-	if (cfb && bCell->linkTableCount)
-	{
-		for (int i = 0; i < bCell->linkTableCount; ++i)
-		{
-			fread(&(linkPoints[i]), sizeof(LinkPoint), 1, cfb);
-        }	
-	}
+    if (!cfb) return;
+    
+    const CelHeaderView* bCell = reinterpret_cast<const CelHeaderView*>(&Head);
+    
+    if (bCell->linkTableCount > 0 && linkPoints) {
+        // Batch read all link points at once for better performance
+        const size_t totalSize = bCell->linkTableCount * sizeof(LinkPoint);
+        fread(linkPoints, totalSize, 1, cfb);
+    }
 }
 
-void Cell::WriteLinks(FILE *cfb)
+void Cell::WriteLinks(FILE* cfb)
 {
-	CelHeaderView *bCell = new CelHeaderView;
-	bCell = (CelHeaderView *)&Head;
-
-	if (cfb && bCell->linkTableCount)
-	{
-		for (int i = 0; i < bCell->linkTableCount; ++i)
-				fwrite(&(linkPoints[i]), sizeof(LinkPoint), 1, cfb);
-	}
+    if (!cfb) return;
+    
+    const CelHeaderView* bCell = reinterpret_cast<const CelHeaderView*>(&Head);
+    
+    if (bCell->linkTableCount > 0 && linkPoints) {
+        // Batch write all link points at once for better performance
+        const size_t totalSize = bCell->linkTableCount * sizeof(LinkPoint);
+        fwrite(linkPoints, totalSize, 1, cfb);
+    }
 }
