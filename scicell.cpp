@@ -198,187 +198,164 @@ void Cell::makeSCI()
 
 long Cell::makeBitmap()
 {
-	if (bmImage)
-		delete bmImage;
-
-	if (bmInfo)
-		delete bmInfo;
-
-	unsigned long width;
-	unsigned long height;
-
-	CelBase *bCell = new CelBase;
-	bCell = (CelBase *)&Head;
-
-	width = bCell->xDim;
-	height = bCell->yDim;
-
-	unsigned long imsize = width*height;
-	int dwremainder = width%4;
-	if (dwremainder)
-		imsize+= height*(4-dwremainder); //bmp requires DWORD align for each scanline
-	unsigned char *initdata;
-
-	long tsizep = ((sizeof(BITMAPINFO)) + 256*(sizeof(RGBQUAD)));
-
-	BITMAPINFO *binfo = (BITMAPINFO *) new char[tsizep];
-	
-
-	binfo->bmiHeader.biBitCount=8;
-	binfo->bmiHeader.biClrImportant=256;
-	binfo->bmiHeader.biClrUsed=256;//TODO ok?
-	binfo->bmiHeader.biCompression=BI_RGB;
-	binfo->bmiHeader.biHeight=-height; //so that it will be a top-down DIB
-	binfo->bmiHeader.biPlanes=1;
-	binfo->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);//???
-	binfo->bmiHeader.biSizeImage=imsize;//was 0;
-	binfo->bmiHeader.biWidth=width;
-	binfo->bmiHeader.biXPelsPerMeter=0; //nu
-	binfo->bmiHeader.biYPelsPerMeter=0; //nu
-
-	RGBQUAD tquad;
-	for (int i=0; i<256; i++)
-	{
-		PalEntry *tpal = palette->GetPalEntry(i);
+    // Clean up existing data
+    delete bmImage;
+    bmImage = nullptr;
+    
+    delete bmInfo;
+    bmInfo = nullptr;
+    
+    // Extract dimensions
+    CelBase* bCell = new CelBase;
+    bCell = reinterpret_cast<CelBase*>(&Head);
+    
+    const unsigned long width = bCell->xDim;
+    const unsigned long height = bCell->yDim;
+    
+    // Calculate bitmap size and padding
+    unsigned long imsize = width * height;
+    const int dwremainder = width % 4;
+    if (dwremainder) {
+        imsize += height * (4 - dwremainder); // BMP requires DWORD align for each scanline
+    }
+    
+    // Create bitmap info structure
+    const long tsizep = sizeof(BITMAPINFO) + 256 * sizeof(RGBQUAD);
+    BITMAPINFO* binfo = reinterpret_cast<BITMAPINFO*>(new char[tsizep]);
+    
+    // Initialize bitmap header
+    binfo->bmiHeader.biBitCount = 8;
+    binfo->bmiHeader.biClrImportant = 256;
+    binfo->bmiHeader.biClrUsed = 256;
+    binfo->bmiHeader.biCompression = BI_RGB;
+    binfo->bmiHeader.biHeight = -static_cast<long>(height); // Top-down DIB
+    binfo->bmiHeader.biPlanes = 1;
+    binfo->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    binfo->bmiHeader.biSizeImage = imsize;
+    binfo->bmiHeader.biWidth = width;
+    binfo->bmiHeader.biXPelsPerMeter = 0;
+    binfo->bmiHeader.biYPelsPerMeter = 0;
+    
+    // Create palette
+    for (int i = 0; i < 256; i++) {
+        const PalEntry* tpal = palette->GetPalEntry(i);
+        RGBQUAD& tquad = binfo->bmiColors[i];
         
-		if (tpal != NULL)
-		{
-			tquad.rgbBlue=tpal->blue;
-			tquad.rgbGreen=tpal->green;
-			tquad.rgbRed=tpal->red;
-			tquad.rgbReserved=0;
-		}
-		else
-		{
-			tquad.rgbBlue=0;
-			tquad.rgbGreen=0;
-			tquad.rgbRed=0;
-			tquad.rgbReserved=0;
-		}
-		binfo->bmiColors[i]= tquad;
-
-	}
-
-
-	if (!bCell->compressType)
-	{
-		if (!dwremainder)
-			initdata =  cellImage->image;
-		else
-		{
-			initdata = (unsigned char *) (new char[imsize]);
-			
-			unsigned char *pdata = cellImage->image;
-
-			unsigned char *pinit = initdata;
-			for (int i=0; i<height; i++)
-			{
-				memcpy(pinit, pdata, width);
-				pinit += width;
-				pdata += width;
-				for (int j=0; j<4-dwremainder;j++)
-				{
-					pinit[0] = 0;
-					pinit++;	
-				}
-			}
-
-		}
-	}
-	else
-	{
-		initdata = (unsigned char *) (new char[imsize]);
-
-		unsigned char *ptags = cellImage->image;
-		unsigned char *pdata = cellImage->pack;
-
-		unsigned char *pinit = initdata;
-
-        unsigned long *plines = (unsigned long *)cellImage->lines;
-	
-		//TODO add position verification using scan lines!!
-		int i=0;
-		do
-		{
+        if (tpal != nullptr) {
+            tquad.rgbBlue = tpal->blue;
+            tquad.rgbGreen = tpal->green;
+            tquad.rgbRed = tpal->red;
+            tquad.rgbReserved = 0;
+        } else {
+            tquad.rgbBlue = 0;
+            tquad.rgbGreen = 0;
+            tquad.rgbRed = 0;
+            tquad.rgbReserved = 0;
+        }
+    }
+    
+    unsigned char* initdata;
+    
+    if (!bCell->compressType) {
+        // Uncompressed data
+        if (!dwremainder) {
+            // No padding needed - direct assignment
+            initdata = cellImage->image;
+        } else {
+            // Has padding - copy with padding
+            initdata = new unsigned char[imsize];
+            const unsigned char* pdata = cellImage->image;
+            unsigned char* pinit = initdata;
             
-            if (cellImage->lines)
-			{
-                //HWND thwnd = ((P56file32*)_parent)->MyHWnd();
-				if (plines[i] != (unsigned long)(ptags - cellImage->image))
-                    MessageBox(hWnd, "Lines tags are wrong!", "Error",
-                                MB_OK | MB_ICONEXCLAMATION);
-				if (plines[i+height] != (unsigned long)(pdata - cellImage->pack))
-                    MessageBox(hWnd, "Lines colors are wrong!", "Error",
-                                MB_OK | MB_ICONEXCLAMATION);
-		    }
+            for (unsigned long i = 0; i < height; i++) {
+                memcpy(pinit, pdata, width);
+                pinit += width;
+                pdata += width;
+                
+                // Add padding bytes
+                memset(pinit, 0, 4 - dwremainder);
+                pinit += (4 - dwremainder);
+            }
+        }
+    } else {
+        // Compressed RLE data
+        initdata = new unsigned char[imsize];
+        
+        const unsigned char* ptags = cellImage->image;
+        const unsigned char* pdata = cellImage->pack;
+        unsigned char* pinit = initdata;
+        const unsigned long* plines = reinterpret_cast<const unsigned long*>(cellImage->lines);
+        
+        // Process each scanline
+        for (unsigned long i = 0; i < height; i++) {
+            // Verify line pointers if available
+            if (cellImage->lines) {
+                if (plines[i] != static_cast<unsigned long>(ptags - cellImage->image)) {
+                    MessageBox(hWnd, "Lines tags are wrong!", "Error", MB_OK | MB_ICONEXCLAMATION);
+                }
+                if (plines[i + height] != static_cast<unsigned long>(pdata - cellImage->pack)) {
+                    MessageBox(hWnd, "Lines colors are wrong!", "Error", MB_OK | MB_ICONEXCLAMATION);
+                }
+            }
             
-			int curwidth=0;
-			do
-			{
-				switch ((*ptags)>>6)
-				{
-				case 2:	//80
-				{
-					unsigned char color = *pdata;
-					pdata++;
-					for (int j=0; j<((*ptags)-0x80); j++)
-					{
-						pinit[0] = color; 
-						pinit++;
-						curwidth++;
-					}
-					break;
-				}
-				case 3:	//C0
-					for (int j=0; j<((*ptags)-0xC0); j++)
-					{
-						pinit[0] = 255; 
-						pinit++;
-						curwidth++;
-					}
-					break;
-				default:
-					for (int j=0; j<*ptags; j++)
-					{
-						pinit[0] = *pdata;
-						pdata++;
-						pinit++;	
-						curwidth++;
-					}
-
-				}
-
-				ptags++;
-			
-			} while (curwidth<width);
-			//TODO check the line here!!!
-
-			if (dwremainder) //if it can't be divided by 4
-				for (int j=0; j<4-dwremainder;j++)
-				{
-					pinit[0] = 0;
-					pinit++;	
-				}
-
-			i++;
-
-		} while (i<height);
-		
-		//HWND thwnd = ((P56file32*)_parent)->MyHWnd();
-		if (imsize!=(long)(pinit-initdata))
-			MessageBox(hWnd, "The uncompressed length is different than the expected!", "Error",
-            MB_OK | MB_ICONEXCLAMATION);
-		imsize = imsize-((long)(pinit-initdata));
-
-	}
-
-
-
-//if (tbmap)
-	bmImage = initdata;
-	bmInfo = binfo;
-
-	return imsize;
+            unsigned long curwidth = 0;
+            
+            // Decompress one scanline
+            do {
+                const unsigned char tag = *ptags;
+                const unsigned char tagType = tag >> 6;
+                
+                switch (tagType) {
+                    case 2: // 0x80 - Color run
+                    {
+                        const unsigned char color = *pdata++;
+                        const unsigned char count = tag - 0x80;
+                        memset(pinit, color, count);
+                        pinit += count;
+                        curwidth += count;
+                        break;
+                    }
+                    case 3: // 0xC0 - Transparency run
+                    {
+                        const unsigned char count = tag - 0xC0;
+                        memset(pinit, 255, count);
+                        pinit += count;
+                        curwidth += count;
+                        break;
+                    }
+                    default: // 0x00 - Literal sequence
+                    {
+                        const unsigned char count = tag;
+                        memcpy(pinit, pdata, count);
+                        pdata += count;
+                        pinit += count;
+                        curwidth += count;
+                        break;
+                    }
+                }
+                ptags++;
+            } while (curwidth < width);
+            
+            // Add padding if necessary
+            if (dwremainder) {
+                memset(pinit, 0, 4 - dwremainder);
+                pinit += (4 - dwremainder);
+            }
+        }
+        
+        // Verify final size
+        const long actualSize = static_cast<long>(pinit - initdata);
+        if (imsize != actualSize) {
+            MessageBox(hWnd, "The uncompressed length is different than the expected!", "Error", MB_OK | MB_ICONEXCLAMATION);
+            return imsize - actualSize; // Return size difference as error
+        }
+    }
+    
+    // Set output pointers
+    bmImage = initdata;
+    bmInfo = binfo;
+    
+    return 0; // Success (was returning imsize difference, but 0 for success is clearer)
 }
 
 void Cell::loadImageOffset()
