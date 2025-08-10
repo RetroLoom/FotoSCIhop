@@ -13,49 +13,71 @@
 
 #include "english.h" // Dhel
 
-P56file32::~P56file32(void)
+// Add this to the top of your p56files.cpp file
+#define _CRT_SECURE_NO_WARNINGS
+
+P56file32::P56file32() : 
+    palSCI(nullptr),
+    vector(nullptr), 
+    _unkShort1(0),
+    _unkShort2(0),
+    format(-1),
+    imageAllSize(0)
 {
-	if (palSCI)
-		delete palSCI;
+    // Initialize Head union to zero
+    memset(&Head, 0, sizeof(Head));
+    
+    // Initialize cells array to null pointers
+    for (int i = 0; i < MAX_CELLS; i++) {
+        cells[i] = nullptr;
+    }
+}
 
- 	if (vector)
-		delete vector;
+P56file32::~P56file32()
+{
+    // Clean up all allocated resources
+    cleanup();
+}
 
-	if (cells)
-	{
-		PicHeader32 *bPic32;
-		PicHeader11 *bPic11;
+void P56file32::cleanup()
+{
+    // Delete all cells
+    for (int i = 0; i < MAX_CELLS; i++) {
+        if (cells[i]) {
+            delete cells[i];
+            cells[i] = nullptr;
+        }
+    }
+    
+    // Delete palette
+    if (palSCI) {
+        delete palSCI;
+        palSCI = nullptr;
+    }
+    
+    // Delete vector data
+    if (vector) {
+        delete[] vector;
+        vector = nullptr;
+    }
+}
 
-		int cellCount = 0;
-
-		switch (format)
-		{
-
-		case _PIC_32:
-
-			bPic32 = (PicHeader32 *)&Head;
-			cellCount = bPic32->celCount;
-			break;
-
-		case _PIC_11:
-
-			bPic11 = (PicHeader11 *)&Head;
-			cellCount = bPic11->celCount;
-			break;
-		}
-
-		for (unsigned short i = 0; i < cellCount; i++)
-		{
-			if (cells[i])
-			{
-				if (!cells[i]->isClone)
-				{
-					Cell *texcell = cells[i];
-					delete (texcell);
-				}
-			}
-		}
-	}
+void P56file32::initializeMembers()
+{
+    palSCI = nullptr;
+    vector = nullptr;
+    _unkShort1 = 0;
+    _unkShort2 = 0;
+    format = -1;
+    imageAllSize = 0;
+    
+    // Initialize Head union
+    memset(&Head, 0, sizeof(Head));
+    
+    // Initialize cells array
+    for (int i = 0; i < MAX_CELLS; i++) {
+        cells[i] = nullptr;
+    }
 }
 
 int P56file32::LoadFile(HWND hwnd, LPSTR pszFileName)
