@@ -28,135 +28,141 @@ V56file::~V56file(void)
 
 int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
 {
-    FILE *cfilebuf = fopen(pszFileName, "rb");
-    if (cfilebuf)
-    {
-		/*
-		//dispose old file structs from memory:
-        if (_loops)
-           delete _loops;
-        _loops = 0;
-		*/
-	
-		/*
-		if (palSCI)
-           delete palSCI;
-        palSCI = 0;
-		*/
-			
-		//first check for the Patches header:
-        unsigned char offset = 0;
-		unsigned long patchID =0;
+    FILE* cfilebuf = fopen(pszFileName, "rb");
+    if (!cfilebuf) {
+        return ID_CANTOPENFILE;
+    }
+    
+    // Determine file offset by checking for patch header
+    unsigned char offset = 0;
+    unsigned long patchID = 0;
+    
+    if (fread(&patchID, 3, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
+    }
+    
+    if (patchID == V56PATCH84 || patchID == V56PATCH) {
+        if (fread(&offset, 1, 1, cfilebuf) != 1) {
+            fclose(cfilebuf);
+            return ID_CANTOPENFILE;
+        }
+        offset += 26;
+    } else if (((patchID & 0xFFFF) == 16) || ((patchID & 0xFFFF) == 18)) {
+        offset = 0; // Typical offset used
+    } else {
+        fclose(cfilebuf);
+        return ID_WRONGHEADER;
+    }
+    
+    // Validate loop record size
+    fseek(cfilebuf, offset + 12, SEEK_SET);
+    unsigned char tlooprecsize = 0;
+    if (fread(&tlooprecsize, 1, 1, cfilebuf) != 1 || tlooprecsize != 0x10) {
+        fclose(cfilebuf);
+        return ID_WRONGLOOPRECSIZE;
+    }
+    
+    // Validate cell record size
+    fseek(cfilebuf, offset + 13, SEEK_SET);
+    unsigned char tcellrecsize = 0;
+    if (fread(&tcellrecsize, 1, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_WRONGCELLRECSIZE;
+    }
+    
+    if (tcellrecsize != 0x24 && tcellrecsize != 0x34) {
+        fclose(cfilebuf);
+        return ID_WRONGCELLRECSIZE;
+    }
+    
+    // Load main header
+    fseek(cfilebuf, offset, SEEK_SET);
+    if (fread(&Head, VIEW32_HEADER_LINK_SIZE, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
+    }
+    
+    // Load palette if present
+    if (Head.view32.paletteOffset) {
+        fseek(cfilebuf, offset + Head.view32.paletteOffset - 6, SEEK_SET);
         
-
-		fread((void *) &patchID, 3, 1, cfilebuf);
-        if (patchID == V56PATCH84 || patchID == V56PATCH)
-		{
-			fread((void *) &offset, 1, 1, cfilebuf);
-			offset += 26;
-		}
-		else if (((patchID&0xFFFF) == 16) || ((patchID&0xFFFF) == 18))  //typical offset used
-			offset = 0;
-		else
-			return ID_WRONGHEADER;
-		
-
-		fseek(cfilebuf, offset+12, SEEK_SET);
-		unsigned char tlooprecsize=0;
-		fread(&tlooprecsize, 1, 1, cfilebuf);
-		if (tlooprecsize != 0x10)
-			return ID_WRONGLOOPRECSIZE;
-
-		fseek(cfilebuf, offset + 13, SEEK_SET);
-		unsigned char tcellrecsize = 0;
-		fread(&tcellrecsize, 1, 1, cfilebuf);
-		switch (tcellrecsize)
-		{
-		case 0x24:
-
-			break;
-		case 0x34:
-			
-			break;
-		default:
-			return ID_WRONGCELLRECSIZE;
-		}
-
-		fseek(cfilebuf, offset, SEEK_SET);
-
-        fread(&Head, VIEW32_HEADER_LINK_SIZE, 1, cfilebuf);
-
-		if (Head.view32.paletteOffset)
-		{
-			fseek(cfilebuf, offset + Head.view32.paletteOffset - 6 , SEEK_SET);
-
-			int ttag = 0;
-			fread(&ttag, 2, 1, cfilebuf);
-			if (ttag != PALETTE_POS)
-				return ID_WRONGPALETTELOC;
-
-			unsigned long tpalsize=0;
-			fread(&tpalsize, 4, 1, cfilebuf);
-
-			palSCI= new Palette;
-			palSCI->loadPalette(cfilebuf, tpalsize);
-		}
-		else
-		{
-			palSCI= new Palette;
-
-			//MessageBox(hwnd, WARN_MISSINGPALETTE, WARN_ATTENTION, MB_OK | MB_ICONEXCLAMATION);
-            //MessageBox replaced with a string (lighter)
-
-			palSCI->noPalette();
-		}
-
-
-		//palette loading completed, now load loops and cells:
-		fseek(cfilebuf, offset + Head.view32.viewHeaderSize + 2, SEEK_SET);  //2 additional bytes for the counter
-
-		LoopHeader loopHeaders[1024];
-
-		fread(loopHeaders, LOOPHEADERSIZE, Head.view32.loopCount, cfilebuf);
-
-		for (int z=0; z<Head.view32.loopCount; z++)
-		{			
-			loops[z] = new Loop;		
-			loops[z]->Head = loopHeaders[z];
-	
-			fseek(cfilebuf, offset+loops[z]->Head.celOffset, SEEK_SET);
-
-			for (unsigned short i=0; i<loops[z]->Head.numCels; i++)
-			{
-				loops[z]->cells[i] = new Cell;
-				fread(&(loops[z]->cells[i]->Head.view), CELHEADERVIEWSIZE, 1, cfilebuf); 
-				fseek(cfilebuf, Head.view32.celHeaderSize - CELHEADERVIEWSIZE, SEEK_CUR);     //skips remaining data 
+        int ttag = 0;
+        if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
+            fclose(cfilebuf);
+            return ID_WRONGPALETTELOC;
+        }
+        
+        unsigned long tpalsize = 0;
+        if (fread(&tpalsize, 4, 1, cfilebuf) != 1) {
+            fclose(cfilebuf);
+            return ID_CANTOPENFILE;
+        }
+        
+        palSCI = new Palette;
+        palSCI->loadPalette(cfilebuf, tpalsize);
+    } else {
+        palSCI = new Palette;
+        palSCI->noPalette();
+    }
+    
+    // Load loops and cells
+    fseek(cfilebuf, offset + Head.view32.viewHeaderSize + 2, SEEK_SET); // 2 additional bytes for counter
+    
+    // Pre-allocate and batch read all loop headers
+    LoopHeader loopHeaders[1024];
+    if (fread(loopHeaders, LOOPHEADERSIZE, Head.view32.loopCount, cfilebuf) != Head.view32.loopCount) {
+        delete palSCI;
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
+    }
+    
+    // Process each loop
+    for (int z = 0; z < Head.view32.loopCount; z++) {
+        loops[z] = new Loop;
+        loops[z]->Head = loopHeaders[z];
+        
+        // Load all cell headers for this loop at once
+        fseek(cfilebuf, offset + loops[z]->Head.celOffset, SEEK_SET);
+        
+        for (unsigned short i = 0; i < loops[z]->Head.numCels; i++) {
+            loops[z]->cells[i] = new Cell;
+            
+            if (fread(&(loops[z]->cells[i]->Head.view), CELHEADERVIEWSIZE, 1, cfilebuf) != 1) {
+                // Cleanup on error
+                for (int cleanup_z = 0; cleanup_z <= z; cleanup_z++) {
+                    for (unsigned short cleanup_i = 0; cleanup_i < ((cleanup_z == z) ? i : loops[cleanup_z]->Head.numCels); cleanup_i++) {
+                        delete loops[cleanup_z]->cells[cleanup_i];
+                    }
+                    delete loops[cleanup_z];
+                }
+                delete palSCI;
+                fclose(cfilebuf);
+                return ID_CANTOPENFILE;
             }
-
-			for (int i = 0; i < loops[z]->Head.numCels; i++)
-			{
-				loops[z]->cells[i]->setPalette(&palSCI);
-
-				loops[z]->cells[i]->loadImage(cfilebuf, offset);
-
-				CelHeaderView *bCell = bCell = (CelHeaderView *)&loops[z]->cells[i]->Head;
-				
-				if (bCell->linkTableCount)
-				{
-					fseek(cfilebuf, offset + bCell->linkTableOffset, SEEK_SET);
-					loops[z]->cells[i]->ReadLinks(cfilebuf);
-				}
-			}
-		}
-
-		Head.view32.celHeaderSize = CELHEADERVIEWSIZE;
-
-		fclose(cfilebuf);
-
-		return ID_NOERROR;		
-	}
-
-	return ID_CANTOPENFILE;
+            
+            // Skip remaining header data
+            fseek(cfilebuf, Head.view32.celHeaderSize - CELHEADERVIEWSIZE, SEEK_CUR);
+        }
+        
+        // Load image data and links for all cells in this loop
+        for (int i = 0; i < loops[z]->Head.numCels; i++) {
+            loops[z]->cells[i]->setPalette(&palSCI);
+            loops[z]->cells[i]->loadImage(cfilebuf, offset);
+            
+            const CelHeaderView* bCell = reinterpret_cast<const CelHeaderView*>(&loops[z]->cells[i]->Head);
+            
+            if (bCell->linkTableCount) {
+                fseek(cfilebuf, offset + bCell->linkTableOffset, SEEK_SET);
+                loops[z]->cells[i]->ReadLinks(cfilebuf);
+            }
+        }
+    }
+    
+    Head.view32.celHeaderSize = CELHEADERVIEWSIZE;
+    fclose(cfilebuf);
+    
+    return ID_NOERROR;
 }
 
 int V56file::addLoops( int base, int amount )
