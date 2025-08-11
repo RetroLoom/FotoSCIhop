@@ -2,13 +2,16 @@
  *  Copyright (C) Enrico Rolfi 'Endroz', 2004-2021.
  *  Copyright (C) Daniel Arnold 'Dhel', 2022-2024.
  *
- *  global stuff
+ *  Global application definitions and declarations
  *
  */
- 
+
 #ifndef FOTOSCIHOP_H
 #define FOTOSCIHOP_H
 
+// ============================================================================
+// SYSTEM INCLUDES
+// ============================================================================
 #include "resource.h"
 #include "language.h"
 #include "list.h"
@@ -17,21 +20,21 @@
 #include "sciloop.h"
 #include "p56files.h"
 #include "v56files.h"
-
 #include "english.h"
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
 #define MAX_ARG 512
+
+// ============================================================================
+// COMMAND LINE AND CONFIGURATION
+// ============================================================================
 char *argv[MAX_ARG];
-char propstr[10240]="";
+char propstr[10240] = "";
 char gAppPath[MAX_PATH];
 
-
-// Dialog
-HWND hPropertiesDialog;
-HWND hLinkPointDialog;
-void DoUpdatePropertiesProc(HWND hwndDlg);
-void DoUpdateLinkPointProc(HWND hwndDlg);
-
-// ini
+// Configuration file and settings
 char gConfigIni[_MAX_PATH];
 int gAppResX = 700;
 int gAppResY = 500;
@@ -41,7 +44,9 @@ int gCliMode = 0;
 int gBaseMagnify = 100;
 int gCliEnabled = 0;
 
-// Reference Image
+// ============================================================================
+// REFERENCE IMAGE SETTINGS
+// ============================================================================
 HWND hReferenceDialog;
 float gReferenceScaleX = 100;
 float gReferenceScaleY = 100;
@@ -54,46 +59,67 @@ int gReferenceLinkPointY = 0;
 int gReferencePriority = 0;
 int gReferenceTransparentIndex = 255;
 
+// ============================================================================
+// GLOBAL APPLICATION STATE
+// ============================================================================
 
-
-//BOOL DoImageConversion(char fileName[MAX_PATH], int cLimit, int tolerance);
-BOOL CLIPaletteImport(char *palette);
-int cliExport(char *name);
-
+// Main data objects
 P56file32 *globalPicture = NULL;
 V56file *globalView = NULL;
-bool isPicture=true;
+bool isPicture = true;
 
-RGBQUAD skipColor;
-
-Cell **curCell =0;
-Loop **curLoop =0;
+// Current selection state
+Cell **curCell = 0;
+Loop **curLoop = 0;
 int curCellIndex = 0;
 int curLoopIndex = 0;
 
-int MagnifyFactor = gBaseMagnify;
+// Application state flags
+bool datasaved = true;
 bool showpbars = false;
 
-bool datasaved =true;
+// ============================================================================
+// DISPLAY AND UI STATE
+// ============================================================================
 
-RECT rc;
-
-HWND hWndTopBar;
-HFONT hfDefault;
-
+// Display settings
+int MagnifyFactor = gBaseMagnify;
 int picX = 0;
 int picY = 30;
 int tableX = 0;
 
-// image import
+// UI elements and drawing
+RECT rc;
+HWND hWndTopBar;
+HFONT hfDefault;
+RGBQUAD skipColor;
+
+// Image import settings
 int colorLimit = 255;
 int tolerance = 50;
 
+// ============================================================================
+// DIALOG HANDLES
+// ============================================================================
+HWND hPropertiesDialog;
+HWND hLinkPointDialog;
+
+// ============================================================================
+// FUNCTION DECLARATIONS
+// ============================================================================
+
+// Dialog update procedures
+void DoUpdatePropertiesProc(HWND hwndDlg);
+void DoUpdateLinkPointProc(HWND hwndDlg);
+
+// CLI and palette functions
+BOOL CLIPaletteImport(char *palette);
+int cliExport(char *name);
+
+// Dialog procedure
 BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
                                UINT message,
                                WPARAM wParam,
-                               LPARAM lParam
-                               );
+                               LPARAM lParam);
 
-
-#endif
+#endif // FOTOSCIHOP_H
