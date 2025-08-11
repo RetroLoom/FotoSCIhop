@@ -154,7 +154,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="FotoSCIhop.cpp" />
-    <ClCompile Include="list.cpp" />
     <ClCompile Include="p56files.cpp" />
     <ClCompile Include="palette.cpp" />
     <ClCompile Include="scicell.cpp" />
