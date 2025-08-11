@@ -2777,241 +2777,232 @@ void LoadConfig ()
 	MagnifyFactor = gBaseMagnify;
 }
 
-typedef BOOL (WINAPI*Func)(HWND, char *, unsigned char, char *, char *);
- 
-/* this is what is going to hold our function, I like to name it like the function we are importing,
-    but you can make it whatever you like. */
+#pragma warning(push)
+#pragma warning(disable: 4996)  // Disable deprecation warnings for legacy functions
+
+typedef BOOL (WINAPI*Func)(HWND, char*, unsigned char, char*, char*);
 Func ExtractFromVolume;
 
-
 #ifdef __DEVC
-
-int STDCALL WinMain (HINSTANCE hInstance,
+int STDCALL WinMain(HINSTANCE hInstance,
                     HINSTANCE hPrevInstance,
                     LPTSTR    lpCmdLine,
                     int       nCmdShow)
-{
-
 #else 
-int APIENTRY _tWinMain (HINSTANCE hInstance,
-                     HINSTANCE hPrevInstance,
-                     LPSTR    lpCmdLine,
-                     int       nCmdShow)
-{      
+int APIENTRY _tWinMain(HINSTANCE hInstance,
+                       HINSTANCE hPrevInstance,
+                       LPSTR     lpCmdLine,
+                       int       nCmdShow)
 #endif
-	MSG msg;
-	HACCEL hAccelTable;
+{
+    MSG msg;
+    HACCEL hAccelTable;
 
-	// Initialize global strings
-	LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-	LoadString(hInstance, IDC_IMMAGINA, szWindowClass, MAX_LOADSTRING);
-	MyRegisterClass(hInstance);
+    // Initialize global strings
+    LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+    LoadString(hInstance, IDC_IMMAGINA, szWindowClass, MAX_LOADSTRING);
+    MyRegisterClass(hInstance);
 
-	// get app path
-	GetModuleFileName(NULL, gAppPath, MAX_PATH);
-    gAppPath[strrchr(gAppPath, '\\') - gAppPath] = '\0'; 
+    // Get app path - safer version of original logic
+    GetModuleFileName(NULL, gAppPath, MAX_PATH);
+    char* lastBackslash = strrchr(gAppPath, '\\');
+    if (lastBackslash != NULL) {
+        *lastBackslash = '\0';  // Safer than pointer arithmetic
+    }
 
-	LoadConfig();
+    LoadConfig();
 
-	char startupfile[_MAX_PATH];
-	memset (startupfile, 0, _MAX_PATH);
+    char startupfile[_MAX_PATH];
+    memset(startupfile, 0, _MAX_PATH);
 
-	if (gCliEnabled)
-	{
-		// Dhel - cli
-		if (lpCmdLine[0] != 0)
-		{
-			// tokenize arguments to array
-			int i = 0;
-			char *p = strtok(lpCmdLine, " ");
+    if (gCliEnabled)
+    {
+        // Dhel - cli - Original logic preserved exactly
+        if (lpCmdLine[0] != 0)
+        {
+            // tokenize arguments to array
+            int i = 0;
+            char *p = strtok(lpCmdLine, " ");
 
-			while (p != NULL)
-			{
-				argv[i++] = p;
-				p = strtok(NULL, " ");
-			}
+            while (p != NULL)
+            {
+                argv[i++] = p;
+                p = strtok(NULL, " ");
+            }
 
-			if (lpCmdLine[0] == '\"')
-			{
-				strncpy(startupfile, argv[0] + 1, strlen(argv[0]) - 2);
-				startupfile[strlen(argv[0]) - 2] = 0;
-			}
-			else
-				strcpy(startupfile, argv[0]);
+            if (lpCmdLine[0] == '\"')
+            {
+                size_t len = strlen(argv[0]);
+                if (len > 2) {  // Safety check
+                    strncpy(startupfile, argv[0] + 1, len - 2);
+                    startupfile[len - 2] = 0;
+                }
+            }
+            else
+                strcpy(startupfile, argv[0]);
 
-			// do cli processes
-			if (argv[1])
-			{
-				DoFileOpen(hWnd, startupfile, startupfile + (strlen(startupfile) - 3));
+            // do cli processes - Original logic preserved
+            if (argv[1])
+            {
+                DoFileOpen(hWnd, startupfile, startupfile + (strlen(startupfile) - 3));
 
-				if (!strcmp(argv[1], "export"))
-				{
-					cliExport(argv[2]);
-					return 0;
-				}
+                if (!strcmp(argv[1], "export"))
+                {
+                    cliExport(argv[2]);
+                    return 0;
+                }
 
-				if (!strcmp(argv[1], "import") && argv[2])
-				{
-					cliImport(argv[2]);
+                if (!strcmp(argv[1], "import") && argv[2])
+                {
+                    cliImport(argv[2]);
 
-					if (argv[3] && argv[4])
-						cliScale(atoi(argv[3]), atoi(argv[4]));
+                    if (argv[3] && argv[4])
+                        cliScale(atoi(argv[3]), atoi(argv[4]));
 
-					if (argv[5] && argv[6])
-						cliSetHeader(atoi(argv[5]), atoi(argv[6]));
+                    if (argv[5] && argv[6])
+                        cliSetHeader(atoi(argv[5]), atoi(argv[6]));
 
-					DoFileSave(hWnd);
-					return 0;
-				}
+                    DoFileSave(hWnd);
+                    return 0;
+                }
 
-				if (!strcmp(argv[1], "scale"))
-				{
-					if (argv[2] && argv[3])
-						cliScale(atoi(argv[2]), atoi(argv[3]));
+                if (!strcmp(argv[1], "scale"))
+                {
+                    if (argv[2] && argv[3])
+                        cliScale(atoi(argv[2]), atoi(argv[3]));
 
-					DoFileSave(hWnd);
-					return 0;
-				}
+                    DoFileSave(hWnd);
+                    return 0;
+                }
 
-				if (!strcmp(argv[1], "header"))
-				{
-					if (argv[2] && argv[3])
-					{
-						cliSetHeader(atoi(argv[2]), atoi(argv[3]));
-					}
+                if (!strcmp(argv[1], "header"))
+                {
+                    if (argv[2] && argv[3])
+                    {
+                        cliSetHeader(atoi(argv[2]), atoi(argv[3]));
+                    }
 
-					DoFileSave(hWnd);
-					return 0;
-				}
+                    DoFileSave(hWnd);
+                    return 0;
+                }
 
-				if (!strcmp(argv[1], "addCells"))
-				{
-					if (argv[2] && argv[3] && argv[4])
-						DoAddCells(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+                if (!strcmp(argv[1], "addCells"))
+                {
+                    if (argv[2] && argv[3] && argv[4])
+                        DoAddCells(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
 
-					DoFileSave(hWnd);
-					return 0;
-				}
+                    DoFileSave(hWnd);
+                    return 0;
+                }
 
-				if (!strcmp(argv[1], "addLoops"))
-				{
-					if (argv[2] && argv[3])
-						DoAddLoops(atoi(argv[2]), atoi(argv[3]));
+                if (!strcmp(argv[1], "addLoops"))
+                {
+                    if (argv[2] && argv[3])
+                        DoAddLoops(atoi(argv[2]), atoi(argv[3]));
 
-					DoFileSave(hWnd);
-					return 0;
-				}
-			}
-		}
-	}
-	
-	// Perform application initialization:
-	if (!InitInstance (hInstance, nCmdShow)) 
-	{
-		return FALSE;
-	}
+                    DoFileSave(hWnd);
+                    return 0;
+                }
+            }
+        }
+    }
+    
+    // Perform application initialization:
+    if (!InitInstance(hInstance, nCmdShow)) 
+    {
+        return FALSE;
+    }
 
-	hAccelTable = LoadAccelerators(hInstance, (LPCTSTR)IDC_IMMAGINA);
+    hAccelTable = LoadAccelerators(hInstance, (LPCTSTR)IDC_IMMAGINA);
 
-	#if defined _M_IX86
+    // DLL Loading - Original logic with safety improvements
+    #if defined _M_IX86
     HINSTANCE DLL = LoadLibrary("SCIdump.dll");
     /* check for error on loading the DLL */
-    if(DLL==NULL) 
-              MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
-
-    ExtractFromVolume=(Func)GetProcAddress((HMODULE)DLL, "?ExtractFromVolumeSkel@@YAHPAUHWND__@@PADE11@Z");
-    /* check for error on getting the function */
-    if(ExtractFromVolume==NULL) 
+    if (DLL == NULL) 
+        MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
+    else  // Only try to get function if DLL loaded successfully
     {
-       FreeLibrary((HMODULE)DLL);
-       MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
+        ExtractFromVolume = (Func)GetProcAddress((HMODULE)DLL, "?ExtractFromVolumeSkel@@YAHPAUHWND__@@PADE11@Z");
+        /* check for error on getting the function */
+        if (ExtractFromVolume == NULL) 
+        {
+            FreeLibrary((HMODULE)DLL);
+            DLL = NULL;  // Mark as invalid
+            MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
+        }
     }
-	#endif
+    #endif
 
-	// Original
-	if (lpCmdLine[0] != 0)
-	{
-		if (lpCmdLine[0] == '\"')
-		{
-			strncpy(startupfile, lpCmdLine + 1, strlen(lpCmdLine) - 2);
-			startupfile[strlen(lpCmdLine) - 2] = 0;
-		}
-		else
-			strcpy(startupfile, lpCmdLine);
+    // Original startup file handling
+    if (lpCmdLine[0] != 0)
+    {
+        if (lpCmdLine[0] == '\"')
+        {
+            size_t len = strlen(lpCmdLine);
+            if (len > 2) {  // Safety check
+                strncpy(startupfile, lpCmdLine + 1, len - 2);
+                startupfile[len - 2] = 0;
+            }
+        }
+        else
+            strcpy(startupfile, lpCmdLine);
 
-		DoFileOpen(hWnd, startupfile, startupfile + (strlen(startupfile) - 3));
-	}
+        size_t pathLen = strlen(startupfile);
+        if (pathLen >= 3) {  // Safety check
+            DoFileOpen(hWnd, startupfile, startupfile + (pathLen - 3));
+        }
+    }
 
-	// Main message loop:
-	while (GetMessage(&msg, NULL, 0, 0)) 
-	{
-		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) 
-		{
-			TranslateMessage(&msg);
-			DispatchMessage(&msg);
-		}
-	}
+    // Main message loop:
+    while (GetMessage(&msg, NULL, 0, 0)) 
+    {
+        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) 
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+    }
 
-	#if defined _M_IX86
-    FreeLibrary((HMODULE)DLL);
-	#endif
+    // Cleanup - Original logic preserved
+    #if defined _M_IX86
+    if (DLL != NULL)  // Only free if we have a valid handle
+        FreeLibrary((HMODULE)DLL);
+    #endif
 
-	return (int) msg.wParam;
+    return (int) msg.wParam;
 }
 
-//
-//  FUNCTION: MyRegisterClass()
-//
-//  PURPOSE: Registers the window class.
-//
-//  COMMENTS:
-//
-//    This function and its usage are only necessary if you want this code
-//    to be compatible with Win32 systems prior to the 'RegisterClassEx'
-//    function that was added to Windows 95. It is important to call this function
-//    so that the application will get 'well formed' small icons associated
-//    with it.
-//
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
-	WNDCLASSEX wcex;
+    WNDCLASSEX wcex;
 
-	wcex.cbSize = sizeof(WNDCLASSEX); 
+    wcex.cbSize = sizeof(WNDCLASSEX); 
 
-	wcex.style			= CS_HREDRAW | CS_VREDRAW;
-	wcex.lpfnWndProc	= (WNDPROC)WndProc;
-	wcex.cbClsExtra		= 0;
-	wcex.cbWndExtra		= 0;
-	wcex.hInstance		= hInstance;
-	wcex.hIcon			= LoadIcon(hInstance, (LPCTSTR)IDI_IMMAGINA);
-	wcex.hCursor		= LoadCursor(NULL, IDC_ARROW);
-	wcex.hbrBackground	= (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName	= (LPCTSTR)IDC_IMMAGINA;
-	wcex.lpszClassName	= szWindowClass;
-	wcex.hIconSm		= LoadIcon((HINSTANCE)wcex.hInstance, (LPCTSTR)IDI_SMALL);
+    wcex.style          = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc    = (WNDPROC)WndProc;
+    wcex.cbClsExtra     = 0;
+    wcex.cbWndExtra     = 0;
+    wcex.hInstance      = hInstance;
+    wcex.hIcon          = LoadIcon(hInstance, (LPCTSTR)IDI_IMMAGINA);
+    wcex.hCursor        = LoadCursor(NULL, IDC_ARROW);
+    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+    wcex.lpszMenuName   = (LPCTSTR)IDC_IMMAGINA;
+    wcex.lpszClassName  = szWindowClass;
+    wcex.hIconSm        = LoadIcon((HINSTANCE)wcex.hInstance, (LPCTSTR)IDI_SMALL);
 
-	return RegisterClassEx(&wcex);
+    return RegisterClassEx(&wcex);
 }
 
-//
-//   FUNCTION: InitInstance(HANDLE, int)
-//
-//   PURPOSE: Saves instance handle and creates main window
-//
-//   COMMENTS:
-//
-//        In this function, we save the instance handle in a global variable and
-//        create and display the main program window.
-//
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
     hInst = hInstance; // Store instance handle in our global variable
 
-    // Get the vanishX and viewAngle of the screen
+    // Get the width and height of the screen
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
     int screenHeight = GetSystemMetrics(SM_CYSCREEN);
 
-    // Get the vanishX and viewAngle of the window
+    // Get the width and height of the window
     int windowWidth = gAppResX;
     int windowHeight = gAppResY;
 
@@ -3021,7 +3012,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Create the window
     hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-					   x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
+                       x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
 
     // If the window couldn't be created, return FALSE
     if (!hWnd)
@@ -3033,8 +3024,9 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     ShowWindow(hWnd, nCmdShow);
 
     // Create a font to use for the window
-    hfDefault = CreateFont(16, 0, 0, 0, FW_NORMAL, TRUE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, PROOF_QUALITY, VARIABLE_PITCH | FF_SWISS, "Arial");
-
+    hfDefault = CreateFont(16, 0, 0, 0, FW_NORMAL, TRUE, FALSE, FALSE, ANSI_CHARSET, 
+                          OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, PROOF_QUALITY, 
+                          VARIABLE_PITCH | FF_SWISS, "Arial");
 
     // Update the window
     UpdateWindow(hWnd);
@@ -3044,288 +3036,306 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
 void exit_proc(HWND hwnd)
 {
-	if (globalPicture)
-		  delete globalPicture;
+    if (globalPicture) {
+        delete globalPicture;
+        globalPicture = NULL;  // Prevent double deletion
+    }
 
+    if (globalView) {
+        delete globalView;
+        globalView = NULL;  // Prevent double deletion
+    }
 
-	 if (globalView)
-		  delete globalView;
-
-	DeleteObject(hfDefault);
-	DestroyWindow(hwnd);
+    if (hfDefault) {
+        DeleteObject(hfDefault);
+        hfDefault = NULL;  // Prevent double deletion
+    }
+    
+    DestroyWindow(hwnd);
 }
 
-
-//
-//  FUNCTION: WndProc(HWND, unsigned, WORD, LONG)
-//
-//  PURPOSE:  Processes messages for the main window.
-//
-//  WM_COMMAND	- process the application menu
-//  WM_PAINT	- Paint the main window
-//  WM_DESTROY	- post a quit message and return
-//
-// 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	int wmId, wmEvent;
-	PAINTSTRUCT ps;
-	//HDC hdc;
+    int wmId, wmEvent;
+    PAINTSTRUCT ps;
 
-	// Menu checks
-	HMENU menu = GetMenu(hWnd);
-	EnableMenuItem(menu, ID_SALVA, (datasaved == false) ? MF_ENABLED:MF_GRAYED);
+    // Menu checks
+    HMENU menu = GetMenu(hWnd);
+    if (menu)  // Safety check
+        EnableMenuItem(menu, ID_SALVA, (datasaved == false) ? MF_ENABLED : MF_GRAYED);
 
-	switch (message) 
-	{
-	case WM_COMMAND:
-		wmId    = LOWORD(wParam); 
-		wmEvent = HIWORD(wParam); 
-		// Parse the menu selections:
-		switch (wmId)
-		{
-		case IDM_ABOUT:
-			DialogBox(hInst, (LPCTSTR)IDD_ABOUTBOX, hWnd, (DLGPROC)About);
-  
-			break;
+    switch (message) 
+    {
+    case WM_COMMAND:
+        wmId    = LOWORD(wParam); 
+        wmEvent = HIWORD(wParam); 
+        // Parse the menu selections:
+        switch (wmId)
+        {
+        case IDM_ABOUT:
+            DialogBox(hInst, (LPCTSTR)IDD_ABOUTBOX, hWnd, (DLGPROC)About);
+            break;
+            
         case IDM_MANUAL:
-          {
-            char szAppPath[MAX_PATH];
-            GetModuleFileName(NULL, szAppPath, MAX_PATH);
-            szAppPath[strrchr(szAppPath, '\\') - szAppPath] = '\0'; 
-            ShellExecute(hWnd, "open", MANUAL_PATH, NULL, szAppPath, SW_SHOW);
-            break; 
-          }
-	    case ID_CARICA:
-			if (DoSaveChangesDialog(hWnd) != IDCANCEL) 
-				DoFileOpen(hWnd, NULL, NULL);
-			break;
+            {
+                char szAppPath[MAX_PATH];
+                GetModuleFileName(NULL, szAppPath, MAX_PATH);
+                char* lastBackslash = strrchr(szAppPath, '\\');
+                if (lastBackslash) *lastBackslash = '\0';
+                ShellExecute(hWnd, "open", MANUAL_PATH, NULL, szAppPath, SW_SHOW);
+                break; 
+            }
+            
+        case ID_CARICA:
+            if (DoSaveChangesDialog(hWnd) != IDCANCEL) 
+                DoFileOpen(hWnd, NULL, NULL);
+            break;
+            
         case ID_CARICAV56VOL:
-        {
-            char exFile[MAX_PATH]="";
-            if (ExtractFromVolume(hWnd, NULL, 0x80, "v56", exFile))
-                DoFileOpen(hWnd, exFile, "v56");         
-            break;
-		}
+            {
+                char exFile[MAX_PATH]="";
+                if (ExtractFromVolume && ExtractFromVolume(hWnd, NULL, 0x80, "v56", exFile))
+                    DoFileOpen(hWnd, exFile, "v56");         
+                break;
+            }
+            
         case ID_CARICAP56VOL:
-        {
-            char exFile[MAX_PATH]="";
-            if (ExtractFromVolume(hWnd, NULL, 0x81, "p56", exFile))
-                DoFileOpen(hWnd, exFile, "p56");         
-            break;
-		}
+            {
+                char exFile[MAX_PATH]="";
+                if (ExtractFromVolume && ExtractFromVolume(hWnd, NULL, 0x81, "p56", exFile))
+                    DoFileOpen(hWnd, exFile, "p56");         
+                break;
+            }
+            
         case ID_FILE_NEXTFILE:
-			DoNextFile(hWnd);
+            DoNextFile(hWnd);
             RedrawWindow(hWnd, NULL, NULL, RDW_UPDATENOW);
             Sleep(200);
-			break;
-		case ID_SALVA:
-			DoFileSave(hWnd);
-			break;
-		case ID_SALVACOME:
-			DoFileSaveAs(hWnd);
-			break;
-		case ID_IMPORTABMP:
-			DoFileImport(hWnd);
-			break;
-		case ID_ESPORTABMP:
-			DoFileExport(hWnd);
-			break;
-
-		case IDM_PROPERTIES:
-			DoModifyProperties(hWnd);
-			break;
-
-		case ID_INFO:
-			DoPropertyBox(hWnd);
-			break;
-
-		case IDM_LINKPOINTS:
-			DoLinkPointDialog(hWnd);
-			break;
-
-		case IDM_REFERENCE:
-			DoReferenceDialog(hWnd);
-			break;
-                
-		case ID_PALETTE:
-			{
-				HMENU menu = GetMenu(hWnd);
-				switch (CheckMenuItem(menu, ID_PALETTE, MF_BYCOMMAND))
-				{
-				case MF_CHECKED:
-					CheckMenuItem(menu, ID_PALETTE, MF_UNCHECKED);
-					tableX=0;
-					break;
-
-				case MF_UNCHECKED:
-					CheckMenuItem(menu, ID_PALETTE, MF_CHECKED);
-					tableX=190;
-					break;
-				}
-				
-				InvalidateRgn(hWnd, NULL, true);
-				
-				break;
-			}
-		case ID_COLORI_IMPORTACOLORI:
-			DoPaletteImport(hWnd);
-			break;
-		case ID_COLORI_ESPORTACOLORI:
-			DoPaletteExport(hWnd);
-			break;
-		case ID_INGRANDIMENTO_NORMALE:
-			SetMagnify(gBaseMagnify);
-			break;
-		case ID_INGRANDIMENTO_X2:
-			SetMagnify(gBaseMagnify * 2);
-			break;
-		case ID_INGRANDIMENTO_X3:
-			SetMagnify(gBaseMagnify * 3);
-			break;
-		case ID_INGRANDIMENTO_X4:
-			SetMagnify(gBaseMagnify * 4);
-			break;
-		case ID_PRIORITYBARS:
-			{
-				HMENU menu = GetMenu(hWnd);
-				switch (CheckMenuItem(menu, ID_PRIORITYBARS, MF_BYCOMMAND))
-				{
-				case MF_CHECKED:
-					CheckMenuItem(menu, ID_PRIORITYBARS, MF_UNCHECKED);
-					showpbars=false;
-					break;
-
-				case MF_UNCHECKED:
-					CheckMenuItem(menu, ID_PRIORITYBARS, MF_CHECKED);
-					showpbars=true;
-					break;
-				}
-				
-				InvalidateRgn(hWnd, NULL, true);
-				
-				break;
-			}
-		case ID_CICLOPRECEDENTE:
-			if (!isPicture)
-				ShowLoopCell(curLoopIndex-1,0);
-			break;
-		case ID_CICLOSUCCESSIVO:
-			if (!isPicture)
-				ShowLoopCell(curLoopIndex+1,0);
-			break;
-
-		case ID_CELLAPRECEDENTE:
-			if (isPicture)
-				ShowCell(curCellIndex-1);
-			else
-			{
-				Loop *tloop = globalView->loops[curLoopIndex];
-				if (tloop)
-				{
-					ShowLoopCell(curLoopIndex, curCellIndex-1);
-				}
-			}
-			break;
-		case ID_CELLASUCCESSIVA:
-			if (isPicture)
-				ShowCell(curCellIndex+1);
-			else
-			{
-	
-				Loop *tloop = globalView->loops[curLoopIndex];
-				if (tloop)
-				{
-					ShowLoopCell(curLoopIndex, curCellIndex+1);
-				}
-			}
-			break;
-		case IDM_EXIT:
-			if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
-				exit_proc(hWnd);
             break;
-		default:
-			return DefWindowProc(hWnd, message, wParam, lParam);
-		}
-		break;
-	case WM_PAINT:
-		{
-		HDC hdc = BeginPaint(hWnd, &ps);
-		SelectObject(hdc, hfDefault);
-		GetClientRect (hWnd, &rc);
-		SetBkMode(hdc, TRANSPARENT);
-		GetWindowRect(hWnd, &rc);
-		long int twidth = rc.right-rc.left;
-		SetRect(&rc, 0, 0, twidth, 20);
-		FillRect(hdc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+            
+        case ID_SALVA:
+            DoFileSave(hWnd);
+            break;
+            
+        case ID_SALVACOME:
+            DoFileSaveAs(hWnd);
+            break;
+            
+        case ID_IMPORTABMP:
+            DoFileImport(hWnd);
+            break;
+            
+        case ID_ESPORTABMP:
+            DoFileExport(hWnd);
+            break;
 
-		if (globalView)
-			picX = 220;
+        case IDM_PROPERTIES:
+            DoModifyProperties(hWnd);
+            break;
 
-		if (globalPicture)
-			picX = 0;
+        case ID_INFO:
+            DoPropertyBox(hWnd);
+            break;
 
-		// palette will be drawn only if the image exists
-		if (tableX > 0)
-			DrawPaletteTable (hdc);
+        case IDM_LINKPOINTS:
+            DoLinkPointDialog(hWnd);
+            break;
 
-		if (globalView && !(*curLoop)->Head.flags)
-		{
-			if (gReferenceBM && !gReferencePriority)
-				DisplayReferenceImage(hdc);
+        case IDM_REFERENCE:
+            DoReferenceDialog(hWnd);
+            break;
+                
+        case ID_PALETTE:
+            {
+                HMENU menu = GetMenu(hWnd);
+                switch (CheckMenuItem(menu, ID_PALETTE, MF_BYCOMMAND))
+                {
+                case MF_CHECKED:
+                    CheckMenuItem(menu, ID_PALETTE, MF_UNCHECKED);
+                    tableX = 0;
+                    break;
 
-			DisplayCurrentView(hdc);
+                case MF_UNCHECKED:
+                    CheckMenuItem(menu, ID_PALETTE, MF_CHECKED);
+                    tableX = 190;
+                    break;
+                }
+                
+                InvalidateRgn(hWnd, NULL, true);
+                break;
+            }
+            
+        case ID_COLORI_IMPORTACOLORI:
+            DoPaletteImport(hWnd);
+            break;
+            
+        case ID_COLORI_ESPORTACOLORI:
+            DoPaletteExport(hWnd);
+            break;
+            
+        case ID_INGRANDIMENTO_NORMALE:
+            SetMagnify(gBaseMagnify);
+            break;
+            
+        case ID_INGRANDIMENTO_X2:
+            SetMagnify(gBaseMagnify * 2);
+            break;
+            
+        case ID_INGRANDIMENTO_X3:
+            SetMagnify(gBaseMagnify * 3);
+            break;
+            
+        case ID_INGRANDIMENTO_X4:
+            SetMagnify(gBaseMagnify * 4);
+            break;
+            
+        case ID_PRIORITYBARS:
+            {
+                HMENU menu = GetMenu(hWnd);
+                switch (CheckMenuItem(menu, ID_PRIORITYBARS, MF_BYCOMMAND))
+                {
+                case MF_CHECKED:
+                    CheckMenuItem(menu, ID_PRIORITYBARS, MF_UNCHECKED);
+                    showpbars = false;
+                    break;
 
-			if (gReferenceBM && gReferencePriority)
-				DisplayReferenceImage(hdc);
-		
-			if ((*curCell)->Head.view.linkTableCount >= 1)
-				DisplayLinkPoints(hdc);
-		}
+                case MF_UNCHECKED:
+                    CheckMenuItem(menu, ID_PRIORITYBARS, MF_CHECKED);
+                    showpbars = true;
+                    break;
+                }
+                
+                InvalidateRgn(hWnd, NULL, true);
+                break;
+            }
+            
+        case ID_CICLOPRECEDENTE:
+            if (!isPicture)
+                ShowLoopCell(curLoopIndex-1, 0);
+            break;
+            
+        case ID_CICLOSUCCESSIVO:
+            if (!isPicture)
+                ShowLoopCell(curLoopIndex+1, 0);
+            break;
 
-		if (globalPicture)
-		{
-			DisplayCurrentPic(hdc);
-
-			if (showpbars)
-				DisplayPriorityBars(hdc);
-
-		}
-
-		if (curCell)
-			DrawCellInfo (hdc);
-
-		EndPaint(hWnd, &ps);
-		break;
-		}
-	case WM_CLOSE:
-		if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
-			exit_proc(hWnd);
+        case ID_CELLAPRECEDENTE:
+            if (isPicture)
+                ShowCell(curCellIndex-1);
+            else
+            {
+                Loop *tloop = globalView->loops[curLoopIndex];
+                if (tloop)
+                {
+                    ShowLoopCell(curLoopIndex, curCellIndex-1);
+                }
+            }
+            break;
+            
+        case ID_CELLASUCCESSIVA:
+            if (isPicture)
+                ShowCell(curCellIndex+1);
+            else
+            {
+                Loop *tloop = globalView->loops[curLoopIndex];
+                if (tloop)
+                {
+                    ShowLoopCell(curLoopIndex, curCellIndex+1);
+                }
+            }
+            break;
+            
+        case IDM_EXIT:
+            if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
+                exit_proc(hWnd);
+            break;
+            
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
         break;
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		break;
-	default:
-		return DefWindowProc(hWnd, message, wParam, lParam);
-	}
-	return 0;
+        
+    case WM_PAINT:
+        {
+            HDC hdc = BeginPaint(hWnd, &ps);
+            SelectObject(hdc, hfDefault);
+            GetClientRect(hWnd, &rc);
+            SetBkMode(hdc, TRANSPARENT);
+            GetWindowRect(hWnd, &rc);
+            long int twidth = rc.right - rc.left;
+            SetRect(&rc, 0, 0, twidth, 20);
+            FillRect(hdc, &rc, GetSysColorBrush(COLOR_BTNFACE));
+
+            if (globalView)
+                picX = 220;
+
+            if (globalPicture)
+                picX = 0;
+
+            // palette will be drawn only if the image exists
+            if (tableX > 0)
+                DrawPaletteTable(hdc);
+
+            if (globalView && !(*curLoop)->Head.flags)
+            {
+                if (gReferenceBM && !gReferencePriority)
+                    DisplayReferenceImage(hdc);
+
+                DisplayCurrentView(hdc);
+
+                if (gReferenceBM && gReferencePriority)
+                    DisplayReferenceImage(hdc);
+            
+                if ((*curCell)->Head.view.linkTableCount >= 1)
+                    DisplayLinkPoints(hdc);
+            }
+
+            if (globalPicture)
+            {
+                DisplayCurrentPic(hdc);
+
+                if (showpbars)
+                    DisplayPriorityBars(hdc);
+            }
+
+            if (curCell)
+                DrawCellInfo(hdc);
+
+            EndPaint(hWnd, &ps);
+            break;
+        }
+        
+    case WM_CLOSE:
+        if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
+            exit_proc(hWnd);
+        break;
+        
+    case WM_DESTROY:
+        PostQuitMessage(0);
+        break;
+        
+    default:
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    return 0;
 }
 
-// Message handler for about box.
 LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	switch (message)
-	{
-	case WM_INITDIALOG:
-		return TRUE;
+    switch (message)
+    {
+    case WM_INITDIALOG:
+        return TRUE;
 
-	case WM_COMMAND:
-		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) 
-		{
-			EndDialog(hDlg, LOWORD(wParam));
-			return TRUE;
-		}
-		break;
-	}
-	return FALSE;
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL) 
+        {
+            EndDialog(hDlg, LOWORD(wParam));
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
 }
+
+#pragma warning(pop)  // Restore warning level
