@@ -11,22 +11,58 @@
 
 #include "list.h"
 #include "scicell.h"
-//#include "palette.h"
 
 #pragma pack(1)
-
 #pragma pack()
 
+/**
+ * @brief Loop class for handling SCI loop data from V56 files
+ * 
+ * This class manages a loop containing multiple cells, including
+ * proper memory management and initialization.
+ */
 class Loop
 {
-
 public:
-	
-	Loop(void){}
-	~Loop(void);
+    // ============================================================================
+    // CONSTRUCTORS AND DESTRUCTOR
+    // ============================================================================
+    
+    /**
+     * @brief Default constructor
+     */
+    Loop(void);
+    
+    /**
+     * @brief Destructor
+     */
+    ~Loop(void);
+    
+    // Prevent copying to avoid shallow copy issues
+    Loop(const Loop&) = delete;
+    Loop& operator=(const Loop&) = delete;
+    
+    // ============================================================================
+    // PUBLIC MEMBER DATA
+    // ============================================================================
+    
+    Cell* cells[MAX_CELLS];        // Array of cell pointers
+    LoopHeader Head;               // Loop header structure
 
-    Cell *cells[MAX_CELLS];
-    LoopHeader Head;
+private:
+    // ============================================================================
+    // PRIVATE HELPER METHODS
+    // ============================================================================
+    
+    /**
+     * @brief Initialize member variables to safe defaults
+     */
+    void initializeMembers();
+    
+    /**
+     * @brief Clean up allocated memory
+     */
+    void cleanup();
 };
 
-#endif
+#endif // SCILOOP_H

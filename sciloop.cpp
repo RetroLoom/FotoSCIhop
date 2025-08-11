@@ -9,14 +9,37 @@
 #include "StdAfx.h"
 #include "sciloop.h"
 
-Loop::~Loop() 
-{ 	
-	if (cells)
-	{
-		for (unsigned short i=0; i < Head.numCels; i++)
-		{
-			Cell *texcell = cells[i];
-			delete (texcell);		
-		}
-	}
+// Constructor and destructor implementations for sciloop.cpp
+
+#include "StdAfx.h"
+#include "sciloop.h"
+
+Loop::Loop(void)
+{
+    initializeMembers();
+}
+
+Loop::~Loop(void)
+{
+    cleanup();
+}
+
+void Loop::initializeMembers()
+{
+    // Initialize Head structure
+    memset(&Head, 0, sizeof(Head));
+    
+    // Initialize cells array to null pointers
+    for (int i = 0; i < MAX_CELLS; i++) {
+        cells[i] = nullptr;
+    }
+}
+
+void Loop::cleanup()
+{
+    // Clean up all cell pointers
+    for (int i = 0; i < MAX_CELLS; i++) {
+        delete cells[i];
+        cells[i] = nullptr;
+    }
 }
