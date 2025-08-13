@@ -160,275 +160,137 @@ public:
     int writeLinks(FILE* cfilebuf);
     
     // ============================================================================
-    // LEGACY LOOP MANAGEMENT (BACKWARD COMPATIBILITY)
+    // CELL UTILITY FUNCTIONS
     // ============================================================================
     
-    /**
-     * @brief Add loops by duplicating an existing loop
-     * @param base Index of the loop to copy
-     * @param amount Number of copies to create
-     * @return 1 on success, 0 on failure
-     */
-    int addLoops(int base, int amount);
-    
-    // ============================================================================
-    // BASIC CELL OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Add a cell by duplicating an existing cell
-     * @param loop Loop index
-     * @param baseIndex Index of cell to copy
-     * @param position Position to insert new cell (use -1 to append at end)
-     * @return 1 on success, 0 on failure
-     */
+    // === BASIC CELL OPERATIONS ===
     int addCell(int loop, int baseIndex, int position = -1);
-    
-    /**
-     * @brief Add multiple cells by duplicating an existing cell
-     * @param loop Loop index
-     * @param baseIndex Index of cell to copy
-     * @param amount Number of cells to add
-     * @return 1 on success, 0 on failure
-     */
     int addCells(int loop, int baseIndex, int amount);
-    
-    /**
-     * @brief Delete a cell at a specific position
-     * @param loop Loop index
-     * @param position Position of cell to delete
-     * @return 1 on success, 0 on failure
-     */
     int deleteCell(int loop, int position);
-    
-    /**
-     * @brief Delete a range of cells from a loop
-     * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells to delete
-     * @return 1 on success, 0 on failure
-     */
     int deleteCells(int loop, int start, int count);
     
-    // ============================================================================
-    // CONVENIENCE FUNCTIONS
-    // ============================================================================
-    
-    /**
-     * @brief Insert a copy of a cell at a specific position
-     * @param loop Loop index
-     * @param baseIndex Index of cell to copy
-     * @param position Position to insert at
-     * @return 1 on success, 0 on failure
-     */
+    // === CELL CONVENIENCE FUNCTIONS ===
     int insertCell(int loop, int baseIndex, int position);
-    
-    /**
-     * @brief Append a copy of a cell at the end of a loop
-     * @param loop Loop index
-     * @param baseIndex Index of cell to copy
-     * @return 1 on success, 0 on failure
-     */
     int appendCell(int loop, int baseIndex);
     
-    // ============================================================================
-    // COPY OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Copy cells from one position to another
-     * @param srcLoop Source loop index
-     * @param srcStart Starting cell index in source
-     * @param count Number of cells to copy
-     * @param dstLoop Destination loop index
-     * @param dstPos Position to insert copied cells
-     * @return 1 on success, 0 on failure
-     */
+    // === CELL COPY OPERATIONS ===
     int copyCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos);
-    
-    /**
-     * @brief Copy a single cell
-     * @param srcLoop Source loop index
-     * @param srcIndex Source cell index
-     * @param dstLoop Destination loop index
-     * @param dstPos Position to insert copied cell
-     * @return 1 on success, 0 on failure
-     */
     int copyCell(int srcLoop, int srcIndex, int dstLoop, int dstPos);
     
-    // ============================================================================
-    // MOVE OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Move cells from one position to another
-     * @param srcLoop Source loop index
-     * @param srcStart Starting cell index in source
-     * @param count Number of cells to move
-     * @param dstLoop Destination loop index
-     * @param dstPos Position to move cells to
-     * @return 1 on success, 0 on failure
-     */
+    // === CELL MOVE OPERATIONS ===
     int moveCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos);
-    
-    /**
-     * @brief Move a single cell
-     * @param srcLoop Source loop index
-     * @param srcIndex Source cell index
-     * @param dstLoop Destination loop index
-     * @param dstPos Position to move cell to
-     * @return 1 on success, 0 on failure
-     */
     int moveCell(int srcLoop, int srcIndex, int dstLoop, int dstPos);
     
-    // ============================================================================
-    // REORDER OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Shift cells within the same loop (reorder)
-     * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells to move
-     * @param newPos New position for the cells
-     * @return 1 on success, 0 on failure
-     */
+    // === CELL REORDER OPERATIONS ===
     int shiftCells(int loop, int start, int count, int newPos);
-    
-    /**
-     * @brief Duplicate cells (insert copies right after originals)
-     * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells to duplicate
-     * @return 1 on success, 0 on failure
-     */
     int duplicateCells(int loop, int start, int count);
-    
-    /**
-     * @brief Duplicate a single cell
-     * @param loop Loop index
-     * @param index Cell index to duplicate
-     * @return 1 on success, 0 on failure
-     */
     int duplicateCell(int loop, int index);
-    
-    /**
-     * @brief Swap two cells
-     * @param loop1 First loop index
-     * @param index1 First cell index
-     * @param loop2 Second loop index
-     * @param index2 Second cell index
-     * @return 1 on success, 0 on failure
-     */
     int swapCells(int loop1, int index1, int loop2, int index2);
     
-    // ============================================================================
-    // ADVANCED CELL OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Insert empty cells at a specific position
-     * @param loop Loop index
-     * @param position Position to insert at
-     * @param count Number of empty cells to insert
-     * @return 1 on success, 0 on failure
-     */
+    // === ADVANCED CELL OPERATIONS ===
     int insertEmptyCells(int loop, int position, int count);
-    
-    /**
-     * @brief Replace cells in one loop with cells from another
-     * @param dstLoop Destination loop
-     * @param dstStart Starting position in destination
-     * @param srcLoop Source loop
-     * @param srcStart Starting position in source
-     * @param count Number of cells to replace
-     * @return 1 on success, 0 on failure
-     */
     int replaceCells(int dstLoop, int dstStart, int srcLoop, int srcStart, int count);
-    
-    /**
-     * @brief Reverse the order of cells in a range
-     * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells to reverse
-     * @return 1 on success, 0 on failure
-     */
     int reverseCells(int loop, int start, int count);
-    
-    /**
-     * @brief Sort cells in a loop by given criteria
-     * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells to sort
-     * @param sortBy Sort criteria (0=width, 1=height, 2=size)
-     * @param ascending true for ascending order
-     * @return 1 on success, 0 on failure
-     */
     int sortCells(int loop, int start, int count, int sortBy, bool ascending);
     
-    // ============================================================================
-    // BATCH OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Delete multiple non-contiguous cells
-     * @param loop Loop index
-     * @param indices Array of cell indices to delete
-     * @param indexCount Number of indices in the array
-     * @return 1 on success, 0 on failure
-     */
+    // === CELL BATCH OPERATIONS ===
     int batchDeleteCells(int loop, const int* indices, int indexCount);
     
-    // ============================================================================
-    // SEARCH AND FIND OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Find cells with specific dimensions
-     * @param loop Loop index to search in (-1 for all loops)
-     * @param width Width to search for (0 for any width)
-     * @param height Height to search for (0 for any height)
-     * @param results Array to store found cell positions (loop, cell pairs)
-     * @param maxResults Maximum number of results to return
-     * @return Number of cells found
-     */
+    // === CELL SEARCH OPERATIONS ===
     int findCellsBySize(int loop, int width, int height, int* results, int maxResults);
-    
-    /**
-     * @brief Find empty or invalid cells
-     * @param loop Loop index to search in (-1 for all loops)
-     * @param results Array to store found cell positions (loop, cell pairs)
-     * @param maxResults Maximum number of results to return
-     * @return Number of empty cells found
-     */
     int findEmptyCells(int loop, int* results, int maxResults);
     
+    // === CELL MAINTENANCE OPERATIONS ===
+    int cutCells(int loop, int start, int count, Cell** clipboard);
+    int optimizeLoop(int loop);
+
+	// ============================================================================
+    // LOOP UTILITY FUNCTIONS
     // ============================================================================
-    // GUI UTILITY FUNCTIONS
+    
+    // === BASIC LOOP OPERATIONS ===
+    int addLoop(int baseIndex, int position = -1);
+    int addLoops(int base, int amount);  // Your existing function
+    int deleteLoop(int position);
+    int deleteLoops(int start, int count);
+    
+    // === LOOP CONVENIENCE FUNCTIONS ===
+    int insertLoop(int baseIndex, int position);
+    int appendLoop(int baseIndex);
+    
+    // === LOOP COPY OPERATIONS ===
+    int copyLoops(int srcStart, int count, int dstPos);
+    int copyLoop(int srcIndex, int dstPos);
+    
+    // === LOOP MOVE OPERATIONS ===
+    int moveLoops(int srcStart, int count, int dstPos);
+    int moveLoop(int srcIndex, int dstPos);
+    
+    // === LOOP REORDER OPERATIONS ===
+    int shiftLoops(int start, int count, int newPos);
+    int duplicateLoops(int start, int count);
+    int duplicateLoop(int index);
+    int swapLoops(int index1, int index2);
+    
+    // === ADVANCED LOOP OPERATIONS ===
+    int insertEmptyLoops(int position, int count);
+    int replaceLoops(int dstStart, int srcStart, int count);
+    int reverseLoops(int start, int count);
+    int sortLoops(int start, int count, int sortBy, bool ascending);
+    
+    // === LOOP BATCH OPERATIONS ===
+    int batchDeleteLoops(const int* indices, int indexCount);
+    
+    // === LOOP SEARCH OPERATIONS ===
+    int findLoopsByCellCount(int minCells, int maxCells, int* results, int maxResults);
+    int findEmptyLoops(int* results, int maxResults);
+    
+    // === LOOP MAINTENANCE OPERATIONS ===
+    int cutLoops(int start, int count, Loop** clipboard);
+    int optimizeView();
+    
+    // === LOOP VALIDATION FUNCTIONS ===
+    bool canDeleteLoops(int start, int count);
+    bool canInsertLoops(int position, int count);
+    bool canMoveLoops(int srcStart, int count, int dstPos);
+
+	// ============================================================================
+    // ACCESSOR FUNCTIONS
     // ============================================================================
     
     /**
-     * @brief Get information about a cell range
+     * @brief Get the number of loops in this view
+     * @return Number of loops
+     */
+    int getLoopCount() const;
+    
+    /**
+     * @brief Get the number of cells in a specific loop
      * @param loop Loop index
-     * @param start Starting cell index
-     * @param count Number of cells in range
-     * @return Information structure with statistics
+     * @return Number of cells, or 0 if loop is invalid
      */
-    CellRangeInfo getCellRangeInfo(int loop, int start, int count);
+    int getCellCount(int loop) const;
     
     /**
-     * @brief Get information about a loop range
-     * @param start Starting loop index
-     * @param count Number of loops in range
-     * @return Information structure with statistics
+     * @brief Get the total number of cells across all loops
+     * @return Total cell count
      */
-    LoopRangeInfo getLoopRangeInfo(int start, int count);
+    int getTotalCellCount() const;
     
     /**
-     * @brief Get detailed statistics about the entire view
-     * @return Extended information structure
+     * @brief Check if a loop index is valid
+     * @param loop Loop index to check
+     * @return true if valid
      */
-    ViewStats getViewStats();
+    bool isValidLoop(int loop) const;
+    
+    /**
+     * @brief Check if a cell index is valid for a given loop
+     * @param loop Loop index
+     * @param cell Cell index
+     * @return true if valid
+     */
+    bool isValidCell(int loop, int cell) const;
     
     // ============================================================================
     // VALIDATION FUNCTIONS
@@ -473,63 +335,31 @@ public:
     bool canModifyCellRange(int loop, int start, int count);
     
     // ============================================================================
-    // ACCESSOR FUNCTIONS
+    // GUI UTILITY FUNCTIONS
     // ============================================================================
     
     /**
-     * @brief Get the number of loops in this view
-     * @return Number of loops
-     */
-    int getLoopCount() const;
-    
-    /**
-     * @brief Get the number of cells in a specific loop
-     * @param loop Loop index
-     * @return Number of cells, or 0 if loop is invalid
-     */
-    int getCellCount(int loop) const;
-    
-    /**
-     * @brief Get the total number of cells across all loops
-     * @return Total cell count
-     */
-    int getTotalCellCount() const;
-    
-    /**
-     * @brief Check if a loop index is valid
-     * @param loop Loop index to check
-     * @return true if valid
-     */
-    bool isValidLoop(int loop) const;
-    
-    /**
-     * @brief Check if a cell index is valid for a given loop
-     * @param loop Loop index
-     * @param cell Cell index
-     * @return true if valid
-     */
-    bool isValidCell(int loop, int cell) const;
-    
-    // ============================================================================
-    // MAINTENANCE OPERATIONS
-    // ============================================================================
-    
-    /**
-     * @brief Cut cells (copy then delete)
+     * @brief Get information about a range of cells
      * @param loop Loop index
      * @param start Starting cell index
-     * @param count Number of cells to cut
-     * @param clipboard Array to store copied cells
-     * @return 1 on success, 0 on failure
+     * @param count Number of cells in range
+     * @return Information structure with statistics
      */
-    int cutCells(int loop, int start, int count, Cell** clipboard);
+    CellRangeInfo getCellRangeInfo(int loop, int start, int count);
     
     /**
-     * @brief Optimize a loop by removing empty cells and compacting
-     * @param loop Loop index
-     * @return Number of cells removed
+     * @brief Get information about a range of loops
+     * @param start Starting loop index
+     * @param count Number of loops in range
+     * @return Information structure with statistics
      */
-    int optimizeLoop(int loop);
+    LoopRangeInfo getLoopRangeInfo(int start, int count);
+    
+    /**
+     * @brief Get detailed statistics about the entire view
+     * @return Extended information structure
+     */
+    ViewStats getViewStats();
     
     // ============================================================================
     // PUBLIC MEMBER DATA (EXISTING INTERFACE)
