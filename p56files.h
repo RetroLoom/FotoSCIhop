@@ -21,6 +21,33 @@
 #define P56PATCH80    0x00008181   // Standard P56 format identifier
 #define P56PATCHOLD   0x00008081   // Older P56 format identifier
 
+struct PicCellRangeInfo {
+    int totalCells;
+    int totalImageSize;
+    int totalPackSize;
+    int compressedCount;
+    int uncompressedCount;
+    bool hasLinks;
+    
+    PicCellRangeInfo() : totalCells(0), totalImageSize(0), totalPackSize(0), 
+                     compressedCount(0), uncompressedCount(0), hasLinks(false) {}
+};
+
+struct PicStats {
+    int totalCells;
+    int totalImageSize;
+    int totalPackSize;
+    int compressedCells;
+    int uncompressedCells;
+    int emptyCells;
+    int largestCellSize;
+    int smallestCellSize;
+    
+    PicStats() : totalCells(0), totalImageSize(0), totalPackSize(0),
+                 compressedCells(0), uncompressedCells(0), emptyCells(0),
+                 largestCellSize(0), smallestCellSize(2147483647) {}
+};
+
 // Union for different P56 header formats
 union P56HEAD {
     PicHeader32 pic32;  // SCI32 format header
@@ -126,14 +153,6 @@ public:
     // ============================================================================
     
     /**
-     * @brief Add copies of an existing cell
-     * @param base Index of the cell to copy
-     * @param amount Number of copies to create
-     * @return 1 on success, 0 on failure
-     */
-    int addCells(int base, int amount);
-    
-    /**
      * @brief Get a pointer to a specific cell
      * @param index Cell index
      * @return Pointer to cell or nullptr if invalid
@@ -145,6 +164,68 @@ public:
      * @return Total image size in bytes
      */
     unsigned long getImageAllSize() const { return imageAllSize; }
+
+	// ============================================================================
+    // P56 CELL UTILITY FUNCTIONS (SCI32 & SCI11)
+    // ============================================================================
+    
+    // === BASIC CELL OPERATIONS ===
+    int addCell(int baseIndex, int position = -1);
+	int addCells(int base, int amount);
+    
+    int deleteCell(int position);
+    int deleteCells(int start, int count);
+    
+    // === CELL CONVENIENCE FUNCTIONS ===
+    int insertCell(int baseIndex, int position);
+    int appendCell(int baseIndex);
+    
+    // === CELL COPY OPERATIONS ===
+    int copyCells(int srcStart, int count, int dstPos);
+    int copyCell(int srcIndex, int dstPos);
+    
+    // === CELL MOVE OPERATIONS ===
+    int moveCells(int srcStart, int count, int dstPos);
+    int moveCell(int srcIndex, int dstPos);
+    
+    // === CELL REORDER OPERATIONS ===
+    int shiftCells(int start, int count, int newPos);
+    int duplicateCells(int start, int count);
+    int duplicateCell(int index);
+    int swapCells(int index1, int index2);
+    
+    // === ADVANCED CELL OPERATIONS ===
+    int insertEmptyCells(int position, int count);
+    int replaceCells(int dstStart, int srcStart, int count);
+    int reverseCells(int start, int count);
+    int sortCells(int start, int count, int sortBy, bool ascending);
+    
+    // === CELL BATCH OPERATIONS ===
+    int batchDeleteCells(const int* indices, int indexCount);
+    
+    // === CELL SEARCH OPERATIONS ===
+    int findCellsBySize(int width, int height, int* results, int maxResults);
+    int findEmptyCells(int* results, int maxResults);
+    
+    // === CELL MAINTENANCE OPERATIONS ===
+    int cutCells(int start, int count, Cell** clipboard);
+    int optimizeCells();
+    
+    // === P56 VALIDATION FUNCTIONS ===
+    bool canDeleteCells(int start, int count);
+    bool canInsertCells(int position, int count);
+    bool canMoveCells(int srcStart, int count, int dstPos);
+    bool canModifyCellRange(int start, int count);
+    // Note: isValidCellIndex already exists as inline, will enhance
+    
+    // === P56 UTILITY FUNCTIONS ===
+    PicCellRangeInfo getCellRangeInfo(int start, int count);
+    PicStats getPicStats();
+    
+    // === HELPER FUNCTIONS FOR DUAL FORMAT SUPPORT ===
+    int getCellWidth(int index) const;
+    int getCellHeight(int index) const;
+    int getCellCompressType(int index) const;
     
     // ============================================================================
     // PUBLIC MEMBER DATA
