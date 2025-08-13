@@ -427,97 +427,6 @@ int V56file::addLoops(int base, int amount)
     return 1;
 }
 
-// Drop-in replacement for addCells - fixes the shallow copy bug
-int V56file::addCells(int loop, int base, int amount)
-{
-    // Validate input parameters
-    if (loop < 0 || loop >= Head.view32.loopCount || amount <= 0) {
-        return 0;
-    }
-    
-    if (!loops[loop]) {
-        return 0;
-    }
-    
-    if (base < 0 || base >= loops[loop]->Head.numCels) {
-        return 0;
-    }
-    
-    if (!loops[loop]->cells[base]) {
-        return 0;
-    }
-    
-    const int oldCelCount = loops[loop]->Head.numCels;
-    const int newCelCount = oldCelCount + amount;
-    
-    // Simple bounds check (assuming reasonable limits)
-    if (newCelCount > 256) {
-        return 0;
-    }
-    
-    // Append new cells at the end (matching original behavior)
-    for (int i = 0; i < amount; i++) {
-        const int newIndex = oldCelCount + i;
-        
-        // Create new Cell object (deep copy)
-        loops[loop]->cells[newIndex] = new Cell;
-        loops[loop]->cells[newIndex]->Head = loops[loop]->cells[base]->Head;
-        
-        // Deep copy the cell image data
-        if (loops[loop]->cells[base]->cellImage) {
-            loops[loop]->cells[newIndex]->cellImage = new CellImage;
-            CellImage* srcImg = loops[loop]->cells[base]->cellImage;
-            CellImage* dstImg = loops[loop]->cells[newIndex]->cellImage;
-            
-            // Copy image data
-            dstImg->imageSize = srcImg->imageSize;
-            if (srcImg->image && srcImg->imageSize > 0) {
-                dstImg->image = new unsigned char[srcImg->imageSize];
-                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
-            } else {
-                dstImg->image = nullptr;
-            }
-            
-            // Copy pack data
-            dstImg->packSize = srcImg->packSize;
-            if (srcImg->pack && srcImg->packSize > 0) {
-                dstImg->pack = new unsigned char[srcImg->packSize];
-                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
-            } else {
-                dstImg->pack = nullptr;
-            }
-            
-            // Copy lines data
-            dstImg->lineSize = srcImg->lineSize;
-            if (srcImg->lines && srcImg->lineSize > 0) {
-                dstImg->lines = new unsigned char[srcImg->lineSize];
-                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
-            } else {
-                dstImg->lines = nullptr;
-            }
-        } else {
-            loops[loop]->cells[newIndex]->cellImage = nullptr;
-        }
-        
-        // Copy link points (element by element since it's a fixed array)
-        if (loops[loop]->cells[base]->Head.view.linkTableCount > 0) {
-            const int linkCount = loops[loop]->cells[base]->Head.view.linkTableCount;
-            for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
-                loops[loop]->cells[newIndex]->linkPoints[linkIdx] = loops[loop]->cells[base]->linkPoints[linkIdx];
-            }
-        }
-        
-        // Set palette reference
-        loops[loop]->cells[newIndex]->setPalette(&palSCI);
-    }
-    
-    // Update counts
-    loops[loop]->Head.numCels = newCelCount;
-    Head.view32.celCount += amount;
-    
-    return 1;
-}
-
 int V56file::writeFileHeader(FILE* cfilebuf)
 {
     if (!cfilebuf) {
@@ -779,4 +688,922 @@ bool V56file::SaveFile(HWND hwnd, LPSTR szFileName)
     }
     
     return success;
+}
+
+// ============================================================================
+// CELL UTILITY FUNCTIONS IMPLEMENTATION
+// ============================================================================
+
+// === ACCESSOR FUNCTIONS ===
+
+int V56file::getLoopCount() const 
+{ 
+    return Head.view32.loopCount; 
+}
+
+int V56file::getCellCount(int loop) const 
+{
+    if (loop < 0 || loop >= Head.view32.loopCount || !loops[loop]) {
+        return 0;
+    }
+    return loops[loop]->Head.numCels;
+}
+
+int V56file::getTotalCellCount() const 
+{ 
+    return Head.view32.celCount; 
+}
+
+bool V56file::isValidLoop(int loop) const 
+{
+    return loop >= 0 && loop < Head.view32.loopCount && loops[loop] != nullptr;
+}
+
+bool V56file::isValidCell(int loop, int cell) const 
+{
+    return isValidLoop(loop) && cell >= 0 && cell < loops[loop]->Head.numCels;
+}
+
+// === CORE CELL MANIPULATION FUNCTIONS ===
+
+int V56file::addCell(int loop, int baseIndex, int position)
+{
+    // Validate parameters
+    if (!isValidLoop(loop) || !isValidCell(loop, baseIndex)) {
+        return 0;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    
+    // If position is -1, append at end
+    if (position == -1) {
+        position = celCount;
+    }
+    
+    // Validate position
+    if (position < 0 || position > celCount || celCount >= MAX_LOOPS) {
+        return 0;
+    }
+    
+    // Shift existing cells to make room (if inserting in middle)
+    for (int i = celCount - 1; i >= position; i--) {
+        loops[loop]->cells[i + 1] = loops[loop]->cells[i];
+    }
+    
+    // Create new Cell object (deep copy of base cell)
+    loops[loop]->cells[position] = new Cell;
+    loops[loop]->cells[position]->Head = loops[loop]->cells[baseIndex]->Head;
+    
+    // Deep copy the cell image data
+    if (loops[loop]->cells[baseIndex]->cellImage) {
+        loops[loop]->cells[position]->cellImage = new CellImage;
+        CellImage* srcImg = loops[loop]->cells[baseIndex]->cellImage;
+        CellImage* dstImg = loops[loop]->cells[position]->cellImage;
+        
+        // Copy image data
+        dstImg->imageSize = srcImg->imageSize;
+        if (srcImg->image && srcImg->imageSize > 0) {
+            dstImg->image = new unsigned char[srcImg->imageSize];
+            memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+        } else {
+            dstImg->image = nullptr;
+        }
+        
+        // Copy pack data
+        dstImg->packSize = srcImg->packSize;
+        if (srcImg->pack && srcImg->packSize > 0) {
+            dstImg->pack = new unsigned char[srcImg->packSize];
+            memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+        } else {
+            dstImg->pack = nullptr;
+        }
+        
+        // Copy lines data
+        dstImg->lineSize = srcImg->lineSize;
+        if (srcImg->lines && srcImg->lineSize > 0) {
+            dstImg->lines = new unsigned char[srcImg->lineSize];
+            memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+        } else {
+            dstImg->lines = nullptr;
+        }
+    } else {
+        loops[loop]->cells[position]->cellImage = nullptr;
+    }
+    
+    // Copy link points
+    if (loops[loop]->cells[baseIndex]->Head.view.linkTableCount > 0) {
+        const int linkCount = loops[loop]->cells[baseIndex]->Head.view.linkTableCount;
+        for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
+            loops[loop]->cells[position]->linkPoints[linkIdx] = loops[loop]->cells[baseIndex]->linkPoints[linkIdx];
+        }
+    }
+    
+    // Set palette reference
+    loops[loop]->cells[position]->setPalette(&palSCI);
+    
+    // Update counts
+    loops[loop]->Head.numCels++;
+    Head.view32.celCount++;
+    
+    return 1;
+}
+
+int V56file::addCells(int loop, int baseIndex, int amount)
+{
+    // Simple wrapper that adds multiple cells at the end using the new addCell function
+    if (amount <= 0) {
+        return 0;
+    }
+    
+    // Add cells one by one at the end
+    for (int i = 0; i < amount; i++) {
+        if (!addCell(loop, baseIndex, -1)) {
+            return 0; // Failed to add cell
+        }
+    }
+    
+    return 1;
+}
+
+int V56file::insertCell(int loop, int baseIndex, int position)
+{
+    return addCell(loop, baseIndex, position);
+}
+
+int V56file::appendCell(int loop, int baseIndex)
+{
+    return addCell(loop, baseIndex, -1);
+}
+
+int V56file::deleteCell(int loop, int position)
+{
+    // Validate parameters
+    if (!isValidLoop(loop) || !isValidCell(loop, position)) {
+        return 0;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    
+    // Don't allow deleting the last cell
+    if (celCount <= 1) {
+        return 0;
+    }
+    
+    // Clean up memory for the cell being deleted
+    if (loops[loop]->cells[position]) {
+        if (loops[loop]->cells[position]->cellImage) {
+            CellImage* img = loops[loop]->cells[position]->cellImage;
+            delete[] img->image;
+            delete[] img->pack;
+            delete[] img->lines;
+            delete img;
+        }
+        delete loops[loop]->cells[position];
+    }
+    
+    // Shift remaining cells down
+    for (int i = position; i < celCount - 1; i++) {
+        loops[loop]->cells[i] = loops[loop]->cells[i + 1];
+    }
+    
+    // Clear the last pointer
+    loops[loop]->cells[celCount - 1] = nullptr;
+    
+    // Update counts
+    loops[loop]->Head.numCels--;
+    Head.view32.celCount--;
+    
+    return 1;
+}
+
+int V56file::deleteCells(int loop, int start, int count)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return 0;
+    }
+    
+    const int oldCelCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= oldCelCount || start + count > oldCelCount) {
+        return 0;
+    }
+    
+    if (count >= oldCelCount) {
+        return 0; // Don't allow deleting all cells
+    }
+    
+    // Clean up memory for cells being deleted
+    for (int i = start; i < start + count; i++) {
+        if (loops[loop]->cells[i]) {
+            if (loops[loop]->cells[i]->cellImage) {
+                CellImage* img = loops[loop]->cells[i]->cellImage;
+                delete[] img->image;
+                delete[] img->pack;
+                delete[] img->lines;
+                delete img;
+            }
+            delete loops[loop]->cells[i];
+        }
+    }
+    
+    // Shift remaining cells down
+    for (int i = start; i < oldCelCount - count; i++) {
+        loops[loop]->cells[i] = loops[loop]->cells[i + count];
+    }
+    
+    // Clear pointers at the end
+    for (int i = oldCelCount - count; i < oldCelCount; i++) {
+        loops[loop]->cells[i] = nullptr;
+    }
+    
+    // Update counts
+    loops[loop]->Head.numCels = oldCelCount - count;
+    Head.view32.celCount -= count;
+    
+    return 1;
+}
+
+
+
+int V56file::copyCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos)
+{
+    if (!isValidLoop(srcLoop) || !isValidLoop(dstLoop) || count <= 0) {
+        return 0;
+    }
+    
+    const int srcCelCount = loops[srcLoop]->Head.numCels;
+    const int dstCelCount = loops[dstLoop]->Head.numCels;
+    
+    if (srcStart < 0 || srcStart >= srcCelCount || srcStart + count > srcCelCount ||
+        dstPos < 0 || dstPos > dstCelCount || dstCelCount + count > MAX_LOOPS) {
+        return 0;
+    }
+    
+    // Make room for new cells by shifting existing ones
+    for (int i = dstCelCount - 1; i >= dstPos; i--) {
+        loops[dstLoop]->cells[i + count] = loops[dstLoop]->cells[i];
+    }
+    
+    // Copy cells
+    for (int i = 0; i < count; i++) {
+        const int srcIndex = srcStart + i;
+        const int dstIndex = dstPos + i;
+        
+        if (!loops[srcLoop]->cells[srcIndex]) {
+            continue;
+        }
+        
+        // Create new Cell object (deep copy)
+        loops[dstLoop]->cells[dstIndex] = new Cell;
+        loops[dstLoop]->cells[dstIndex]->Head = loops[srcLoop]->cells[srcIndex]->Head;
+        
+        // Deep copy the cell image data
+        if (loops[srcLoop]->cells[srcIndex]->cellImage) {
+            loops[dstLoop]->cells[dstIndex]->cellImage = new CellImage;
+            CellImage* srcImg = loops[srcLoop]->cells[srcIndex]->cellImage;
+            CellImage* dstImg = loops[dstLoop]->cells[dstIndex]->cellImage;
+            
+            dstImg->imageSize = srcImg->imageSize;
+            if (srcImg->image && srcImg->imageSize > 0) {
+                dstImg->image = new unsigned char[srcImg->imageSize];
+                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+            } else {
+                dstImg->image = nullptr;
+            }
+            
+            dstImg->packSize = srcImg->packSize;
+            if (srcImg->pack && srcImg->packSize > 0) {
+                dstImg->pack = new unsigned char[srcImg->packSize];
+                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+            } else {
+                dstImg->pack = nullptr;
+            }
+            
+            dstImg->lineSize = srcImg->lineSize;
+            if (srcImg->lines && srcImg->lineSize > 0) {
+                dstImg->lines = new unsigned char[srcImg->lineSize];
+                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+            } else {
+                dstImg->lines = nullptr;
+            }
+        } else {
+            loops[dstLoop]->cells[dstIndex]->cellImage = nullptr;
+        }
+        
+        // Copy link points
+        if (loops[srcLoop]->cells[srcIndex]->Head.view.linkTableCount > 0) {
+            const int linkCount = loops[srcLoop]->cells[srcIndex]->Head.view.linkTableCount;
+            for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
+                loops[dstLoop]->cells[dstIndex]->linkPoints[linkIdx] = loops[srcLoop]->cells[srcIndex]->linkPoints[linkIdx];
+            }
+        }
+        
+        loops[dstLoop]->cells[dstIndex]->setPalette(&palSCI);
+    }
+    
+    // Update counts
+    loops[dstLoop]->Head.numCels += count;
+    if (dstLoop != srcLoop) {
+        Head.view32.celCount += count;
+    }
+    
+    return 1;
+}
+
+int V56file::copyCell(int srcLoop, int srcIndex, int dstLoop, int dstPos)
+{
+    return copyCells(srcLoop, srcIndex, 1, dstLoop, dstPos);
+}
+
+int V56file::moveCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos)
+{
+    if (srcLoop == dstLoop) {
+        return shiftCells(srcLoop, srcStart, count, dstPos);
+    }
+    
+    if (!copyCells(srcLoop, srcStart, count, dstLoop, dstPos)) {
+        return 0;
+    }
+    
+    if (!deleteCells(srcLoop, srcStart, count)) {
+        deleteCells(dstLoop, dstPos, count);
+        return 0;
+    }
+    
+    return 1;
+}
+
+int V56file::moveCell(int srcLoop, int srcIndex, int dstLoop, int dstPos)
+{
+    return moveCells(srcLoop, srcIndex, 1, dstLoop, dstPos);
+}
+
+int V56file::shiftCells(int loop, int start, int count, int newPos)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return 0;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount || start + count > celCount ||
+        newPos < 0 || newPos > celCount - count || start == newPos) {
+        return start == newPos ? 1 : 0; // No-op if same position
+    }
+    
+    Cell** tempCells = new Cell*[count];
+    for (int i = 0; i < count; i++) {
+        tempCells[i] = loops[loop]->cells[start + i];
+    }
+    
+    if (newPos < start) {
+        for (int i = start - 1; i >= newPos; i--) {
+            loops[loop]->cells[i + count] = loops[loop]->cells[i];
+        }
+    } else {
+        for (int i = start + count; i < newPos + count; i++) {
+            loops[loop]->cells[i - count] = loops[loop]->cells[i];
+        }
+        newPos -= count;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        loops[loop]->cells[newPos + i] = tempCells[i];
+    }
+    
+    delete[] tempCells;
+    return 1;
+}
+
+int V56file::duplicateCells(int loop, int start, int count)
+{
+    return copyCells(loop, start, count, loop, start + count);
+}
+
+int V56file::duplicateCell(int loop, int index)
+{
+    return duplicateCells(loop, index, 1);
+}
+
+int V56file::swapCells(int loop1, int index1, int loop2, int index2)
+{
+    if (!isValidCell(loop1, index1) || !isValidCell(loop2, index2)) {
+        return 0;
+    }
+    
+    Cell* temp = loops[loop1]->cells[index1];
+    loops[loop1]->cells[index1] = loops[loop2]->cells[index2];
+    loops[loop2]->cells[index2] = temp;
+    
+    return 1;
+}
+
+// === ADVANCED CELL OPERATIONS ===
+
+int V56file::insertEmptyCells(int loop, int position, int count)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return 0;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (position < 0 || position > celCount || celCount + count > MAX_LOOPS) {
+        return 0;
+    }
+    
+    // Shift existing cells to make room
+    for (int i = celCount - 1; i >= position; i--) {
+        loops[loop]->cells[i + count] = loops[loop]->cells[i];
+    }
+    
+    // Create empty cells
+    for (int i = 0; i < count; i++) {
+        loops[loop]->cells[position + i] = new Cell;
+        memset(&loops[loop]->cells[position + i]->Head, 0, sizeof(CelHeader));
+        loops[loop]->cells[position + i]->cellImage = nullptr;
+        loops[loop]->cells[position + i]->setPalette(&palSCI);
+    }
+    
+    loops[loop]->Head.numCels += count;
+    Head.view32.celCount += count;
+    
+    return 1;
+}
+
+int V56file::replaceCells(int dstLoop, int dstStart, int srcLoop, int srcStart, int count)
+{
+    if (!isValidLoop(dstLoop) || !isValidLoop(srcLoop) || count <= 0) {
+        return 0;
+    }
+    
+    if (dstStart < 0 || dstStart + count > loops[dstLoop]->Head.numCels ||
+        srcStart < 0 || srcStart + count > loops[srcLoop]->Head.numCels) {
+        return 0;
+    }
+    
+    // Delete existing cells in destination range
+    for (int i = 0; i < count; i++) {
+        int dstIndex = dstStart + i;
+        if (loops[dstLoop]->cells[dstIndex]) {
+            if (loops[dstLoop]->cells[dstIndex]->cellImage) {
+                CellImage* img = loops[dstLoop]->cells[dstIndex]->cellImage;
+                delete[] img->image;
+                delete[] img->pack;
+                delete[] img->lines;
+                delete img;
+            }
+            delete loops[dstLoop]->cells[dstIndex];
+        }
+    }
+    
+    // Copy cells from source (reuse copyCells logic)
+    for (int i = 0; i < count; i++) {
+        int srcIndex = srcStart + i;
+        int dstIndex = dstStart + i;
+        
+        if (!loops[srcLoop]->cells[srcIndex]) {
+            loops[dstLoop]->cells[dstIndex] = nullptr;
+            continue;
+        }
+        
+        loops[dstLoop]->cells[dstIndex] = new Cell;
+        loops[dstLoop]->cells[dstIndex]->Head = loops[srcLoop]->cells[srcIndex]->Head;
+        
+        if (loops[srcLoop]->cells[srcIndex]->cellImage) {
+            loops[dstLoop]->cells[dstIndex]->cellImage = new CellImage;
+            CellImage* srcImg = loops[srcLoop]->cells[srcIndex]->cellImage;
+            CellImage* dstImg = loops[dstLoop]->cells[dstIndex]->cellImage;
+            
+            dstImg->imageSize = srcImg->imageSize;
+            if (srcImg->image && srcImg->imageSize > 0) {
+                dstImg->image = new unsigned char[srcImg->imageSize];
+                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+            } else {
+                dstImg->image = nullptr;
+            }
+            
+            dstImg->packSize = srcImg->packSize;
+            if (srcImg->pack && srcImg->packSize > 0) {
+                dstImg->pack = new unsigned char[srcImg->packSize];
+                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+            } else {
+                dstImg->pack = nullptr;
+            }
+            
+            dstImg->lineSize = srcImg->lineSize;
+            if (srcImg->lines && srcImg->lineSize > 0) {
+                dstImg->lines = new unsigned char[srcImg->lineSize];
+                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+            } else {
+                dstImg->lines = nullptr;
+            }
+        } else {
+            loops[dstLoop]->cells[dstIndex]->cellImage = nullptr;
+        }
+        
+        if (loops[srcLoop]->cells[srcIndex]->Head.view.linkTableCount > 0) {
+            const int linkCount = loops[srcLoop]->cells[srcIndex]->Head.view.linkTableCount;
+            for (int linkIdx = 0; linkIdx < linkCount && linkIdx < 10; linkIdx++) {
+                loops[dstLoop]->cells[dstIndex]->linkPoints[linkIdx] = loops[srcLoop]->cells[srcIndex]->linkPoints[linkIdx];
+            }
+        }
+        
+        loops[dstLoop]->cells[dstIndex]->setPalette(&palSCI);
+    }
+    
+    return 1;
+}
+
+int V56file::reverseCells(int loop, int start, int count)
+{
+    if (!isValidLoop(loop) || count <= 1) {
+        return 1;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount || start + count > celCount) {
+        return 0;
+    }
+    
+    for (int i = 0; i < count / 2; i++) {
+        int leftIndex = start + i;
+        int rightIndex = start + count - 1 - i;
+        
+        Cell* temp = loops[loop]->cells[leftIndex];
+        loops[loop]->cells[leftIndex] = loops[loop]->cells[rightIndex];
+        loops[loop]->cells[rightIndex] = temp;
+    }
+    
+    return 1;
+}
+
+int V56file::sortCells(int loop, int start, int count, int sortBy, bool ascending)
+{
+    if (!isValidLoop(loop) || count <= 1 || sortBy < 0 || sortBy > 2) {
+        return count <= 1 ? 1 : 0;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount || start + count > celCount) {
+        return 0;
+    }
+    
+    // Simple bubble sort
+    for (int i = 0; i < count - 1; i++) {
+        for (int j = 0; j < count - i - 1; j++) {
+            int idx1 = start + j;
+            int idx2 = start + j + 1;
+            
+            if (!loops[loop]->cells[idx1] || !loops[loop]->cells[idx2]) {
+                continue;
+            }
+            
+            int val1 = 0, val2 = 0;
+            
+            switch (sortBy) {
+                case 0: // Width
+                    val1 = loops[loop]->cells[idx1]->Head.view.xDim;
+                    val2 = loops[loop]->cells[idx2]->Head.view.xDim;
+                    break;
+                case 1: // Height
+                    val1 = loops[loop]->cells[idx1]->Head.view.yDim;
+                    val2 = loops[loop]->cells[idx2]->Head.view.yDim;
+                    break;
+                case 2: // Image size
+                    val1 = loops[loop]->cells[idx1]->cellImage ? 
+                           loops[loop]->cells[idx1]->cellImage->imageSize : 0;
+                    val2 = loops[loop]->cells[idx2]->cellImage ? 
+                           loops[loop]->cells[idx2]->cellImage->imageSize : 0;
+                    break;
+            }
+            
+            bool shouldSwap = ascending ? (val1 > val2) : (val1 < val2);
+            
+            if (shouldSwap) {
+                Cell* temp = loops[loop]->cells[idx1];
+                loops[loop]->cells[idx1] = loops[loop]->cells[idx2];
+                loops[loop]->cells[idx2] = temp;
+            }
+        }
+    }
+    
+    return 1;
+}
+
+// === BATCH OPERATIONS ===
+
+int V56file::batchDeleteCells(int loop, const int* indices, int indexCount)
+{
+    if (!isValidLoop(loop) || !indices || indexCount <= 0) {
+        return 0;
+    }
+    
+    int* sortedIndices = new int[indexCount];
+    for (int i = 0; i < indexCount; i++) {
+        sortedIndices[i] = indices[i];
+    }
+    
+    // Sort in descending order
+    for (int i = 0; i < indexCount - 1; i++) {
+        for (int j = 0; j < indexCount - i - 1; j++) {
+            if (sortedIndices[j] < sortedIndices[j + 1]) {
+                int temp = sortedIndices[j];
+                sortedIndices[j] = sortedIndices[j + 1];
+                sortedIndices[j + 1] = temp;
+            }
+        }
+    }
+    
+    int deletedCount = 0;
+    for (int i = 0; i < indexCount; i++) {
+        if (deleteCell(loop, sortedIndices[i])) {
+            deletedCount++;
+        }
+    }
+    
+    delete[] sortedIndices;
+    return deletedCount > 0 ? 1 : 0;
+}
+
+// === SEARCH AND FIND OPERATIONS ===
+
+int V56file::findCellsBySize(int loop, int width, int height, int* results, int maxResults)
+{
+    int foundCount = 0;
+    int startLoop = (loop >= 0) ? loop : 0;
+    int endLoop = (loop >= 0) ? loop : Head.view32.loopCount - 1;
+    
+    for (int l = startLoop; l <= endLoop && foundCount < maxResults; l++) {
+        if (!isValidLoop(l)) continue;
+        
+        for (int c = 0; c < loops[l]->Head.numCels && foundCount < maxResults; c++) {
+            if (!loops[l]->cells[c]) continue;
+            
+            bool widthMatch = (width == 0) || (loops[l]->cells[c]->Head.view.xDim == width);
+            bool heightMatch = (height == 0) || (loops[l]->cells[c]->Head.view.yDim == height);
+            
+            if (widthMatch && heightMatch) {
+                results[foundCount * 2] = l;
+                results[foundCount * 2 + 1] = c;
+                foundCount++;
+            }
+        }
+    }
+    
+    return foundCount;
+}
+
+int V56file::findEmptyCells(int loop, int* results, int maxResults)
+{
+    int foundCount = 0;
+    int startLoop = (loop >= 0) ? loop : 0;
+    int endLoop = (loop >= 0) ? loop : Head.view32.loopCount - 1;
+    
+    for (int l = startLoop; l <= endLoop && foundCount < maxResults; l++) {
+        if (!isValidLoop(l)) continue;
+        
+        for (int c = 0; c < loops[l]->Head.numCels && foundCount < maxResults; c++) {
+            bool isEmpty = !loops[l]->cells[c] || 
+                          !loops[l]->cells[c]->cellImage ||
+                          loops[l]->cells[c]->cellImage->imageSize == 0;
+            
+            if (isEmpty) {
+                results[foundCount * 2] = l;
+                results[foundCount * 2 + 1] = c;
+                foundCount++;
+            }
+        }
+    }
+    
+    return foundCount;
+}
+
+// === GUI UTILITY FUNCTIONS ===
+
+CellRangeInfo V56file::getCellRangeInfo(int loop, int start, int count)
+{
+    CellRangeInfo info;
+    
+    if (!isValidLoop(loop)) {
+        return info;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount) {
+        return info;
+    }
+    
+    const int endPos = (start + count > celCount) ? celCount : start + count;
+    
+    for (int i = start; i < endPos; i++) {
+        if (!loops[loop]->cells[i]) continue;
+        
+        info.totalCells++;
+        
+        if (loops[loop]->cells[i]->cellImage) {
+            CellImage* img = loops[loop]->cells[i]->cellImage;
+            info.totalImageSize += img->imageSize;
+            info.totalPackSize += img->packSize;
+        }
+        
+        CelHeaderView* header = reinterpret_cast<CelHeaderView*>(&loops[loop]->cells[i]->Head);
+        if (header->compressType) {
+            info.compressedCount++;
+        } else {
+            info.uncompressedCount++;
+        }
+        
+        if (header->linkTableCount > 0) {
+            info.hasLinks = true;
+        }
+    }
+    
+    return info;
+}
+
+ViewStats V56file::getViewStats()
+{
+    ViewStats stats;
+    stats.totalLoops = Head.view32.loopCount;
+    stats.totalCells = Head.view32.celCount;
+    
+    for (int l = 0; l < Head.view32.loopCount; l++) {
+        if (!isValidLoop(l)) continue;
+        
+        for (int c = 0; c < loops[l]->Head.numCels; c++) {
+            if (!loops[l]->cells[c]) {
+                stats.emptyCells++;
+                continue;
+            }
+            
+            if (loops[l]->cells[c]->cellImage) {
+                CellImage* img = loops[l]->cells[c]->cellImage;
+                stats.totalImageSize += img->imageSize;
+                stats.totalPackSize += img->packSize;
+                
+                if (img->imageSize > stats.largestCellSize) {
+                    stats.largestCellSize = img->imageSize;
+                }
+                if (img->imageSize < stats.smallestCellSize && img->imageSize > 0) {
+                    stats.smallestCellSize = img->imageSize;
+                }
+            } else {
+                stats.emptyCells++;
+            }
+            
+            CelHeaderView* header = reinterpret_cast<CelHeaderView*>(&loops[l]->cells[c]->Head);
+            if (header->compressType) {
+                stats.compressedCells++;
+            } else {
+                stats.uncompressedCells++;
+            }
+            
+            if (header->linkTableCount > 0) {
+                stats.cellsWithLinks++;
+            }
+        }
+    }
+    
+    if (stats.smallestCellSize == 2147483647) { // INT_MAX
+        stats.smallestCellSize = 0;
+    }
+    
+    return stats;
+}
+
+// === VALIDATION FUNCTIONS ===
+
+bool V56file::canDeleteCells(int loop, int start, int count)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return false;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount || start + count > celCount) {
+        return false;
+    }
+    
+    return count < celCount; // Don't allow deleting all cells
+}
+
+bool V56file::canInsertCells(int loop, int position, int count)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return false;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (position < 0 || position > celCount) {
+        return false;
+    }
+    
+    return celCount + count <= MAX_LOOPS;
+}
+
+bool V56file::canMoveCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos)
+{
+    if (!canDeleteCells(srcLoop, srcStart, count)) {
+        return false;
+    }
+    
+    if (srcLoop == dstLoop) {
+        // Moving within same loop - just check positions
+        const int celCount = loops[srcLoop]->Head.numCels;
+        return dstPos >= 0 && dstPos <= celCount - count && dstPos != srcStart;
+    }
+    
+    // Moving between loops
+    return canInsertCells(dstLoop, dstPos, count);
+}
+
+bool V56file::canModifyCellRange(int loop, int start, int count)
+{
+    if (!isValidLoop(loop) || count <= 0) {
+        return false;
+    }
+    
+    const int celCount = loops[loop]->Head.numCels;
+    if (start < 0 || start >= celCount || start + count > celCount) {
+        return false;
+    }
+    
+    // Check if any cells in range are null
+    for (int i = start; i < start + count; i++) {
+        if (!loops[loop]->cells[i]) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+// === MAINTENANCE OPERATIONS ===
+
+int V56file::cutCells(int loop, int start, int count, Cell** clipboard)
+{
+    if (!clipboard || !canModifyCellRange(loop, start, count)) {
+        return 0;
+    }
+    
+    // Copy cells to clipboard first (simplified - user manages memory)
+    for (int i = 0; i < count; i++) {
+        clipboard[i] = loops[loop]->cells[start + i];
+    }
+    
+    // Set cell pointers to null to avoid double deletion
+    for (int i = start; i < start + count; i++) {
+        loops[loop]->cells[i] = nullptr;
+    }
+    
+    // Then delete the cells (but they're already nulled, so just shift)
+    return deleteCells(loop, start, count);
+}
+
+int V56file::optimizeLoop(int loop)
+{
+    if (!isValidLoop(loop)) {
+        return 0;
+    }
+    
+    int removed = 0;
+    int writePos = 0;
+    const int originalCount = loops[loop]->Head.numCels;
+    
+    // Compact array by moving valid cells to the front
+    for (int readPos = 0; readPos < originalCount; readPos++) {
+        bool isEmpty = !loops[loop]->cells[readPos] || 
+                      !loops[loop]->cells[readPos]->cellImage ||
+                      loops[loop]->cells[readPos]->cellImage->imageSize == 0;
+        
+        if (isEmpty) {
+            // Clean up empty cell
+            if (loops[loop]->cells[readPos]) {
+                if (loops[loop]->cells[readPos]->cellImage) {
+                    CellImage* img = loops[loop]->cells[readPos]->cellImage;
+                    delete[] img->image;
+                    delete[] img->pack;
+                    delete[] img->lines;
+                    delete img;
+                }
+                delete loops[loop]->cells[readPos];
+            }
+            removed++;
+        } else {
+            // Move valid cell to write position
+            if (writePos != readPos) {
+                loops[loop]->cells[writePos] = loops[loop]->cells[readPos];
+            }
+            writePos++;
+        }
+    }
+    
+    // Clear remaining pointers
+    for (int i = writePos; i < originalCount; i++) {
+        loops[loop]->cells[i] = nullptr;
+    }
+    
+    // Update counts
+    loops[loop]->Head.numCels = writePos;
+    Head.view32.celCount -= removed;
+    
+    return removed;
 }
