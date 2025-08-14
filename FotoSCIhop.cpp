@@ -13,6 +13,7 @@
 #include "stdafx.h"
 #include "FotoSCIhop.h"
 #define MAX_LOADSTRING 100
+#include "imgui_integration.h"
 
 
 
@@ -31,6 +32,20 @@ ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
+
+// ============================================================================
+// REFERENCE IMAGE SETTINGS
+// ============================================================================
+//HWND hReferenceDialog;
+
+// ============================================================================
+// DIALOG WINDOWS
+// ============================================================================
+HWND hPropertiesDialog = NULL;
+HWND hLinkPointDialog = NULL;
+
+void RenderPropertiesDialog();
+void RenderLinkPointsDialog();
 
 
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
@@ -2996,6 +3011,16 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
+    // Initialize ImGui
+    if (!ImGuiDialogs::Initialize(hWnd))
+    {
+        MessageBox(hWnd, "Failed to initialize ImGui", "Error", MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+
+    // Set up dialog callbacks
+    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog, &RenderLinkPointsDialog);
+
     hInst = hInstance; // Store instance handle in our global variable
 
     // Get the width and height of the screen
@@ -3050,6 +3075,8 @@ void exit_proc(HWND hwnd)
         DeleteObject(hfDefault);
         hfDefault = NULL;  // Prevent double deletion
     }
+
+    ImGuiDialogs::Shutdown();
     
     DestroyWindow(hwnd);
 }
@@ -3130,7 +3157,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
 
         case IDM_PROPERTIES:
-            DoModifyProperties(hWnd);
+            ImGuiDialogs::ShowProperties();
             break;
 
         case ID_INFO:
@@ -3138,7 +3165,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
 
         case IDM_LINKPOINTS:
-            DoLinkPointDialog(hWnd);
+            ImGuiDialogs::ShowLinkPoints();
             break;
 
         case IDM_REFERENCE:
@@ -3302,6 +3329,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DrawCellInfo(hdc);
 
             EndPaint(hWnd, &ps);
+
+            ImGuiDialogs::Render();
             break;
         }
         
@@ -3336,6 +3365,344 @@ LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
     return FALSE;
+}
+
+// ==== ImGui Dialog Callbacks ====
+void RenderPropertiesDialog() {
+    using namespace ImGuiDialogs;
+    
+    bool open = true;
+    if (!BeginDialog("Properties", &open)) {
+        EndDialog();
+        return;
+    }
+    
+    if (!open) {
+        Hide();
+        EndDialog();
+        return;
+    }
+    
+    // Get current data - same logic as your DoUpdatePropertiesProc
+    int selLoop = globalView ? curLoopIndex : 0;
+    static int resX = 320, resY = 200;
+    static int left = 0, top = 0, priority = 0;
+    static int loopMirror = 0, loopBase = 0;
+    static int loopContinue = -1, loopStartCell = -1, loopEndCell = -1;
+    static int loopRepeat = 255, loopStepSize = 3;
+    static int cellsDelta = 0, loopsDelta = 0;
+    static bool needsRefresh = true;
+    
+    // Refresh data when needed
+    if (needsRefresh) {
+        if (globalView) {
+            resX = globalView->Head.view32.resX;
+            resY = globalView->Head.view32.resY;
+            
+            if (curCell && (*curCell)) {
+                if (!(*curLoop)->Head.flags) {
+                    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                    left = bCell->xHot;
+                    top = bCell->yHot;
+                    
+                    loopContinue = globalView->loops[selLoop]->Head.contLoop;
+                    loopStartCell = globalView->loops[selLoop]->Head.startCel;
+                    loopEndCell = globalView->loops[selLoop]->Head.endCel;
+                    loopRepeat = globalView->loops[selLoop]->Head.repeatCount;
+                    loopStepSize = globalView->loops[selLoop]->Head.stepSize;
+                } else {
+                    left = 0; top = 0;
+                    loopContinue = -1; loopStartCell = -1; loopEndCell = -1;
+                    loopRepeat = 255; loopStepSize = 3;
+                }
+                
+                loopMirror = globalView->loops[selLoop]->Head.flags;
+                loopBase = globalView->loops[selLoop]->Head.altLoop;
+            }
+        }
+        else if (globalPicture) {
+            switch (globalPicture->format) {
+            case _PIC_11: {
+                PicHeader11 *bPic11 = (PicHeader11 *)&globalPicture->Head;
+                resX = bPic11->vanishX; resY = bPic11->viewAngle;
+                break;
+            }
+            case _PIC_32: {
+                PicHeader32 *bPic32 = (PicHeader32 *)&globalPicture->Head;
+                resX = bPic32->resX; resY = bPic32->resY;
+                break;
+            }
+            }
+            
+            if (curCell && (*curCell)) {
+                CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                left = bCell->xpos; top = bCell->ypos; priority = bCell->priority;
+            }
+        }
+        
+        cellsDelta = 0; loopsDelta = 0;
+        needsRefresh = false;
+    }
+
+    // === UI RENDERING ===
+    Text("Resolution:");
+    InputInt("Width", &resX);
+    SameLine();
+    InputInt("Height", &resY);
+    
+    Separator();
+    
+    if (globalView) {
+        Text("Loop Properties:");
+        bool mirror = (loopMirror != 0);
+        Checkbox("Mirror", &mirror);
+        loopMirror = mirror ? 1 : 0;
+        SameLine();
+        InputInt("Base", &loopBase);
+        
+        if (!loopMirror) {
+            InputInt("Continue", &loopContinue);
+            SameLine();
+            InputInt("Start Cell", &loopStartCell);
+            
+            InputInt("End Cell", &loopEndCell);
+            SameLine();
+            InputInt("Repeat", &loopRepeat);
+            
+            InputInt("Step Size", &loopStepSize);
+            
+            Separator();
+            Text("Cell Hot Spot:");
+            InputInt("X", &left);
+            SameLine();
+            InputInt("Y", &top);
+        }
+        
+        Separator();
+        Text("Add/Remove:");
+        InputInt("Loops Delta", &loopsDelta);
+        SameLine();
+        InputInt("Cells Delta", &cellsDelta);
+        
+    } else if (globalPicture) {
+        const char* version = (globalPicture->format == _PIC_11) ? "SCI1.1 Picture" : "SCI32 Picture";
+        Text(version);
+        
+        if (curCell && (*curCell)) {
+            Separator();
+            Text("Cell Properties:");
+            InputInt("X", &left);
+            SameLine();
+            InputInt("Y", &top);
+            SameLine();
+            InputInt("Priority", &priority);
+        }
+        
+        Separator();
+        Text("Add/Remove Cells:");
+        InputInt("Cells Delta", &cellsDelta);
+        
+    } else {
+        Text("No file loaded");
+    }
+    
+    Separator();
+    
+    // Apply button - same logic as your DoModifyPropertiesProc IDOK case
+    if (Button("Apply")) {
+        if (globalView) {
+            globalView->Head.view32.resX = resX;
+            globalView->Head.view32.resY = resY;
+            
+            if (curCell && (*curCell)) {
+                globalView->loops[selLoop]->Head.flags = loopMirror;
+                globalView->loops[selLoop]->Head.altLoop = loopBase;
+                
+                if (!loopMirror) {
+                    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                    bCell->xHot = left;
+                    bCell->yHot = top;
+                    
+                    globalView->loops[selLoop]->Head.contLoop = loopContinue;
+                    globalView->loops[selLoop]->Head.startCel = loopStartCell;
+                    globalView->loops[selLoop]->Head.endCel = loopEndCell;
+                    globalView->loops[selLoop]->Head.repeatCount = loopRepeat;
+                    globalView->loops[selLoop]->Head.stepSize = loopStepSize;
+                } else {
+                    globalView->loops[selLoop]->Head.contLoop = -1;
+                    globalView->loops[selLoop]->Head.startCel = -1;
+                    globalView->loops[selLoop]->Head.endCel = -1;
+                    globalView->loops[selLoop]->Head.repeatCount = 255;
+                    globalView->loops[selLoop]->Head.stepSize = 3;
+                }
+            }
+            
+            if (loopsDelta != 0) {
+                DoAddLoops(curLoopIndex, loopsDelta);
+                loopsDelta = 0;
+            }
+            
+            if (cellsDelta != 0) {
+                DoAddCells(curLoopIndex, curCellIndex, cellsDelta);
+                cellsDelta = 0;
+            }
+            
+            ShowLoopCell(curLoopIndex, curCellIndex);
+        }
+        
+        if (globalPicture) {
+            switch (globalPicture->format) {
+            case _PIC_11: {
+                PicHeader11 *bPic11 = (PicHeader11 *)&globalPicture->Head;
+                bPic11->vanishX = resX;
+                bPic11->viewAngle = resY;
+                break;
+            }
+            case _PIC_32: {
+                PicHeader32 *bPic32 = (PicHeader32 *)&globalPicture->Head;
+                bPic32->resX = resX;
+                bPic32->resY = resY;
+                break;
+            }
+            }
+            
+            if (curCell && (*curCell)) {
+                CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                bCell->xpos = left;
+                bCell->ypos = top;
+                bCell->priority = priority;
+            }
+            
+            if (cellsDelta != 0) {
+                DoAddCells(0, curCellIndex, cellsDelta);
+                cellsDelta = 0;
+            }
+            
+            ShowCell(curCellIndex);
+        }
+        
+        datasaved = false;
+        needsRefresh = true;
+    }
+    
+    SameLine();
+    if (Button("Close")) {
+        needsRefresh = true;
+        Hide();
+    }
+
+    EndDialog();
+}
+
+void RenderLinkPointsDialog() {
+    using namespace ImGuiDialogs;
+    
+    bool open = true;
+    if (!BeginDialog("Link Points", &open)) {
+        EndDialog();
+        return;
+    }
+    
+    if (!open) {
+        Hide();
+        EndDialog();
+        return;
+    }
+
+    if (globalView && curCell && (*curCell) && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+        
+        // Static data - same approach as your DoUpdateLinkPointProc
+        static int linkCount = 0;
+        static int linkX[12] = {0};
+        static int linkY[12] = {0};
+        static int linkPri[12] = {0};
+        static int linkType[12] = {0};
+        static bool needsRefresh = true;
+        
+        // Refresh from globals when needed
+        if (needsRefresh) {
+            CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+            linkCount = bCell->linkTableCount;
+            
+            for (int i = 0; i < 12; i++) {
+                if (i < linkCount) {
+                    linkX[i] = (*curCell)->linkPoints[i].x;
+                    linkY[i] = (*curCell)->linkPoints[i].y;
+                    linkPri[i] = (*curCell)->linkPoints[i].priority;
+                    linkType[i] = (*curCell)->linkPoints[i].positionType;
+                } else {
+                    linkX[i] = linkY[i] = linkPri[i] = linkType[i] = 0;
+                }
+            }
+            needsRefresh = false;
+        }
+        
+        InputInt("Count", &linkCount);
+        if (linkCount < 0) linkCount = 0;
+        if (linkCount > 12) linkCount = 12;
+        
+        Separator();
+        Text("Link Point Coordinates:");
+        
+        for (int i = 0; i < 12; i++) {
+            char label[32];
+            sprintf(label, "%d:", i + 1);
+            Text(label);
+            SameLine();
+            
+            sprintf(label, "X##%d", i);
+            InputInt(label, &linkX[i]);
+            SameLine();
+            
+            sprintf(label, "Y##%d", i);
+            InputInt(label, &linkY[i]);
+            SameLine();
+            
+            sprintf(label, "Pri##%d", i);
+            InputInt(label, &linkPri[i]);
+            SameLine();
+            
+            sprintf(label, "Type##%d", i);
+            InputInt(label, &linkType[i]);
+        }
+        
+        Separator();
+        
+        // Apply button - same logic as your DoLinkPointProc IDOK case
+        if (Button("Apply")) {
+            if (globalView && curCell && (*curCell)) {
+                CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                bCell->linkTableCount = linkCount;
+                
+                for (int i = 0; i < linkCount && i < 12; i++) {
+                    (*curCell)->linkPoints[i].x = linkX[i];
+                    (*curCell)->linkPoints[i].y = linkY[i];
+                    (*curCell)->linkPoints[i].priority = linkPri[i];
+                    (*curCell)->linkPoints[i].positionType = linkType[i];
+                }
+                
+                ShowLoopCell(curLoopIndex, curCellIndex);
+                datasaved = false;
+                needsRefresh = true;
+            }
+        }
+        
+        SameLine();
+        if (Button("Close")) {
+            needsRefresh = true;
+            Hide();
+        }
+        
+    } else {
+        Text("Link points are only available for");
+        Text("non-mirrored view loops");
+        
+        if (Button("Close")) {
+            Hide();
+        }
+    }
+
+    EndDialog();
 }
 
 #pragma warning(pop)  // Restore warning level
