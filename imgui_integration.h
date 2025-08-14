@@ -22,7 +22,7 @@ namespace ImGuiDialogs {
     // Check if any dialog is open
     bool IsAnyDialogOpen();
     
-    // Call from your main message loop
+    // Call from your main message loop and paint
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void Render();
     

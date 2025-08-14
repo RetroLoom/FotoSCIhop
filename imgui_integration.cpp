@@ -14,7 +14,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 namespace ImGuiDialogs {
     
-    // Internal state - much simpler with OpenGL!
+    // Internal state - using OpenGL3 as originally intended
     struct EngineState {
         HWND parent = nullptr;
         HWND hwnd = nullptr;
@@ -40,7 +40,7 @@ namespace ImGuiDialogs {
             
         switch (msg) {
         case WM_SIZE:
-            if (g_engine.hglrc) {
+            if (g_engine.hglrc && wParam != SIZE_MINIMIZED) {
                 glViewport(0, 0, (GLsizei)LOWORD(lParam), (GLsizei)HIWORD(lParam));
             }
             return 0;
@@ -107,15 +107,26 @@ namespace ImGuiDialogs {
         wc.hInstance = GetModuleHandle(nullptr);
         wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wc.lpszClassName = L"ImGuiDialogs";
-        RegisterClassExW(&wc);
         
-        // Create window
-        g_engine.hwnd = CreateWindowW(wc.lpszClassName, L"Tools", 
-                                     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-                                     100, 100, 500, 600, parent, nullptr, wc.hInstance, nullptr);
-        
-        if (!g_engine.hwnd)
+        if (!RegisterClassExW(&wc)) {
             return false;
+        }
+        
+        // Create window (initially hidden)
+        g_engine.hwnd = CreateWindowW(
+            wc.lpszClassName, 
+            L"Properties", 
+            WS_OVERLAPPEDWINDOW,
+            100, 100, 500, 600, 
+            nullptr, // Independent window for better control
+            nullptr, 
+            wc.hInstance, 
+            nullptr
+        );
+        
+        if (!g_engine.hwnd) {
+            return false;
+        }
             
         // Initialize OpenGL
         if (!CreateOpenGLContext(g_engine.hwnd)) {
@@ -124,10 +135,6 @@ namespace ImGuiDialogs {
             UnregisterClassW(wc.lpszClassName, wc.hInstance);
             return false;
         }
-        
-        // Show the window (hidden initially)
-        ShowWindow(g_engine.hwnd, SW_HIDE);
-        UpdateWindow(g_engine.hwnd);
         
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
@@ -139,8 +146,13 @@ namespace ImGuiDialogs {
         ImGui::StyleColorsDark();
         
         // Setup Platform/Renderer backends
-        ImGui_ImplWin32_Init(g_engine.hwnd);
-        ImGui_ImplOpenGL3_Init("#version 130"); // OpenGL 3.0+ GLSL 130
+        if (!ImGui_ImplWin32_Init(g_engine.hwnd)) {
+            return false;
+        }
+        
+        if (!ImGui_ImplOpenGL3_Init("#version 130")) {
+            return false;
+        }
         
         g_engine.initialized = true;
         return true;
@@ -168,15 +180,21 @@ namespace ImGuiDialogs {
     void ShowProperties() {
         if (!g_engine.initialized) return;
         g_engine.showProperties = true;
-        ShowWindow(g_engine.hwnd, SW_SHOW);
-        SetForegroundWindow(g_engine.hwnd);
+        if (g_engine.hwnd) {
+            ShowWindow(g_engine.hwnd, SW_SHOW);
+            SetForegroundWindow(g_engine.hwnd);
+            SetWindowTextW(g_engine.hwnd, L"Properties");
+        }
     }
     
     void ShowLinkPoints() {
         if (!g_engine.initialized) return;
         g_engine.showLinkPoints = true;
-        ShowWindow(g_engine.hwnd, SW_SHOW);
-        SetForegroundWindow(g_engine.hwnd);
+        if (g_engine.hwnd) {
+            ShowWindow(g_engine.hwnd, SW_SHOW);
+            SetForegroundWindow(g_engine.hwnd);
+            SetWindowTextW(g_engine.hwnd, L"Link Points");
+        }
     }
     
     void Hide() {
@@ -191,24 +209,30 @@ namespace ImGuiDialogs {
     }
     
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (g_engine.hwnd && IsAnyDialogOpen()) {
+        // Only handle messages for the ImGui window
+        if (g_engine.hwnd && hwnd == g_engine.hwnd) {
             return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
         }
         return false;
     }
     
     void Render() {
-        if (!g_engine.initialized || (!g_engine.showProperties && !g_engine.showLinkPoints))
-            return;
+        if (!g_engine.initialized) return;
+        if (!g_engine.showProperties && !g_engine.showLinkPoints) return;
+        if (!IsWindowVisible(g_engine.hwnd)) return;
             
         // Make OpenGL context current
-        if (!wglMakeCurrent(g_engine.hdc, g_engine.hglrc))
-            return;
+        if (!wglMakeCurrent(g_engine.hdc, g_engine.hglrc)) return;
             
         // Get window size for viewport
         RECT rect;
         GetClientRect(g_engine.hwnd, &rect);
-        glViewport(0, 0, rect.right - rect.left, rect.bottom - rect.top);
+        int width = rect.right - rect.left;
+        int height = rect.bottom - rect.top;
+        
+        if (width <= 0 || height <= 0) return; // Avoid invalid viewport
+        
+        glViewport(0, 0, width, height);
         
         // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
@@ -224,7 +248,7 @@ namespace ImGuiDialogs {
             g_engine.linkPointsCallback();
         }
         
-        // Hide window if no dialogs are open
+        // Hide window if no dialogs are open after callbacks
         if (!g_engine.showProperties && !g_engine.showLinkPoints) {
             Hide();
         }
@@ -233,7 +257,11 @@ namespace ImGuiDialogs {
         ImGui::Render();
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        if (draw_data) {
+            ImGui_ImplOpenGL3_RenderDrawData(draw_data);
+        }
         
         SwapBuffers(g_engine.hdc);
     }

@@ -3011,16 +3011,6 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-    // Initialize ImGui
-    if (!ImGuiDialogs::Initialize(hWnd))
-    {
-        MessageBox(hWnd, "Failed to initialize ImGui", "Error", MB_OK | MB_ICONSTOP);
-        return FALSE;
-    }
-
-    // Set up dialog callbacks
-    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog, &RenderLinkPointsDialog);
-
     hInst = hInstance; // Store instance handle in our global variable
 
     // Get the width and height of the screen
@@ -3055,6 +3045,26 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Update the window
     UpdateWindow(hWnd);
+
+     // Create the window
+    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+                       x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
+
+    if (!hWnd) {
+        return FALSE;
+    }
+
+    // Initialize ImGui AFTER window creation
+    if (!ImGuiDialogs::Initialize(hWnd)) {
+        MessageBox(hWnd, "Failed to initialize ImGui", "Error", MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+
+    // Set up dialog callbacks
+    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog, &RenderLinkPointsDialog);
+
+    // Set up a timer for ImGui rendering (60 FPS)
+    SetTimer(hWnd, 1, 16, NULL); // ~60 FPS
 
     return TRUE;
 }
@@ -3330,9 +3340,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             EndPaint(hWnd, &ps);
 
-            ImGuiDialogs::Render();
             break;
         }
+
+    case WM_TIMER:
+    if (wParam == 1) { // Our ImGui timer
+        ImGuiDialogs::Render();
+    }
+    break;
         
     case WM_CLOSE:
         if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
