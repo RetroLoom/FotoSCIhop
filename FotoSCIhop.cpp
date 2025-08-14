@@ -3035,6 +3035,19 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
         return FALSE;
     }
 
+    // Initialize ImGui AFTER window creation
+    if (!ImGuiDialogs::Initialize(hWnd))
+    {
+        MessageBox(hWnd, "Failed to initialize ImGui", "Error", MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+
+    // Set up dialog callbacks
+    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog, &RenderLinkPointsDialog);
+
+    // Set up a timer for ImGui rendering (30 FPS - sufficient for dialogs)
+    SetTimer(hWnd, 1, 33, NULL);
+
     // Show the window
     ShowWindow(hWnd, nCmdShow);
 
@@ -3045,26 +3058,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Update the window
     UpdateWindow(hWnd);
-
-     // Create the window
-    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-                       x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
-
-    if (!hWnd) {
-        return FALSE;
-    }
-
-    // Initialize ImGui AFTER window creation
-    if (!ImGuiDialogs::Initialize(hWnd)) {
-        MessageBox(hWnd, "Failed to initialize ImGui", "Error", MB_OK | MB_ICONSTOP);
-        return FALSE;
-    }
-
-    // Set up dialog callbacks
-    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog, &RenderLinkPointsDialog);
-
-    // Set up a timer for ImGui rendering (60 FPS)
-    SetTimer(hWnd, 1, 16, NULL); // ~60 FPS
 
     return TRUE;
 }

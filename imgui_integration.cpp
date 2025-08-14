@@ -112,13 +112,13 @@ namespace ImGuiDialogs {
             return false;
         }
         
-        // Create window (initially hidden)
+        // Create window (initially hidden, borderless dialog style)
         g_engine.hwnd = CreateWindowW(
             wc.lpszClassName, 
             L"Properties", 
-            WS_OVERLAPPEDWINDOW,
+            WS_POPUP | WS_BORDER | WS_CAPTION | WS_SYSMENU, // Dialog-like style
             100, 100, 500, 600, 
-            nullptr, // Independent window for better control
+            parent, // Use parent so it stays with main window
             nullptr, 
             wc.hInstance, 
             nullptr
