@@ -170,54 +170,40 @@ public:
     // ============================================================================
     
     // === BASIC CELL OPERATIONS ===
+    int modifyCells(int base, int delta);
     int addCell(int baseIndex, int position = -1);
-	int addCells(int base, int amount);
-    
+    int addCells(int base, int amount);  // Now uses modifyCells internally
     int deleteCell(int position);
     int deleteCells(int start, int count);
     
-    // === CELL CONVENIENCE FUNCTIONS ===
-    int insertCell(int baseIndex, int position);
+    // === STREAMLINED CONVENIENCE FUNCTIONS ===
     int appendCell(int baseIndex);
+    int appendCells(int baseIndex, int count);
+    int removeLastCell();
+    int removeLastCells(int count);
     
-    // === CELL COPY OPERATIONS ===
+    // === ESSENTIAL COPY/MOVE OPERATIONS ===
     int copyCells(int srcStart, int count, int dstPos);
-    int copyCell(int srcIndex, int dstPos);
-    
-    // === CELL MOVE OPERATIONS ===
     int moveCells(int srcStart, int count, int dstPos);
-    int moveCell(int srcIndex, int dstPos);
-    
-    // === CELL REORDER OPERATIONS ===
-    int shiftCells(int start, int count, int newPos);
     int duplicateCells(int start, int count);
-    int duplicateCell(int index);
+    
+    // === ESSENTIAL REORDER OPERATIONS ===
+    int shiftCells(int start, int count, int newPos);
     int swapCells(int index1, int index2);
-    
-    // === ADVANCED CELL OPERATIONS ===
-    int insertEmptyCells(int position, int count);
-    int replaceCells(int dstStart, int srcStart, int count);
     int reverseCells(int start, int count);
-    int sortCells(int start, int count, int sortBy, bool ascending);
     
-    // === CELL BATCH OPERATIONS ===
+    // === ADVANCED OPERATIONS ===
+    int insertEmptyCells(int position, int count);
+    
+    // === BATCH OPERATIONS ===
     int batchDeleteCells(const int* indices, int indexCount);
     
-    // === CELL SEARCH OPERATIONS ===
-    int findCellsBySize(int width, int height, int* results, int maxResults);
+    // === SEARCH OPERATIONS ===
     int findEmptyCells(int* results, int maxResults);
     
-    // === CELL MAINTENANCE OPERATIONS ===
-    int cutCells(int start, int count, Cell** clipboard);
+    // === MAINTENANCE OPERATIONS ===
     int optimizeCells();
-    
-    // === P56 VALIDATION FUNCTIONS ===
-    bool canDeleteCells(int start, int count);
-    bool canInsertCells(int position, int count);
-    bool canMoveCells(int srcStart, int count, int dstPos);
-    bool canModifyCellRange(int start, int count);
-    // Note: isValidCellIndex already exists as inline, will enhance
-    
+        
     // === P56 UTILITY FUNCTIONS ===
     PicCellRangeInfo getCellRangeInfo(int start, int count);
     PicStats getPicStats();

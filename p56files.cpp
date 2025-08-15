@@ -732,6 +732,110 @@ int P56file32::getCellCompressType(int index) const
 
 // === BASIC CELL OPERATIONS ===
 
+int P56file32::modifyCells(int base, int delta)
+{
+    // Support both formats
+    if (format != _PIC_32 && format != _PIC_11) {
+        return 0;
+    }
+    
+    // Handle no-op case
+    if (delta == 0) {
+        return 1;
+    }
+    
+    const int currentCellCount = getCellsCount();
+    const int newCellCount = currentCellCount + delta;
+    
+    // Validate new cell count
+    if (newCellCount < 1 || newCellCount > MAX_CELLS) {
+        return 0; // Don't allow zero cells or exceed maximum
+    }
+    
+    if (delta > 0) {
+        // ADDING CELLS
+        
+        // Validate base cell exists for copying
+        if (!isValidCellIndex(base)) {
+            return 0;
+        }
+        
+        // Add cells at the end by creating deep copies of the base cell
+        for (int i = 0; i < delta; i++) {
+            const int newIndex = currentCellCount + i;
+            
+            // Create new Cell object (deep copy of base cell)
+            cells[newIndex] = new Cell;
+            cells[newIndex]->Head = cells[base]->Head;
+            cells[newIndex]->isClone = true; // Maintain P56 behavior
+            
+            // Deep copy the cell image data
+            if (cells[base]->cellImage) {
+                cells[newIndex]->cellImage = new CellImage;
+                CellImage* srcImg = cells[base]->cellImage;
+                CellImage* dstImg = cells[newIndex]->cellImage;
+                
+                // Copy image data
+                dstImg->imageSize = srcImg->imageSize;
+                if (srcImg->image && srcImg->imageSize > 0) {
+                    dstImg->image = new unsigned char[srcImg->imageSize];
+                    memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
+                } else {
+                    dstImg->image = nullptr;
+                }
+                
+                // Copy pack data
+                dstImg->packSize = srcImg->packSize;
+                if (srcImg->pack && srcImg->packSize > 0) {
+                    dstImg->pack = new unsigned char[srcImg->packSize];
+                    memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
+                } else {
+                    dstImg->pack = nullptr;
+                }
+                
+                // Copy lines data
+                dstImg->lineSize = srcImg->lineSize;
+                if (srcImg->lines && srcImg->lineSize > 0) {
+                    dstImg->lines = new unsigned char[srcImg->lineSize];
+                    memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
+                } else {
+                    dstImg->lines = nullptr;
+                }
+            } else {
+                cells[newIndex]->cellImage = nullptr;
+            }
+            
+            // Set palette reference
+            cells[newIndex]->setPalette(&palSCI);
+        }
+    } else {
+        // REMOVING CELLS (delta is negative)
+        
+        const int removeCount = -delta;
+        const int startRemoveIndex = newCellCount; // Start removing from this index
+        
+        // Clean up cells being removed
+        for (int i = startRemoveIndex; i < currentCellCount; i++) {
+            if (cells[i]) {
+                if (cells[i]->cellImage) {
+                    CellImage* img = cells[i]->cellImage;
+                    delete[] img->image;
+                    delete[] img->pack;
+                    delete[] img->lines;
+                    delete img;
+                }
+                delete cells[i];
+                cells[i] = nullptr;
+            }
+        }
+    }
+    
+    // Update cell count
+    setCellsCount(newCellCount);
+    
+    return 1;
+}
+
 int P56file32::addCell(int baseIndex, int position)
 {
     // Support both formats
@@ -746,17 +850,18 @@ int P56file32::addCell(int baseIndex, int position)
     
     const int cellCount = getCellsCount();
     
-    // If position is -1, append at end
-    if (position == -1) {
-        position = cellCount;
+    // If position is -1 or at end, use optimized delta function
+    if (position == -1 || position == cellCount) {
+        return modifyCells(baseIndex, 1);
     }
     
-    // Validate position
+    // Validate position for insertion
     if (position < 0 || position > cellCount || cellCount >= MAX_CELLS) {
         return 0;
     }
     
-    // Shift existing cells to make room (if inserting in middle)
+    // For middle insertion, we need to do the complex shifting
+    // Shift existing cells to make room
     for (int i = cellCount - 1; i >= position; i--) {
         cells[i + 1] = cells[i];
     }
@@ -811,70 +916,16 @@ int P56file32::addCell(int baseIndex, int position)
     return 1;
 }
 
-int P56file32::addCells(int baseIndex, int amount)
+int P56file32::addCells(int base, int amount)
 {
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    if (amount <= 0) {
-        return 0;
-    }
-    
-    // Add cells one by one at the end using the new addCell function
-    for (int i = 0; i < amount; i++) {
-        if (!addCell(baseIndex, -1)) {
-            return 0; // Failed to add cell
-        }
-    }
-    
-    return 1;
+    // Use optimized delta function for multiple additions
+    return modifyCells(base, amount);
 }
 
 int P56file32::deleteCell(int position)
 {
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    // Validate parameters
-    if (!isValidCellIndex(position)) {
-        return 0;
-    }
-    
-    const int cellCount = getCellsCount();
-    
-    // Don't allow deleting the last cell
-    if (cellCount <= 1) {
-        return 0;
-    }
-    
-    // Clean up memory for the cell being deleted
-    if (cells[position]) {
-        if (cells[position]->cellImage) {
-            CellImage* img = cells[position]->cellImage;
-            delete[] img->image;
-            delete[] img->pack;
-            delete[] img->lines;
-            delete img;
-        }
-        delete cells[position];
-    }
-    
-    // Shift remaining cells down
-    for (int i = position; i < cellCount - 1; i++) {
-        cells[i] = cells[i + 1];
-    }
-    
-    // Clear the last pointer
-    cells[cellCount - 1] = nullptr;
-    
-    // Update count using helper function
-    setCellsCount(cellCount - 1);
-    
-    return 1;
+    // Use the more robust deleteCells function
+    return deleteCells(position, 1);
 }
 
 int P56file32::deleteCells(int start, int count)
@@ -889,14 +940,23 @@ int P56file32::deleteCells(int start, int count)
     }
     
     const int cellCount = getCellsCount();
+    
+    // Validate range
     if (start < 0 || start >= cellCount || start + count > cellCount) {
         return 0;
     }
     
+    // Don't allow deleting all cells
     if (count >= cellCount) {
-        return 0; // Don't allow deleting all cells
+        return 0;
     }
     
+    // If deleting from the end, use optimized delta function
+    if (start + count == cellCount) {
+        return modifyCells(0, -count);
+    }
+    
+    // For middle deletion, we need complex shifting
     // Clean up memory for cells being deleted
     for (int i = start; i < start + count; i++) {
         if (cells[i]) {
@@ -908,12 +968,14 @@ int P56file32::deleteCells(int start, int count)
                 delete img;
             }
             delete cells[i];
+            cells[i] = nullptr;
         }
     }
     
     // Shift remaining cells down
-    for (int i = start; i < cellCount - count; i++) {
-        cells[i] = cells[i + count];
+    const int remainingCells = cellCount - start - count;
+    for (int i = 0; i < remainingCells; i++) {
+        cells[start + i] = cells[start + count + i];
     }
     
     // Clear pointers at the end
@@ -927,19 +989,33 @@ int P56file32::deleteCells(int start, int count)
     return 1;
 }
 
-// === CELL CONVENIENCE FUNCTIONS ===
-
-int P56file32::insertCell(int baseIndex, int position)
-{
-    return addCell(baseIndex, position);
-}
+// === STREAMLINED CONVENIENCE FUNCTIONS ===
 
 int P56file32::appendCell(int baseIndex)
 {
-    return addCell(baseIndex, -1);
+    // Direct call to optimized delta function
+    return modifyCells(baseIndex, 1);
 }
 
-// === CELL COPY OPERATIONS ===
+int P56file32::appendCells(int baseIndex, int count)
+{
+    // Direct call to optimized delta function
+    return modifyCells(baseIndex, count);
+}
+
+int P56file32::removeLastCell()
+{
+    // Direct call to optimized delta function
+    return modifyCells(0, -1);
+}
+
+int P56file32::removeLastCells(int count)
+{
+    // Direct call to optimized delta function
+    return modifyCells(0, -count);
+}
+
+// === ESSENTIAL COPY/MOVE OPERATIONS (KEPT AS-IS BUT OPTIMIZED) ===
 
 int P56file32::copyCells(int srcStart, int count, int dstPos)
 {
@@ -959,17 +1035,23 @@ int P56file32::copyCells(int srcStart, int count, int dstPos)
         return 0;
     }
     
+    // Special optimization: if copying single cell to end, use delta
+    if (count == 1 && dstPos == cellCount) {
+        return modifyCells(srcStart, 1);
+    }
+    
     // Make room for new cells by shifting existing ones
     for (int i = cellCount - 1; i >= dstPos; i--) {
         cells[i + count] = cells[i];
     }
     
-    // Copy cells
+    // Copy cells with error handling
     for (int i = 0; i < count; i++) {
         const int srcIndex = srcStart + i;
         const int dstIndex = dstPos + i;
         
         if (!cells[srcIndex]) {
+            cells[dstIndex] = nullptr;
             continue;
         }
         
@@ -985,27 +1067,25 @@ int P56file32::copyCells(int srcStart, int count, int dstPos)
             CellImage* dstImg = cells[dstIndex]->cellImage;
             
             dstImg->imageSize = srcImg->imageSize;
+            dstImg->packSize = srcImg->packSize;
+            dstImg->lineSize = srcImg->lineSize;
+            dstImg->image = nullptr;
+            dstImg->pack = nullptr;
+            dstImg->lines = nullptr;
+            
             if (srcImg->image && srcImg->imageSize > 0) {
                 dstImg->image = new unsigned char[srcImg->imageSize];
                 memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
-            } else {
-                dstImg->image = nullptr;
             }
             
-            dstImg->packSize = srcImg->packSize;
             if (srcImg->pack && srcImg->packSize > 0) {
                 dstImg->pack = new unsigned char[srcImg->packSize];
                 memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
-            } else {
-                dstImg->pack = nullptr;
             }
             
-            dstImg->lineSize = srcImg->lineSize;
             if (srcImg->lines && srcImg->lineSize > 0) {
                 dstImg->lines = new unsigned char[srcImg->lineSize];
                 memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
-            } else {
-                dstImg->lines = nullptr;
             }
         } else {
             cells[dstIndex]->cellImage = nullptr;
@@ -1020,13 +1100,6 @@ int P56file32::copyCells(int srcStart, int count, int dstPos)
     return 1;
 }
 
-int P56file32::copyCell(int srcIndex, int dstPos)
-{
-    return copyCells(srcIndex, 1, dstPos);
-}
-
-// === CELL MOVE OPERATIONS ===
-
 int P56file32::moveCells(int srcStart, int count, int dstPos)
 {
     // Support both formats
@@ -1038,17 +1111,17 @@ int P56file32::moveCells(int srcStart, int count, int dstPos)
     if (srcStart == dstPos) {
         return 1; // No-op
     }
-    
+        
     // Use shiftCells for efficiency when moving within same array
     return shiftCells(srcStart, count, dstPos);
 }
 
-int P56file32::moveCell(int srcIndex, int dstPos)
+int P56file32::duplicateCells(int start, int count)
 {
-    return moveCells(srcIndex, 1, dstPos);
+    return copyCells(start, count, start + count);
 }
 
-// === CELL REORDER OPERATIONS ===
+// === ESSENTIAL REORDER OPERATIONS (KEPT AS-IS) ===
 
 int P56file32::shiftCells(int start, int count, int newPos)
 {
@@ -1091,16 +1164,6 @@ int P56file32::shiftCells(int start, int count, int newPos)
     return 1;
 }
 
-int P56file32::duplicateCells(int start, int count)
-{
-    return copyCells(start, count, start + count);
-}
-
-int P56file32::duplicateCell(int index)
-{
-    return duplicateCells(index, 1);
-}
-
 int P56file32::swapCells(int index1, int index2)
 {
     // Support both formats
@@ -1119,7 +1182,35 @@ int P56file32::swapCells(int index1, int index2)
     return 1;
 }
 
-// === ADVANCED CELL OPERATIONS ===
+int P56file32::reverseCells(int start, int count)
+{
+    // Support both formats
+    if (format != _PIC_32 && format != _PIC_11) {
+        return 0;
+    }
+    
+    if (count <= 1) {
+        return 1;
+    }
+    
+    const int cellCount = getCellsCount();
+    if (start < 0 || start >= cellCount || start + count > cellCount) {
+        return 0;
+    }
+    
+    for (int i = 0; i < count / 2; i++) {
+        int leftIndex = start + i;
+        int rightIndex = start + count - 1 - i;
+        
+        Cell* temp = cells[leftIndex];
+        cells[leftIndex] = cells[rightIndex];
+        cells[rightIndex] = temp;
+    }
+    
+    return 1;
+}
+
+// === ADVANCED OPERATIONS (STREAMLINED) ===
 
 int P56file32::insertEmptyCells(int position, int count)
 {
@@ -1156,175 +1247,7 @@ int P56file32::insertEmptyCells(int position, int count)
     return 1;
 }
 
-int P56file32::replaceCells(int dstStart, int srcStart, int count)
-{
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    if (count <= 0) {
-        return 0;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (dstStart < 0 || dstStart + count > cellCount ||
-        srcStart < 0 || srcStart + count > cellCount) {
-        return 0;
-    }
-    
-    // Delete existing cells in destination range
-    for (int i = 0; i < count; i++) {
-        int dstIndex = dstStart + i;
-        if (cells[dstIndex]) {
-            if (cells[dstIndex]->cellImage) {
-                CellImage* img = cells[dstIndex]->cellImage;
-                delete[] img->image;
-                delete[] img->pack;
-                delete[] img->lines;
-                delete img;
-            }
-            delete cells[dstIndex];
-        }
-    }
-    
-    // Copy cells from source (same deep copy logic as copyCells)
-    for (int i = 0; i < count; i++) {
-        int srcIndex = srcStart + i;
-        int dstIndex = dstStart + i;
-        
-        if (!cells[srcIndex]) {
-            cells[dstIndex] = nullptr;
-            continue;
-        }
-        
-        cells[dstIndex] = new Cell;
-        cells[dstIndex]->Head = cells[srcIndex]->Head;
-        cells[dstIndex]->isClone = true;
-        
-        if (cells[srcIndex]->cellImage) {
-            cells[dstIndex]->cellImage = new CellImage;
-            CellImage* srcImg = cells[srcIndex]->cellImage;
-            CellImage* dstImg = cells[dstIndex]->cellImage;
-            
-            dstImg->imageSize = srcImg->imageSize;
-            if (srcImg->image && srcImg->imageSize > 0) {
-                dstImg->image = new unsigned char[srcImg->imageSize];
-                memcpy(dstImg->image, srcImg->image, srcImg->imageSize);
-            } else {
-                dstImg->image = nullptr;
-            }
-            
-            dstImg->packSize = srcImg->packSize;
-            if (srcImg->pack && srcImg->packSize > 0) {
-                dstImg->pack = new unsigned char[srcImg->packSize];
-                memcpy(dstImg->pack, srcImg->pack, srcImg->packSize);
-            } else {
-                dstImg->pack = nullptr;
-            }
-            
-            dstImg->lineSize = srcImg->lineSize;
-            if (srcImg->lines && srcImg->lineSize > 0) {
-                dstImg->lines = new unsigned char[srcImg->lineSize];
-                memcpy(dstImg->lines, srcImg->lines, srcImg->lineSize);
-            } else {
-                dstImg->lines = nullptr;
-            }
-        } else {
-            cells[dstIndex]->cellImage = nullptr;
-        }
-        
-        cells[dstIndex]->setPalette(&palSCI);
-    }
-    
-    return 1;
-}
-
-int P56file32::reverseCells(int start, int count)
-{
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    if (count <= 1) {
-        return 1;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (start < 0 || start >= cellCount || start + count > cellCount) {
-        return 0;
-    }
-    
-    for (int i = 0; i < count / 2; i++) {
-        int leftIndex = start + i;
-        int rightIndex = start + count - 1 - i;
-        
-        Cell* temp = cells[leftIndex];
-        cells[leftIndex] = cells[rightIndex];
-        cells[rightIndex] = temp;
-    }
-    
-    return 1;
-}
-
-int P56file32::sortCells(int start, int count, int sortBy, bool ascending)
-{
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    if (count <= 1 || sortBy < 0 || sortBy > 2) {
-        return count <= 1 ? 1 : 0;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (start < 0 || start >= cellCount || start + count > cellCount) {
-        return 0;
-    }
-    
-    // Simple bubble sort
-    for (int i = 0; i < count - 1; i++) {
-        for (int j = 0; j < count - i - 1; j++) {
-            int idx1 = start + j;
-            int idx2 = start + j + 1;
-            
-            if (!cells[idx1] || !cells[idx2]) {
-                continue;
-            }
-            
-            int val1 = 0, val2 = 0;
-            
-            switch (sortBy) {
-                case 0: // Width
-                    val1 = getCellWidth(idx1);
-                    val2 = getCellWidth(idx2);
-                    break;
-                case 1: // Height
-                    val1 = getCellHeight(idx1);
-                    val2 = getCellHeight(idx2);
-                    break;
-                case 2: // Image size
-                    val1 = cells[idx1]->cellImage ? cells[idx1]->cellImage->imageSize : 0;
-                    val2 = cells[idx2]->cellImage ? cells[idx2]->cellImage->imageSize : 0;
-                    break;
-            }
-            
-            bool shouldSwap = ascending ? (val1 > val2) : (val1 < val2);
-            
-            if (shouldSwap) {
-                Cell* temp = cells[idx1];
-                cells[idx1] = cells[idx2];
-                cells[idx2] = temp;
-            }
-        }
-    }
-    
-    return 1;
-}
-
-// === CELL BATCH OPERATIONS ===
+// === BATCH OPERATIONS (ESSENTIAL ONLY) ===
 
 int P56file32::batchDeleteCells(const int* indices, int indexCount)
 {
@@ -1337,12 +1260,13 @@ int P56file32::batchDeleteCells(const int* indices, int indexCount)
         return 0;
     }
     
+    // Sort indices in descending order to avoid index shifting issues
     int* sortedIndices = new int[indexCount];
     for (int i = 0; i < indexCount; i++) {
         sortedIndices[i] = indices[i];
     }
     
-    // Sort in descending order
+    // Simple bubble sort (descending)
     for (int i = 0; i < indexCount - 1; i++) {
         for (int j = 0; j < indexCount - i - 1; j++) {
             if (sortedIndices[j] < sortedIndices[j + 1]) {
@@ -1364,32 +1288,7 @@ int P56file32::batchDeleteCells(const int* indices, int indexCount)
     return deletedCount > 0 ? 1 : 0;
 }
 
-// === CELL SEARCH OPERATIONS ===
-
-int P56file32::findCellsBySize(int width, int height, int* results, int maxResults)
-{
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    int foundCount = 0;
-    const int cellCount = getCellsCount();
-    
-    for (int c = 0; c < cellCount && foundCount < maxResults; c++) {
-        if (!cells[c]) continue;
-        
-        bool widthMatch = (width == 0) || (getCellWidth(c) == width);
-        bool heightMatch = (height == 0) || (getCellHeight(c) == height);
-        
-        if (widthMatch && heightMatch) {
-            results[foundCount] = c;
-            foundCount++;
-        }
-    }
-    
-    return foundCount;
-}
+// === SEARCH OPERATIONS (ESSENTIAL ONLY) ===
 
 int P56file32::findEmptyCells(int* results, int maxResults)
 {
@@ -1415,32 +1314,7 @@ int P56file32::findEmptyCells(int* results, int maxResults)
     return foundCount;
 }
 
-// === CELL MAINTENANCE OPERATIONS ===
-
-int P56file32::cutCells(int start, int count, Cell** clipboard)
-{
-    // Support both formats
-    if (format != _PIC_32 && format != _PIC_11) {
-        return 0;
-    }
-    
-    if (!clipboard || !canModifyCellRange(start, count)) {
-        return 0;
-    }
-    
-    // Copy cells to clipboard first
-    for (int i = 0; i < count; i++) {
-        clipboard[i] = cells[start + i];
-    }
-    
-    // Set cell pointers to null to avoid double deletion
-    for (int i = start; i < start + count; i++) {
-        cells[i] = nullptr;
-    }
-    
-    // Then delete the cells (but they're already nulled, so just shift)
-    return deleteCells(start, count);
-}
+// === MAINTENANCE OPERATIONS (STREAMLINED) ===
 
 int P56file32::optimizeCells()
 {
@@ -1490,81 +1364,6 @@ int P56file32::optimizeCells()
     setCellsCount(writePos);
     
     return removed;
-}
-
-// === P56 VALIDATION FUNCTIONS ===
-
-bool P56file32::canDeleteCells(int start, int count)
-{
-    if (format != _PIC_32 && format != _PIC_11) {
-        return false;
-    }
-    
-    if (count <= 0) {
-        return false;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (start < 0 || start >= cellCount || start + count > cellCount) {
-        return false;
-    }
-    
-    return count < cellCount; // Don't allow deleting all cells
-}
-
-bool P56file32::canInsertCells(int position, int count)
-{
-    if (format != _PIC_32 && format != _PIC_11) {
-        return false;
-    }
-    
-    if (count <= 0) {
-        return false;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (position < 0 || position > cellCount) {
-        return false;
-    }
-    
-    return cellCount + count <= MAX_CELLS;
-}
-
-bool P56file32::canMoveCells(int srcStart, int count, int dstPos)
-{
-    if (!canDeleteCells(srcStart, count)) {
-        return false;
-    }
-    
-    const int cellCount = getCellsCount();
-    
-    // Check if destination position is valid
-    return dstPos >= 0 && dstPos <= cellCount - count && dstPos != srcStart;
-}
-
-bool P56file32::canModifyCellRange(int start, int count)
-{
-    if (format != _PIC_32 && format != _PIC_11) {
-        return false;
-    }
-    
-    if (count <= 0) {
-        return false;
-    }
-    
-    const int cellCount = getCellsCount();
-    if (start < 0 || start >= cellCount || start + count > cellCount) {
-        return false;
-    }
-    
-    // Check if any cells in range are null
-    for (int i = start; i < start + count; i++) {
-        if (!cells[i]) {
-            return false;
-        }
-    }
-    
-    return true;
 }
 
 // === P56 UTILITY FUNCTIONS ===
