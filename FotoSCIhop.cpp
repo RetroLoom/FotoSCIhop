@@ -3619,16 +3619,119 @@ void RenderLinkPointsDialog() {
         return;
     }
 
-    // Just show some basic content to test if the dialog is working at all
-    Text("Link Points Dialog");
-    Text("This is a test");
+    // Follow the exact same logic as DoUpdateLinkPointProc
+    int selLoop = 0;
     
-    if (Button("Test Button")) {
-        Text("Button clicked!");
-    }
-    
-    if (Button("Close")) {
-        HideLinkPoints();
+    if (globalView)
+        selLoop = curLoopIndex;
+    if (globalPicture)
+        selLoop = 0;
+
+    if (globalView) {
+        // Only show if not a mirrored loop (same condition as original)
+        if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+            
+            CelHeaderView *bCell = (CelHeaderView*)&(*curCell)->Head;
+            
+            // Static variables to hold the dialog state
+            static int linkCount = 0;
+            static int linkX[12] = {0};
+            static int linkY[12] = {0};
+            static int linkPri[12] = {0};
+            static int linkType[12] = {0};
+            static bool needsRefresh = true;
+            
+            // Refresh data (equivalent to DoUpdateLinkPointProc)
+            if (needsRefresh) {
+                linkCount = bCell->linkTableCount;
+                
+                // Clear all arrays first
+                for (int i = 0; i < 12; i++) {
+                    linkX[i] = linkY[i] = linkPri[i] = linkType[i] = 0;
+                }
+                
+                // Fill in the actual link points
+                for (int i = 0; i < linkCount && i < 12; i++) {
+                    linkX[i] = (*curCell)->linkPoints[i].x;
+                    linkY[i] = (*curCell)->linkPoints[i].y;
+                    linkPri[i] = (*curCell)->linkPoints[i].priority;
+                    linkType[i] = (*curCell)->linkPoints[i].positionType;
+                }
+                
+                needsRefresh = false;
+            }
+            
+            // Link Count control
+            InputInt("Link Count", &linkCount);
+            if (linkCount < 0) linkCount = 0;
+            if (linkCount > 12) linkCount = 12;
+            
+            Separator();
+            
+            // Show link points (only show as many as linkCount)
+            for (int i = 0; i < linkCount; i++) {
+                char label[32];
+                
+                sprintf(label, "Link Point %d", i + 1);
+                Text(label);
+                
+                sprintf(label, "X##%d", i);
+                InputInt(label, &linkX[i]);
+                SameLine();
+                
+                sprintf(label, "Y##%d", i);
+                InputInt(label, &linkY[i]);
+                SameLine();
+                
+                sprintf(label, "Pri##%d", i);
+                InputInt(label, &linkPri[i]);
+                SameLine();
+                
+                sprintf(label, "Type##%d", i);
+                InputInt(label, &linkType[i]);
+            }
+            
+            Separator();
+            
+            // Apply button (equivalent to IDOK case)
+            if (Button("Apply")) {
+                if (globalView && curCell) {
+                    CelHeaderView *bCell = (CelHeaderView*)&(*curCell)->Head;
+                    
+                    bCell->linkTableCount = linkCount;
+                    
+                    for (int i = 0; i < bCell->linkTableCount && i < 12; i++) {
+                        (*curCell)->linkPoints[i].x = linkX[i];
+                        (*curCell)->linkPoints[i].y = linkY[i];
+                        (*curCell)->linkPoints[i].priority = linkPri[i];
+                        (*curCell)->linkPoints[i].positionType = linkType[i];
+                    }
+                    
+                    ShowLoopCell(curLoopIndex, curCellIndex); // refresh screen
+                    datasaved = false;
+                    needsRefresh = true;
+                }
+            }
+            
+            SameLine();
+            if (Button("Close")) {
+                needsRefresh = true;
+                HideLinkPoints();
+            }
+            
+        } else {
+            // This should never happen - dialog shouldn't open if conditions aren't met
+            Text("Error: Link points only available for non-mirrored loops");
+            if (Button("Close")) {
+                HideLinkPoints();
+            }
+        }
+    } else {
+        // This should never happen - dialog shouldn't open for pictures
+        Text("Error: Link points only available for view files");
+        if (Button("Close")) {
+            HideLinkPoints();
+        }
     }
 
     EndDialog();
