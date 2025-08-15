@@ -1,6 +1,9 @@
 #pragma once
 #include <windows.h>
 
+// ImGui constants we need
+#define IMGUI_STYLE_VAR_ALPHA 0
+
 // Simple callback type - your dialog rendering functions in FotoSCIhop.cpp
 typedef void (*ImGuiDialogCallback)(void);
 
@@ -11,12 +14,11 @@ namespace ImGuiDialogs {
     void Shutdown();
     
     // Set the callback functions (called from FotoSCIhop.cpp initialization)
-    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback, 
-                           ImGuiDialogCallback linkPointsCallback);
+    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback);
     
-    // Show/hide individual dialogs - each gets its own window
+    // Show/hide the combined properties dialog
     void ShowProperties();
-    void ShowLinkPoints();
+    void ShowLinkPoints(); // Now just calls ShowProperties()
     void Hide(); // Hides all dialogs
     
     // Hide specific dialogs
@@ -39,4 +41,7 @@ namespace ImGuiDialogs {
     void Text(const char* text);
     void Separator();
     void SameLine();
+    bool CollapsingHeader(const char* label, bool defaultOpen = false);
+    void PushStyleVar(int var, float value);
+    void PopStyleVar();
 }

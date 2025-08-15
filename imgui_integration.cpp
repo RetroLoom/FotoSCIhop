@@ -24,16 +24,14 @@ namespace ImGuiDialogs {
         
         // Dialog visibility flags
         bool showProperties;
-        bool showLinkPoints;
         
-        // Callbacks to your dialog functions
+        // Callback to your dialog function
         ImGuiDialogCallback propertiesCallback;
-        ImGuiDialogCallback linkPointsCallback;
         
         // Constructor
         EngineState() : parent(NULL), hwnd(NULL), hdc(NULL), hglrc(NULL), 
-                       initialized(false), showProperties(false), showLinkPoints(false),
-                       propertiesCallback(NULL), linkPointsCallback(NULL) {}
+                       initialized(false), showProperties(false),
+                       propertiesCallback(NULL) {}
     };
     
     static EngineState g_engine;
@@ -179,15 +177,13 @@ namespace ImGuiDialogs {
         g_engine = EngineState(); // Reset state
     }
     
-    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback, ImGuiDialogCallback linkPointsCallback) {
+    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback) {
         g_engine.propertiesCallback = propertiesCallback;
-        g_engine.linkPointsCallback = linkPointsCallback;
     }
     
     void ShowProperties() {
         if (!g_engine.initialized) return;
         g_engine.showProperties = true;
-        g_engine.showLinkPoints = false; // Only one dialog at a time
         if (g_engine.hwnd) {
             SetWindowTextW(g_engine.hwnd, L"Properties");
             ShowWindow(g_engine.hwnd, SW_SHOW);
@@ -196,35 +192,26 @@ namespace ImGuiDialogs {
     }
     
     void ShowLinkPoints() {
-        if (!g_engine.initialized) return;
-        g_engine.showLinkPoints = true;
-        g_engine.showProperties = false; // Only one dialog at a time
-        if (g_engine.hwnd) {
-            SetWindowTextW(g_engine.hwnd, L"Link Points");
-            ShowWindow(g_engine.hwnd, SW_SHOW);
-            SetForegroundWindow(g_engine.hwnd);
-        }
+        // Link Points are now part of Properties dialog
+        ShowProperties();
     }
     
     void Hide() {
         g_engine.showProperties = false;
-        g_engine.showLinkPoints = false;
         if (g_engine.hwnd)
             ShowWindow(g_engine.hwnd, SW_HIDE);
     }
     
     void HideProperties() {
-        g_engine.showProperties = false;
-        if (!g_engine.showLinkPoints) Hide();
+        Hide();
     }
     
     void HideLinkPoints() {
-        g_engine.showLinkPoints = false;
-        if (!g_engine.showProperties) Hide();
+        Hide();
     }
     
     bool IsAnyDialogOpen() {
-        return g_engine.showProperties || g_engine.showLinkPoints;
+        return g_engine.showProperties;
     }
     
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -237,7 +224,7 @@ namespace ImGuiDialogs {
     
     void Render() {
         if (!g_engine.initialized) return;
-        if (!g_engine.showProperties && !g_engine.showLinkPoints) return;
+        if (!g_engine.showProperties) return;
         if (!IsWindowVisible(g_engine.hwnd)) return;
             
         // Make OpenGL context current
@@ -258,17 +245,13 @@ namespace ImGuiDialogs {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         
-        // Call the appropriate dialog callback
+        // Call the dialog callback
         if (g_engine.showProperties && g_engine.propertiesCallback) {
             g_engine.propertiesCallback();
         }
         
-        if (g_engine.showLinkPoints && g_engine.linkPointsCallback) {
-            g_engine.linkPointsCallback();
-        }
-        
         // Hide window if no dialogs are open after callbacks
-        if (!g_engine.showProperties && !g_engine.showLinkPoints) {
+        if (!g_engine.showProperties) {
             Hide();
         }
         
@@ -331,5 +314,24 @@ namespace ImGuiDialogs {
     
     void SameLine() {
         ImGui::SameLine();
+    }
+    
+    bool CollapsingHeader(const char* label, bool defaultOpen) {
+        ImGuiTreeNodeFlags flags = defaultOpen ? ImGuiTreeNodeFlags_DefaultOpen : 0;
+        return ImGui::CollapsingHeader(label, flags);
+    }
+    
+    bool CollapsingHeader(const char* label) {
+        return ImGui::CollapsingHeader(label);
+    }
+    
+    void PushStyleVar(int var, float value) {
+        if (var == 0) { // IMGUI_STYLE_VAR_ALPHA
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, value);
+        }
+    }
+    
+    void PopStyleVar() {
+        ImGui::PopStyleVar();
     }
 }
