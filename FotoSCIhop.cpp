@@ -3376,7 +3376,7 @@ LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 // ==== ImGui Dialog Callbacks ====
-// ==== Enhanced ImGui Dialog Callback ====
+// ==== Enhanced ImGui Dialog Callback with Auto-Apply ====
 void RenderPropertiesDialog() {
     using namespace ImGuiDialogs;
     
@@ -3397,22 +3397,29 @@ void RenderPropertiesDialog() {
     // FILE INFO SECTION
     // =========================================================================
     if (CollapsingHeader("File Information", true)) {
+        char textBuffer[256];
+        
         if (globalView) {
             Text("File Type: View File (.v56)");
-            TextFormatted("Current Loop: %d / %d", curLoopIndex + 1, globalView->Head.view32.loopCount);
+            sprintf(textBuffer, "Current Loop: %d / %d", curLoopIndex + 1, globalView->Head.view32.loopCount);
+            Text(textBuffer);
             
             if (curLoop && (*curLoop)) {
                 if ((*curLoop)->Head.flags) {
-                    TextFormatted("Loop Type: Mirror of Loop %d", (*curLoop)->Head.altLoop + 1);
+                    sprintf(textBuffer, "Loop Type: Mirror of Loop %d", (*curLoop)->Head.altLoop + 1);
+                    Text(textBuffer);
                 } else {
-                    TextFormatted("Current Cell: %d / %d", curCellIndex + 1, (*curLoop)->Head.numCels);
+                    sprintf(textBuffer, "Current Cell: %d / %d", curCellIndex + 1, (*curLoop)->Head.numCels);
+                    Text(textBuffer);
                     Text("Loop Type: Normal");
                 }
             }
         } else if (globalPicture) {
             const char* version = (globalPicture->format == _PIC_11) ? "SCI1.1 Picture" : "SCI32 Picture";
-            TextFormatted("File Type: %s (.p56)", version);
-            TextFormatted("Current Cell: %d / %d", curCellIndex + 1, globalPicture->CellsCount());
+            sprintf(textBuffer, "File Type: %s (.p56)", version);
+            Text(textBuffer);
+            sprintf(textBuffer, "Current Cell: %d / %d", curCellIndex + 1, globalPicture->CellsCount());
+            Text(textBuffer);
         } else {
             Text("No file loaded");
         }
@@ -3557,51 +3564,68 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // CELL PROPERTIES SECTION
+    // CELL PROPERTIES SECTION WITH AUTO-APPLY
     // =========================================================================
     if (curCell && (*curCell)) {
         if (CollapsingHeader("Cell Properties")) {
             
+            // Current values
             static int cellX = 0, cellY = 0, cellPriority = 0;
+            // Original values for reset/cancel
+            static int originalCellX = 0, originalCellY = 0, originalCellPriority = 0;
+            // Previous values for change detection
+            static int prevCellX = 0, prevCellY = 0, prevCellPriority = 0;
             static bool needsCellRefresh = true;
+            static bool cellEditingStarted = false;
+            static bool cellHasChanges = false;
             
             // Refresh cell data
             if (needsCellRefresh) {
                 if (globalView) {
                     if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
                         CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                        cellX = bCell->xHot;
-                        cellY = bCell->yHot;
+                        cellX = originalCellX = prevCellX = bCell->xHot;
+                        cellY = originalCellY = prevCellY = bCell->yHot;
+                        cellPriority = originalCellPriority = prevCellPriority = 0;
                     } else {
-                        cellX = 0; cellY = 0;
+                        cellX = originalCellX = prevCellX = 0; 
+                        cellY = originalCellY = prevCellY = 0;
+                        cellPriority = originalCellPriority = prevCellPriority = 0;
                     }
                 } else if (globalPicture) {
                     CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
-                    cellX = bCell->xpos; 
-                    cellY = bCell->ypos; 
-                    cellPriority = bCell->priority;
+                    cellX = originalCellX = prevCellX = bCell->xpos; 
+                    cellY = originalCellY = prevCellY = bCell->ypos; 
+                    cellPriority = originalCellPriority = prevCellPriority = bCell->priority;
                 }
                 needsCellRefresh = false;
+                cellEditingStarted = false;
+                cellHasChanges = false;
             }
 
             // Single column layout for cell properties
             if (globalView) {
                 if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
                     Text("Hot Spot:");
-                    InputInt("X Hot", &cellX);
-                    InputInt("Y Hot", &cellY);
+                    
+                    if (InputInt("X Hot", &cellX)) cellEditingStarted = true;
+                    if (InputInt("Y Hot", &cellY)) cellEditingStarted = true;
+                    
                 } else {
                     Text("Cell properties not available for mirror loops");
                 }
             } else if (globalPicture) {
                 Text("Position:");
-                InputInt("X Position", &cellX);
-                InputInt("Y Position", &cellY);
-                InputInt("Priority", &cellPriority);
+                
+                if (InputInt("X Position", &cellX)) cellEditingStarted = true;
+                if (InputInt("Y Position", &cellY)) cellEditingStarted = true;
+                if (InputInt("Priority", &cellPriority)) cellEditingStarted = true;
             }
             
-            // Apply cell properties button
-            if (Button("Apply Cell Properties")) {
+            // Auto-apply changes when values change
+            if (cellEditingStarted && (cellX != prevCellX || cellY != prevCellY || cellPriority != prevCellPriority)) {
+                
+                // Apply changes immediately
                 if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
                     CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
                     bCell->xHot = cellX;
@@ -3614,8 +3638,66 @@ void RenderPropertiesDialog() {
                     bCell->priority = cellPriority;
                     ShowCell(curCellIndex);
                 }
-                datasaved = false;
-                needsCellRefresh = true;
+                
+                // Update tracking variables
+                prevCellX = cellX;
+                prevCellY = cellY;
+                prevCellPriority = cellPriority;
+                
+                // Check if we have changes from original
+                cellHasChanges = (cellX != originalCellX || cellY != originalCellY || cellPriority != originalCellPriority);
+                
+                if (cellHasChanges) {
+                    datasaved = false;
+                }
+            }
+            
+            // Reset and Cancel buttons (only show if we have changes or are editing)
+            if (cellEditingStarted) {
+                Separator();
+                
+                // Show changed indicator here to prevent shifting
+                if (cellHasChanges) {
+                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.8f);
+                    Text("* Values have been modified *");
+                    PopStyleVar();
+                }
+                
+                if (cellHasChanges && Button("Reset to Original")) {
+                    cellX = originalCellX;
+                    cellY = originalCellY;
+                    cellPriority = originalCellPriority;
+                    
+                    // Apply the reset values
+                    if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                        bCell->xHot = cellX;
+                        bCell->yHot = cellY;
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                    } else if (globalPicture) {
+                        CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                        bCell->xpos = cellX;
+                        bCell->ypos = cellY;
+                        bCell->priority = cellPriority;
+                        ShowCell(curCellIndex);
+                    }
+                    
+                    prevCellX = cellX;
+                    prevCellY = cellY;
+                    prevCellPriority = cellPriority;
+                    cellHasChanges = false;
+                    cellEditingStarted = false;
+                }
+                
+                SameLine();
+                if (Button("Done Editing")) {
+                    cellEditingStarted = false;
+                    cellHasChanges = false;
+                    // Keep current values as new originals
+                    originalCellX = cellX;
+                    originalCellY = cellY;
+                    originalCellPriority = cellPriority;
+                }
             }
         }
     }
@@ -3660,7 +3742,7 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // LINK POINTS SECTION (View files only)
+    // LINK POINTS SECTION WITH AUTO-APPLY
     // =========================================================================
     
     // Only show Link Points section for valid view files
@@ -3674,37 +3756,62 @@ void RenderPropertiesDialog() {
     if (canShowLinkPoints) {
         if (CollapsingHeader("Link Points")) {
             
-            // Static data for link points
+            // Current link point data
             static int linkCount = 0;
             static int linkX[12] = {0};
             static int linkY[12] = {0};
             static int linkPri[12] = {0};
             static int linkType[12] = {0};
+            
+            // Original values for reset/cancel
+            static int originalLinkCount = 0;
+            static int originalLinkX[12] = {0};
+            static int originalLinkY[12] = {0};
+            static int originalLinkPri[12] = {0};
+            static int originalLinkType[12] = {0};
+            
+            // Previous values for change detection
+            static int prevLinkCount = 0;
+            static int prevLinkX[12] = {0};
+            static int prevLinkY[12] = {0};
+            static int prevLinkPri[12] = {0};
+            static int prevLinkType[12] = {0};
+            
             static bool linkNeedsRefresh = true;
+            static bool linkEditingStarted = false;
+            static bool linkHasChanges = false;
             
             // Refresh link points data
             if (linkNeedsRefresh) {
                 CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                linkCount = bCell->linkTableCount;
+                linkCount = originalLinkCount = prevLinkCount = bCell->linkTableCount;
                 
                 // Clear all arrays first
                 for (int i = 0; i < 12; i++) {
-                    linkX[i] = linkY[i] = linkPri[i] = linkType[i] = 0;
+                    linkX[i] = originalLinkX[i] = prevLinkX[i] = 0;
+                    linkY[i] = originalLinkY[i] = prevLinkY[i] = 0;
+                    linkPri[i] = originalLinkPri[i] = prevLinkPri[i] = 0;
+                    linkType[i] = originalLinkType[i] = prevLinkType[i] = 0;
                 }
                 
                 // Fill in the actual link points
                 for (int i = 0; i < linkCount && i < 12; i++) {
-                    linkX[i] = (*curCell)->linkPoints[i].x;
-                    linkY[i] = (*curCell)->linkPoints[i].y;
-                    linkPri[i] = (*curCell)->linkPoints[i].priority;
-                    linkType[i] = (*curCell)->linkPoints[i].positionType;
+                    linkX[i] = originalLinkX[i] = prevLinkX[i] = (*curCell)->linkPoints[i].x;
+                    linkY[i] = originalLinkY[i] = prevLinkY[i] = (*curCell)->linkPoints[i].y;
+                    linkPri[i] = originalLinkPri[i] = prevLinkPri[i] = (*curCell)->linkPoints[i].priority;
+                    linkType[i] = originalLinkType[i] = prevLinkType[i] = (*curCell)->linkPoints[i].positionType;
                 }
                 
                 linkNeedsRefresh = false;
+                linkEditingStarted = false;
+                linkHasChanges = false;
             }
             
             // Link Count control
-            InputInt("Number of Link Points", &linkCount);
+            int oldLinkCount = linkCount;
+            if (InputInt("Number of Link Points", &linkCount)) {
+                linkEditingStarted = true;
+            }
             if (linkCount < 0) linkCount = 0;
             if (linkCount > 12) linkCount = 12;
             
@@ -3721,22 +3828,34 @@ void RenderPropertiesDialog() {
                         char label[32];
                         
                         sprintf(label, "X##%d", i);
-                        InputInt(label, &linkX[i]);
+                        if (InputInt(label, &linkX[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Y##%d", i);
-                        InputInt(label, &linkY[i]);
+                        if (InputInt(label, &linkY[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Priority##%d", i);
-                        InputInt(label, &linkPri[i]);
+                        if (InputInt(label, &linkPri[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Type##%d", i);
-                        InputInt(label, &linkType[i]);
+                        if (InputInt(label, &linkType[i])) linkEditingStarted = true;
                     }
                 }
             }
             
-            // Apply button for link points
-            if (Button("Apply Link Points")) {
+            // Check for changes and auto-apply
+            bool valuesChanged = (linkCount != prevLinkCount);
+            if (!valuesChanged) {
+                for (int i = 0; i < linkCount && i < 12; i++) {
+                    if (linkX[i] != prevLinkX[i] || linkY[i] != prevLinkY[i] || 
+                        linkPri[i] != prevLinkPri[i] || linkType[i] != prevLinkType[i]) {
+                        valuesChanged = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (linkEditingStarted && valuesChanged) {
+                // Auto-apply changes
                 if (globalView && curCell) {
                     CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
                     
@@ -3751,7 +3870,88 @@ void RenderPropertiesDialog() {
                     
                     ShowLoopCell(curLoopIndex, curCellIndex); // refresh screen
                     datasaved = false;
-                    linkNeedsRefresh = true;
+                }
+                
+                // Update previous values
+                prevLinkCount = linkCount;
+                for (int i = 0; i < 12; i++) {
+                    prevLinkX[i] = linkX[i];
+                    prevLinkY[i] = linkY[i];
+                    prevLinkPri[i] = linkPri[i];
+                    prevLinkType[i] = linkType[i];
+                }
+                
+                // Check if we have changes from original
+                linkHasChanges = (linkCount != originalLinkCount);
+                if (!linkHasChanges) {
+                    for (int i = 0; i < linkCount && i < 12; i++) {
+                        if (linkX[i] != originalLinkX[i] || linkY[i] != originalLinkY[i] || 
+                            linkPri[i] != originalLinkPri[i] || linkType[i] != originalLinkType[i]) {
+                            linkHasChanges = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // Reset and Cancel buttons (only show if we have changes or are editing)
+            if (linkEditingStarted) {
+                Separator();
+                
+                // Show changed indicator here to prevent shifting
+                if (linkHasChanges) {
+                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.8f);
+                    Text("* Link points have been modified *");
+                    PopStyleVar();
+                }
+                
+                if (linkHasChanges && Button("Reset Link Points")) {
+                    linkCount = originalLinkCount;
+                    for (int i = 0; i < 12; i++) {
+                        linkX[i] = originalLinkX[i];
+                        linkY[i] = originalLinkY[i];
+                        linkPri[i] = originalLinkPri[i];
+                        linkType[i] = originalLinkType[i];
+                    }
+                    
+                    // Apply the reset values
+                    if (globalView && curCell) {
+                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                        bCell->linkTableCount = linkCount;
+                        
+                        for (int i = 0; i < bCell->linkTableCount && i < 12; i++) {
+                            (*curCell)->linkPoints[i].x = linkX[i];
+                            (*curCell)->linkPoints[i].y = linkY[i];
+                            (*curCell)->linkPoints[i].priority = linkPri[i];
+                            (*curCell)->linkPoints[i].positionType = linkType[i];
+                        }
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                    }
+                    
+                    // Update tracking
+                    prevLinkCount = linkCount;
+                    for (int i = 0; i < 12; i++) {
+                        prevLinkX[i] = linkX[i];
+                        prevLinkY[i] = linkY[i];
+                        prevLinkPri[i] = linkPri[i];
+                        prevLinkType[i] = linkType[i];
+                    }
+                    linkHasChanges = false;
+                    linkEditingStarted = false;
+                }
+                
+                SameLine();
+                if (Button("Done with Link Points")) {
+                    linkEditingStarted = false;
+                    linkHasChanges = false;
+                    // Keep current values as new originals
+                    originalLinkCount = linkCount;
+                    for (int i = 0; i < 12; i++) {
+                        originalLinkX[i] = linkX[i];
+                        originalLinkY[i] = linkY[i];
+                        originalLinkPri[i] = linkPri[i];
+                        originalLinkType[i] = linkType[i];
+                    }
                 }
             }
         }
