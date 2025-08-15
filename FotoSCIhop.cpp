@@ -3703,40 +3703,297 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // LOOP/CELL MANAGEMENT SECTION
+    // ELEMENT MANAGEMENT SECTION
     // =========================================================================
-    if (CollapsingHeader("Add/Remove Elements")) {
+    if (CollapsingHeader("Element Management")) {
         
-        static int loopsDelta = 0, cellsDelta = 0;
+        // ===================================================================
+        // ADD ELEMENTS
+        // ===================================================================
+        if (CollapsingHeader("Add Elements", true)) {
+            
+            if (globalView) {
+                Text("Add Loops:");
+                if (Button("Add 1 Loop")) {
+                    if (DoAddLoops(curLoopIndex, 1)) {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                    }
+                }
+                SameLine();
+                if (Button("Add 5 Loops")) {
+                    if (DoAddLoops(curLoopIndex, 5)) {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                    }
+                }
+                
+                Separator();
+            }
+            
+            Text("Add Cells:");
+            if (Button("Add 1 Cell")) {
+                bool success = false;
+                if (globalView) {
+                    success = DoAddCells(curLoopIndex, curCellIndex, 1);
+                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
+                } else if (globalPicture) {
+                    success = DoAddCells(0, curCellIndex, 1);
+                    if (success) ShowCell(curCellIndex);
+                }
+                if (success) datasaved = false;
+            }
+            
+            SameLine();
+            if (Button("Add 5 Cells")) {
+                bool success = false;
+                if (globalView) {
+                    success = DoAddCells(curLoopIndex, curCellIndex, 5);
+                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
+                } else if (globalPicture) {
+                    success = DoAddCells(0, curCellIndex, 5);
+                    if (success) ShowCell(curCellIndex);
+                }
+                if (success) datasaved = false;
+            }
+            
+            SameLine();
+            if (Button("Add 10 Cells")) {
+                bool success = false;
+                if (globalView) {
+                    success = DoAddCells(curLoopIndex, curCellIndex, 10);
+                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
+                } else if (globalPicture) {
+                    success = DoAddCells(0, curCellIndex, 10);
+                    if (success) ShowCell(curCellIndex);
+                }
+                if (success) datasaved = false;
+            }
+        }
         
-        if (globalView) {
-            Text("Loop Management:");
-            InputInt("Loops to Add/Remove", &loopsDelta);
-            if (Button("Apply Loop Changes")) {
-                if (loopsDelta != 0) {
-                    DoAddLoops(curLoopIndex, loopsDelta);
-                    loopsDelta = 0;
-                    ShowLoopCell(curLoopIndex, curCellIndex);
-                    datasaved = false;
+        // ===================================================================
+        // REMOVE ELEMENTS
+        // ===================================================================
+        if (CollapsingHeader("Remove Elements")) {
+            
+            if (globalView) {
+                Text("Remove Loops:");
+                if (Button("Remove 1 Loop")) {
+                    // Only allow if we have more than 1 loop
+                    if (globalView->Head.view32.loopCount > 1) {
+                        if (DoAddLoops(curLoopIndex, -1)) {
+                            // Adjust current loop index if needed
+                            if (curLoopIndex >= globalView->Head.view32.loopCount) {
+                                curLoopIndex = globalView->Head.view32.loopCount - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                            datasaved = false;
+                        }
+                    }
+                }
+                
+                SameLine();
+                if (Button("Remove 5 Loops")) {
+                    // Only allow if we have more than 5 loops
+                    if (globalView->Head.view32.loopCount > 5) {
+                        if (DoAddLoops(curLoopIndex, -5)) {
+                            // Adjust current loop index if needed
+                            if (curLoopIndex >= globalView->Head.view32.loopCount) {
+                                curLoopIndex = globalView->Head.view32.loopCount - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                            datasaved = false;
+                        }
+                    }
+                }
+                
+                Separator();
+            }
+            
+            Text("Remove Cells:");
+            if (Button("Remove 1 Cell")) {
+                bool canRemove = false;
+                if (globalView && curLoop && (*curLoop)) {
+                    canRemove = ((*curLoop)->Head.numCels > 1);
+                } else if (globalPicture) {
+                    canRemove = (globalPicture->getCellsCount() > 1);
+                }
+                
+                if (canRemove) {
+                    bool success = false;
+                    if (globalView) {
+                        success = DoAddCells(curLoopIndex, curCellIndex, -1);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0) {
+                                curCellIndex = (*curLoop)->Head.numCels - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                        }
+                    } else if (globalPicture) {
+                        success = DoAddCells(0, curCellIndex, -1);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= globalPicture->getCellsCount() && globalPicture->getCellsCount() > 0) {
+                                curCellIndex = globalPicture->getCellsCount() - 1;
+                            }
+                            ShowCell(curCellIndex);
+                        }
+                    }
+                    if (success) datasaved = false;
                 }
             }
             
-            Separator();
+            SameLine();
+            if (Button("Remove 5 Cells")) {
+                bool canRemove = false;
+                if (globalView && curLoop && (*curLoop)) {
+                    canRemove = ((*curLoop)->Head.numCels > 5);
+                } else if (globalPicture) {
+                    canRemove = (globalPicture->getCellsCount() > 5);
+                }
+                
+                if (canRemove) {
+                    bool success = false;
+                    if (globalView) {
+                        success = DoAddCells(curLoopIndex, curCellIndex, -5);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0) {
+                                curCellIndex = (*curLoop)->Head.numCels - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                        }
+                    } else if (globalPicture) {
+                        success = DoAddCells(0, curCellIndex, -5);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= globalPicture->getCellsCount() && globalPicture->getCellsCount() > 0) {
+                                curCellIndex = globalPicture->getCellsCount() - 1;
+                            }
+                            ShowCell(curCellIndex);
+                        }
+                    }
+                    if (success) datasaved = false;
+                }
+            }
+            
+            SameLine();
+            if (Button("Remove 10 Cells")) {
+                bool canRemove = false;
+                if (globalView && curLoop && (*curLoop)) {
+                    canRemove = ((*curLoop)->Head.numCels > 10);
+                } else if (globalPicture) {
+                    canRemove = (globalPicture->getCellsCount() > 10);
+                }
+                
+                if (canRemove) {
+                    bool success = false;
+                    if (globalView) {
+                        success = DoAddCells(curLoopIndex, curCellIndex, -10);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0) {
+                                curCellIndex = (*curLoop)->Head.numCels - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                        }
+                    } else if (globalPicture) {
+                        success = DoAddCells(0, curCellIndex, -10);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= globalPicture->getCellsCount() && globalPicture->getCellsCount() > 0) {
+                                curCellIndex = globalPicture->getCellsCount() - 1;
+                            }
+                            ShowCell(curCellIndex);
+                        }
+                    }
+                    if (success) datasaved = false;
+                }
+            }
         }
         
-        Text("Cell Management:");
-        InputInt("Cells to Add/Remove", &cellsDelta);
-        if (Button("Apply Cell Changes")) {
-            if (cellsDelta != 0) {
-                if (globalView) {
-                    DoAddCells(curLoopIndex, curCellIndex, cellsDelta);
-                    ShowLoopCell(curLoopIndex, curCellIndex);
-                } else if (globalPicture) {
-                    DoAddCells(0, curCellIndex, cellsDelta);
-                    ShowCell(curCellIndex);
+        // ===================================================================
+        // CUSTOM AMOUNT
+        // ===================================================================
+        if (CollapsingHeader("Custom Amount")) {
+            static int customAmount = 1;
+            
+            Text("Amount:");
+            SameLine();
+            InputInt("##customamount", &customAmount);
+            
+            if (globalView) {
+                if (Button("Add Loops")) {
+                    if (customAmount > 0 && DoAddLoops(curLoopIndex, customAmount)) {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                    }
                 }
-                cellsDelta = 0;
-                datasaved = false;
+                
+                SameLine();
+                if (Button("Remove Loops")) {
+                    if (customAmount > 0 && globalView->Head.view32.loopCount > customAmount) {
+                        if (DoAddLoops(curLoopIndex, -customAmount)) {
+                            // Adjust current loop index if needed
+                            if (curLoopIndex >= globalView->Head.view32.loopCount) {
+                                curLoopIndex = globalView->Head.view32.loopCount - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                            datasaved = false;
+                        }
+                    }
+                }
+                
+                Separator();
+            }
+            
+            if (Button("Add Cells")) {
+                if (customAmount > 0) {
+                    bool success = false;
+                    if (globalView) {
+                        success = DoAddCells(curLoopIndex, curCellIndex, customAmount);
+                        if (success) ShowLoopCell(curLoopIndex, curCellIndex);
+                    } else if (globalPicture) {
+                        success = DoAddCells(0, curCellIndex, customAmount);
+                        if (success) ShowCell(curCellIndex);
+                    }
+                    if (success) datasaved = false;
+                }
+            }
+            
+            SameLine();
+            if (Button("Remove Cells")) {
+                bool canRemove = false;
+                if (globalView && curLoop && (*curLoop)) {
+                    canRemove = ((*curLoop)->Head.numCels > customAmount);
+                } else if (globalPicture) {
+                    canRemove = (globalPicture->getCellsCount() > customAmount);
+                }
+                
+                if (customAmount > 0 && canRemove) {
+                    bool success = false;
+                    if (globalView) {
+                        success = DoAddCells(curLoopIndex, curCellIndex, -customAmount);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0) {
+                                curCellIndex = (*curLoop)->Head.numCels - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                        }
+                    } else if (globalPicture) {
+                        success = DoAddCells(0, curCellIndex, -customAmount);
+                        if (success) {
+                            // Adjust current cell index if needed
+                            if (curCellIndex >= globalPicture->getCellsCount() && globalPicture->getCellsCount() > 0) {
+                                curCellIndex = globalPicture->getCellsCount() - 1;
+                            }
+                            ShowCell(curCellIndex);
+                        }
+                    }
+                    if (success) datasaved = false;
+                }
             }
         }
     }
