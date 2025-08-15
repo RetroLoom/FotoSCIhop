@@ -39,6 +39,7 @@ namespace ImGuiDialogs {
     bool InputInt(const char* label, int* value);
     bool Checkbox(const char* label, bool* value);
     void Text(const char* text);
+    void TextFormatted(const char* fmt, ...);
     void Separator();
     void SameLine();
     bool CollapsingHeader(const char* label, bool defaultOpen = false);

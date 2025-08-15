@@ -3376,6 +3376,7 @@ LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 // ==== ImGui Dialog Callbacks ====
+// ==== Enhanced ImGui Dialog Callback ====
 void RenderPropertiesDialog() {
     using namespace ImGuiDialogs;
     
@@ -3393,178 +3394,73 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // PROPERTIES SECTION
+    // FILE INFO SECTION
     // =========================================================================
-    if (CollapsingHeader("Properties", true)) {
+    if (CollapsingHeader("File Information", true)) {
+        if (globalView) {
+            Text("File Type: View File (.v56)");
+            TextFormatted("Current Loop: %d / %d", curLoopIndex + 1, globalView->Head.view32.loopCount);
+            
+            if (curLoop && (*curLoop)) {
+                if ((*curLoop)->Head.flags) {
+                    TextFormatted("Loop Type: Mirror of Loop %d", (*curLoop)->Head.altLoop + 1);
+                } else {
+                    TextFormatted("Current Cell: %d / %d", curCellIndex + 1, (*curLoop)->Head.numCels);
+                    Text("Loop Type: Normal");
+                }
+            }
+        } else if (globalPicture) {
+            const char* version = (globalPicture->format == _PIC_11) ? "SCI1.1 Picture" : "SCI32 Picture";
+            TextFormatted("File Type: %s (.p56)", version);
+            TextFormatted("Current Cell: %d / %d", curCellIndex + 1, globalPicture->CellsCount());
+        } else {
+            Text("No file loaded");
+        }
+    }
+    
+    // =========================================================================
+    // RESOLUTION SECTION
+    // =========================================================================
+    if (CollapsingHeader("Resolution Settings", true)) {
         
         // Get current data - same logic as before
-        int selLoop = globalView ? curLoopIndex : 0;
         static int resX = 320, resY = 200;
-        static int left = 0, top = 0, priority = 0;
-        static int loopMirror = 0, loopBase = 0;
-        static int loopContinue = -1, loopStartCell = -1, loopEndCell = -1;
-        static int loopRepeat = 255, loopStepSize = 3;
-        static int cellsDelta = 0, loopsDelta = 0;
-        static bool needsRefresh = true;
+        static bool needsResolutionRefresh = true;
         
         // Refresh data when needed
-        if (needsRefresh) {
+        if (needsResolutionRefresh) {
             if (globalView) {
                 resX = globalView->Head.view32.resX;
                 resY = globalView->Head.view32.resY;
-                
-                if (curCell && (*curCell)) {
-                    if (!(*curLoop)->Head.flags) {
-                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                        left = bCell->xHot;
-                        top = bCell->yHot;
-                        
-                        loopContinue = globalView->loops[selLoop]->Head.contLoop;
-                        loopStartCell = globalView->loops[selLoop]->Head.startCel;
-                        loopEndCell = globalView->loops[selLoop]->Head.endCel;
-                        loopRepeat = globalView->loops[selLoop]->Head.repeatCount;
-                        loopStepSize = globalView->loops[selLoop]->Head.stepSize;
-                    } else {
-                        left = 0; top = 0;
-                        loopContinue = -1; loopStartCell = -1; loopEndCell = -1;
-                        loopRepeat = 255; loopStepSize = 3;
-                    }
-                    
-                    loopMirror = globalView->loops[selLoop]->Head.flags;
-                    loopBase = globalView->loops[selLoop]->Head.altLoop;
-                }
-            }
-            else if (globalPicture) {
+            } else if (globalPicture) {
                 switch (globalPicture->format) {
                 case _PIC_11: {
                     PicHeader11 *bPic11 = (PicHeader11 *)&globalPicture->Head;
-                    resX = bPic11->vanishX; resY = bPic11->viewAngle;
+                    resX = bPic11->vanishX; 
+                    resY = bPic11->viewAngle;
                     break;
                 }
                 case _PIC_32: {
                     PicHeader32 *bPic32 = (PicHeader32 *)&globalPicture->Head;
-                    resX = bPic32->resX; resY = bPic32->resY;
+                    resX = bPic32->resX; 
+                    resY = bPic32->resY;
                     break;
                 }
                 }
-                
-                if (curCell && (*curCell)) {
-                    CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
-                    left = bCell->xpos; top = bCell->ypos; priority = bCell->priority;
-                }
             }
-            
-            cellsDelta = 0; loopsDelta = 0;
-            needsRefresh = false;
+            needsResolutionRefresh = false;
         }
 
-        // === PROPERTIES UI ===
-        Text("Resolution:");
+        // Single column layout for resolution
         InputInt("Width", &resX);
-        SameLine();
         InputInt("Height", &resY);
         
-        Separator();
-        
-        if (globalView) {
-            Text("Loop Properties:");
-            bool mirror = (loopMirror != 0);
-            Checkbox("Mirror", &mirror);
-            loopMirror = mirror ? 1 : 0;
-            SameLine();
-            InputInt("Base", &loopBase);
-            
-            if (!loopMirror) {
-                InputInt("Continue", &loopContinue);
-                SameLine();
-                InputInt("Start Cell", &loopStartCell);
-                
-                InputInt("End Cell", &loopEndCell);
-                SameLine();
-                InputInt("Repeat", &loopRepeat);
-                
-                InputInt("Step Size", &loopStepSize);
-                
-                Separator();
-                Text("Cell Hot Spot:");
-                InputInt("X", &left);
-                SameLine();
-                InputInt("Y", &top);
-            }
-            
-            Separator();
-            Text("Add/Remove:");
-            InputInt("Loops Delta", &loopsDelta);
-            SameLine();
-            InputInt("Cells Delta", &cellsDelta);
-            
-        } else if (globalPicture) {
-            const char* version = (globalPicture->format == _PIC_11) ? "SCI1.1 Picture" : "SCI32 Picture";
-            Text(version);
-            
-            if (curCell && (*curCell)) {
-                Separator();
-                Text("Cell Properties:");
-                InputInt("X", &left);
-                SameLine();
-                InputInt("Y", &top);
-                SameLine();
-                InputInt("Priority", &priority);
-            }
-            
-            Separator();
-            Text("Add/Remove Cells:");
-            InputInt("Cells Delta", &cellsDelta);
-            
-        } else {
-            Text("No file loaded");
-        }
-        
-        Separator();
-        
-        // Apply button for properties
-        if (Button("Apply Properties")) {
+        // Apply resolution button
+        if (Button("Apply Resolution")) {
             if (globalView) {
                 globalView->Head.view32.resX = resX;
                 globalView->Head.view32.resY = resY;
-                
-                if (curCell && (*curCell)) {
-                    globalView->loops[selLoop]->Head.flags = loopMirror;
-                    globalView->loops[selLoop]->Head.altLoop = loopBase;
-                    
-                    if (!loopMirror) {
-                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                        bCell->xHot = left;
-                        bCell->yHot = top;
-                        
-                        globalView->loops[selLoop]->Head.contLoop = loopContinue;
-                        globalView->loops[selLoop]->Head.startCel = loopStartCell;
-                        globalView->loops[selLoop]->Head.endCel = loopEndCell;
-                        globalView->loops[selLoop]->Head.repeatCount = loopRepeat;
-                        globalView->loops[selLoop]->Head.stepSize = loopStepSize;
-                    } else {
-                        globalView->loops[selLoop]->Head.contLoop = -1;
-                        globalView->loops[selLoop]->Head.startCel = -1;
-                        globalView->loops[selLoop]->Head.endCel = -1;
-                        globalView->loops[selLoop]->Head.repeatCount = 255;
-                        globalView->loops[selLoop]->Head.stepSize = 3;
-                    }
-                }
-                
-                if (loopsDelta != 0) {
-                    DoAddLoops(curLoopIndex, loopsDelta);
-                    loopsDelta = 0;
-                }
-                
-                if (cellsDelta != 0) {
-                    DoAddCells(curLoopIndex, curCellIndex, cellsDelta);
-                    cellsDelta = 0;
-                }
-                
-                ShowLoopCell(curLoopIndex, curCellIndex);
-            }
-            
-            if (globalPicture) {
+            } else if (globalPicture) {
                 switch (globalPicture->format) {
                 case _PIC_11: {
                     PicHeader11 *bPic11 = (PicHeader11 *)&globalPicture->Head;
@@ -3579,29 +3475,192 @@ void RenderPropertiesDialog() {
                     break;
                 }
                 }
-                
-                if (curCell && (*curCell)) {
-                    CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
-                    bCell->xpos = left;
-                    bCell->ypos = top;
-                    bCell->priority = priority;
-                }
-                
-                if (cellsDelta != 0) {
-                    DoAddCells(0, curCellIndex, cellsDelta);
-                    cellsDelta = 0;
-                }
-                
-                ShowCell(curCellIndex);
             }
-            
             datasaved = false;
-            needsRefresh = true;
+            needsResolutionRefresh = true;
+            InvalidateRgn(hWnd, NULL, true);
         }
     }
     
     // =========================================================================
-    // LINK POINTS SECTION
+    // LOOP PROPERTIES SECTION (View files only)
+    // =========================================================================
+    if (globalView && curLoop && (*curLoop)) {
+        if (CollapsingHeader("Loop Properties")) {
+            
+            static int loopMirror = 0, loopBase = 0;
+            static int loopContinue = -1, loopStartCell = -1, loopEndCell = -1;
+            static int loopRepeat = 255, loopStepSize = 3;
+            static bool needsLoopRefresh = true;
+            
+            // Refresh loop data
+            if (needsLoopRefresh) {
+                int selLoop = curLoopIndex;
+                loopMirror = globalView->loops[selLoop]->Head.flags;
+                loopBase = globalView->loops[selLoop]->Head.altLoop;
+                
+                if (!loopMirror) {
+                    loopContinue = globalView->loops[selLoop]->Head.contLoop;
+                    loopStartCell = globalView->loops[selLoop]->Head.startCel;
+                    loopEndCell = globalView->loops[selLoop]->Head.endCel;
+                    loopRepeat = globalView->loops[selLoop]->Head.repeatCount;
+                    loopStepSize = globalView->loops[selLoop]->Head.stepSize;
+                } else {
+                    loopContinue = -1; loopStartCell = -1; loopEndCell = -1;
+                    loopRepeat = 255; loopStepSize = 3;
+                }
+                needsLoopRefresh = false;
+            }
+
+            // Single column layout for loop properties
+            bool mirror = (loopMirror != 0);
+            Checkbox("Mirror Loop", &mirror);
+            loopMirror = mirror ? 1 : 0;
+            
+            InputInt("Base Loop", &loopBase);
+            
+            if (!loopMirror) {
+                Separator();
+                Text("Animation Settings:");
+                InputInt("Continue Loop", &loopContinue);
+                InputInt("Start Cell", &loopStartCell);
+                InputInt("End Cell", &loopEndCell);
+                InputInt("Repeat Count", &loopRepeat);
+                InputInt("Step Size", &loopStepSize);
+            }
+            
+            // Apply loop properties button
+            if (Button("Apply Loop Properties")) {
+                int selLoop = curLoopIndex;
+                globalView->loops[selLoop]->Head.flags = loopMirror;
+                globalView->loops[selLoop]->Head.altLoop = loopBase;
+                
+                if (!loopMirror) {
+                    globalView->loops[selLoop]->Head.contLoop = loopContinue;
+                    globalView->loops[selLoop]->Head.startCel = loopStartCell;
+                    globalView->loops[selLoop]->Head.endCel = loopEndCell;
+                    globalView->loops[selLoop]->Head.repeatCount = loopRepeat;
+                    globalView->loops[selLoop]->Head.stepSize = loopStepSize;
+                } else {
+                    globalView->loops[selLoop]->Head.contLoop = -1;
+                    globalView->loops[selLoop]->Head.startCel = -1;
+                    globalView->loops[selLoop]->Head.endCel = -1;
+                    globalView->loops[selLoop]->Head.repeatCount = 255;
+                    globalView->loops[selLoop]->Head.stepSize = 3;
+                }
+                
+                ShowLoopCell(curLoopIndex, curCellIndex);
+                datasaved = false;
+                needsLoopRefresh = true;
+            }
+        }
+    }
+    
+    // =========================================================================
+    // CELL PROPERTIES SECTION
+    // =========================================================================
+    if (curCell && (*curCell)) {
+        if (CollapsingHeader("Cell Properties")) {
+            
+            static int cellX = 0, cellY = 0, cellPriority = 0;
+            static bool needsCellRefresh = true;
+            
+            // Refresh cell data
+            if (needsCellRefresh) {
+                if (globalView) {
+                    if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                        cellX = bCell->xHot;
+                        cellY = bCell->yHot;
+                    } else {
+                        cellX = 0; cellY = 0;
+                    }
+                } else if (globalPicture) {
+                    CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                    cellX = bCell->xpos; 
+                    cellY = bCell->ypos; 
+                    cellPriority = bCell->priority;
+                }
+                needsCellRefresh = false;
+            }
+
+            // Single column layout for cell properties
+            if (globalView) {
+                if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+                    Text("Hot Spot:");
+                    InputInt("X Hot", &cellX);
+                    InputInt("Y Hot", &cellY);
+                } else {
+                    Text("Cell properties not available for mirror loops");
+                }
+            } else if (globalPicture) {
+                Text("Position:");
+                InputInt("X Position", &cellX);
+                InputInt("Y Position", &cellY);
+                InputInt("Priority", &cellPriority);
+            }
+            
+            // Apply cell properties button
+            if (Button("Apply Cell Properties")) {
+                if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+                    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                    bCell->xHot = cellX;
+                    bCell->yHot = cellY;
+                    ShowLoopCell(curLoopIndex, curCellIndex);
+                } else if (globalPicture) {
+                    CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                    bCell->xpos = cellX;
+                    bCell->ypos = cellY;
+                    bCell->priority = cellPriority;
+                    ShowCell(curCellIndex);
+                }
+                datasaved = false;
+                needsCellRefresh = true;
+            }
+        }
+    }
+    
+    // =========================================================================
+    // LOOP/CELL MANAGEMENT SECTION
+    // =========================================================================
+    if (CollapsingHeader("Add/Remove Elements")) {
+        
+        static int loopsDelta = 0, cellsDelta = 0;
+        
+        if (globalView) {
+            Text("Loop Management:");
+            InputInt("Loops to Add/Remove", &loopsDelta);
+            if (Button("Apply Loop Changes")) {
+                if (loopsDelta != 0) {
+                    DoAddLoops(curLoopIndex, loopsDelta);
+                    loopsDelta = 0;
+                    ShowLoopCell(curLoopIndex, curCellIndex);
+                    datasaved = false;
+                }
+            }
+            
+            Separator();
+        }
+        
+        Text("Cell Management:");
+        InputInt("Cells to Add/Remove", &cellsDelta);
+        if (Button("Apply Cell Changes")) {
+            if (cellsDelta != 0) {
+                if (globalView) {
+                    DoAddCells(curLoopIndex, curCellIndex, cellsDelta);
+                    ShowLoopCell(curLoopIndex, curCellIndex);
+                } else if (globalPicture) {
+                    DoAddCells(0, curCellIndex, cellsDelta);
+                    ShowCell(curCellIndex);
+                }
+                cellsDelta = 0;
+                datasaved = false;
+            }
+        }
+    }
+    
+    // =========================================================================
+    // LINK POINTS SECTION (View files only)
     // =========================================================================
     
     // Only show Link Points section for valid view files
@@ -3645,36 +3704,36 @@ void RenderPropertiesDialog() {
             }
             
             // Link Count control
-            InputInt("Link Count", &linkCount);
+            InputInt("Number of Link Points", &linkCount);
             if (linkCount < 0) linkCount = 0;
             if (linkCount > 12) linkCount = 12;
             
-            Separator();
-            
-            // Show link points (only show as many as linkCount)
-            for (int i = 0; i < linkCount; i++) {
-                char label[32];
+            if (linkCount > 0) {
+                Separator();
+                Text("Link Point Coordinates:");
                 
-                sprintf(label, "Link Point %d", i + 1);
-                Text(label);
-                
-                sprintf(label, "X##%d", i);
-                InputInt(label, &linkX[i]);
-                SameLine();
-                
-                sprintf(label, "Y##%d", i);
-                InputInt(label, &linkY[i]);
-                SameLine();
-                
-                sprintf(label, "Pri##%d", i);
-                InputInt(label, &linkPri[i]);
-                SameLine();
-                
-                sprintf(label, "Type##%d", i);
-                InputInt(label, &linkType[i]);
+                // Show link points in single column layout
+                for (int i = 0; i < linkCount; i++) {
+                    char headerLabel[32];
+                    sprintf(headerLabel, "Link Point %d", i + 1);
+                    
+                    if (CollapsingHeader(headerLabel)) {
+                        char label[32];
+                        
+                        sprintf(label, "X##%d", i);
+                        InputInt(label, &linkX[i]);
+                        
+                        sprintf(label, "Y##%d", i);
+                        InputInt(label, &linkY[i]);
+                        
+                        sprintf(label, "Priority##%d", i);
+                        InputInt(label, &linkPri[i]);
+                        
+                        sprintf(label, "Type##%d", i);
+                        InputInt(label, &linkType[i]);
+                    }
+                }
             }
-            
-            Separator();
             
             // Apply button for link points
             if (Button("Apply Link Points")) {
