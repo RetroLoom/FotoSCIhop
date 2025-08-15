@@ -164,92 +164,74 @@ public:
     // ============================================================================
     
     // === BASIC CELL OPERATIONS ===
+    int modifyCells(int loop, int base, int delta);
     int addCell(int loop, int baseIndex, int position = -1);
     int addCells(int loop, int baseIndex, int amount);
     int deleteCell(int loop, int position);
     int deleteCells(int loop, int start, int count);
     
-    // === CELL CONVENIENCE FUNCTIONS ===
-    int insertCell(int loop, int baseIndex, int position);
+    // === STREAMLINED CONVENIENCE FUNCTIONS ===
     int appendCell(int loop, int baseIndex);
+    int appendCells(int loop, int baseIndex, int count);
+    int removeLastCell(int loop);
+    int removeLastCells(int loop, int count);
     
-    // === CELL COPY OPERATIONS ===
+    // === ESSENTIAL COPY/MOVE OPERATIONS ===
     int copyCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos);
-    int copyCell(int srcLoop, int srcIndex, int dstLoop, int dstPos);
-    
-    // === CELL MOVE OPERATIONS ===
     int moveCells(int srcLoop, int srcStart, int count, int dstLoop, int dstPos);
-    int moveCell(int srcLoop, int srcIndex, int dstLoop, int dstPos);
-    
-    // === CELL REORDER OPERATIONS ===
-    int shiftCells(int loop, int start, int count, int newPos);
     int duplicateCells(int loop, int start, int count);
-    int duplicateCell(int loop, int index);
+    
+    // === ESSENTIAL REORDER OPERATIONS ===
+    int shiftCells(int loop, int start, int count, int newPos);
     int swapCells(int loop1, int index1, int loop2, int index2);
-    
-    // === ADVANCED CELL OPERATIONS ===
-    int insertEmptyCells(int loop, int position, int count);
-    int replaceCells(int dstLoop, int dstStart, int srcLoop, int srcStart, int count);
     int reverseCells(int loop, int start, int count);
-    int sortCells(int loop, int start, int count, int sortBy, bool ascending);
     
-    // === CELL BATCH OPERATIONS ===
+    // === ADVANCED OPERATIONS ===
+    int insertEmptyCells(int loop, int position, int count);
+    
+    // === BATCH OPERATIONS ===
     int batchDeleteCells(int loop, const int* indices, int indexCount);
     
-    // === CELL SEARCH OPERATIONS ===
-    int findCellsBySize(int loop, int width, int height, int* results, int maxResults);
+    // === SEARCH OPERATIONS ===
     int findEmptyCells(int loop, int* results, int maxResults);
-    
-    // === CELL MAINTENANCE OPERATIONS ===
-    int cutCells(int loop, int start, int count, Cell** clipboard);
-    int optimizeLoop(int loop);
 
 	// ============================================================================
     // LOOP UTILITY FUNCTIONS
     // ============================================================================
     
     // === BASIC LOOP OPERATIONS ===
+    int modifyLoops(int base, int delta);
     int addLoop(int baseIndex, int position = -1);
-    int addLoops(int base, int amount);  // Your existing function
+    int addLoops(int base, int amount);  // Now uses modifyLoops internally
     int deleteLoop(int position);
     int deleteLoops(int start, int count);
     
-    // === LOOP CONVENIENCE FUNCTIONS ===
-    int insertLoop(int baseIndex, int position);
+    // === STREAMLINED CONVENIENCE FUNCTIONS ===
     int appendLoop(int baseIndex);
+    int appendLoops(int baseIndex, int count);
+    int removeLastLoop();
+    int removeLastLoops(int count);
     
-    // === LOOP COPY OPERATIONS ===
+    // === ESSENTIAL COPY/MOVE OPERATIONS ===
     int copyLoops(int srcStart, int count, int dstPos);
-    int copyLoop(int srcIndex, int dstPos);
-    
-    // === LOOP MOVE OPERATIONS ===
     int moveLoops(int srcStart, int count, int dstPos);
-    int moveLoop(int srcIndex, int dstPos);
-    
-    // === LOOP REORDER OPERATIONS ===
-    int shiftLoops(int start, int count, int newPos);
     int duplicateLoops(int start, int count);
-    int duplicateLoop(int index);
+    
+    // === ESSENTIAL REORDER OPERATIONS ===
+    int shiftLoops(int start, int count, int newPos);
     int swapLoops(int index1, int index2);
-    
-    // === ADVANCED LOOP OPERATIONS ===
-    int insertEmptyLoops(int position, int count);
-    int replaceLoops(int dstStart, int srcStart, int count);
     int reverseLoops(int start, int count);
-    int sortLoops(int start, int count, int sortBy, bool ascending);
     
-    // === LOOP BATCH OPERATIONS ===
+    // === ADVANCED OPERATIONS ===
+    int insertEmptyLoops(int position, int count);
+    
+    // === BATCH OPERATIONS ===
     int batchDeleteLoops(const int* indices, int indexCount);
     
-    // === LOOP SEARCH OPERATIONS ===
-    int findLoopsByCellCount(int minCells, int maxCells, int* results, int maxResults);
+    // === SEARCH OPERATIONS ===
     int findEmptyLoops(int* results, int maxResults);
     
-    // === LOOP MAINTENANCE OPERATIONS ===
-    int cutLoops(int start, int count, Loop** clipboard);
-    int optimizeView();
-    
-    // === LOOP VALIDATION FUNCTIONS ===
+    // === VALIDATION FUNCTIONS ===
     bool canDeleteLoops(int start, int count);
     bool canInsertLoops(int position, int count);
     bool canMoveLoops(int srcStart, int count, int dstPos);
