@@ -845,6 +845,8 @@ namespace ImGuiDialogs {
     // =========================================================================
     // UTILITY FUNCTIONS
     // =========================================================================
+
+    
     
     void SetNextWindowPos(float x, float y) {
         ImGui::SetNextWindowPos(ImVec2(x, y));
@@ -932,6 +934,22 @@ namespace ImGuiDialogs {
     
     void SetKeyboardFocusHere(int offset) {
         ImGui::SetKeyboardFocusHere(offset);
+    }
+
+    void SetNextItemWidth(float item_width) {
+        ImGui::SetNextItemWidth(item_width);
+    }
+    
+    void PushItemWidth(float item_width) {
+        ImGui::PushItemWidth(item_width);
+    }
+    
+    void PopItemWidth() {
+        ImGui::PopItemWidth();
+    }
+    
+    float CalcItemWidth() {
+        return ImGui::CalcItemWidth();
     }
     
     // =========================================================================

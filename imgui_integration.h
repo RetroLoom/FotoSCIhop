@@ -289,6 +289,12 @@ namespace ImGuiDialogs {
     // Focus management
     void SetItemDefaultFocus();
     void SetKeyboardFocusHere(int offset = 0);
+
+    // Item width control functions
+    void SetNextItemWidth(float item_width);
+    void PushItemWidth(float item_width);
+    void PopItemWidth();
+    float CalcItemWidth();
     
     // =========================================================================
     // DRAWING AND GRAPHICS
