@@ -14,15 +14,19 @@ namespace ImGuiDialogs {
     void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback, 
                            ImGuiDialogCallback linkPointsCallback);
     
-    // Show/hide dialogs
+    // Show/hide individual dialogs - each gets its own window
     void ShowProperties();
     void ShowLinkPoints();
-    void Hide();
+    void Hide(); // Hides all dialogs
+    
+    // Hide specific dialogs
+    void HideProperties();
+    void HideLinkPoints();
     
     // Check if any dialog is open
     bool IsAnyDialogOpen();
     
-    // Call from your main message loop and paint
+    // Call from your main message loop and timer
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void Render();
     

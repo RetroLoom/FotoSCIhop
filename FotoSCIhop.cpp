@@ -3376,6 +3376,7 @@ LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 // ==== ImGui Dialog Callbacks ====
+// ==== Updated ImGui Dialog Callbacks ====
 void RenderPropertiesDialog() {
     using namespace ImGuiDialogs;
     
@@ -3385,8 +3386,9 @@ void RenderPropertiesDialog() {
         return;
     }
     
+    // If user clicked the X button or pressed Escape, hide this dialog
     if (!open) {
-        Hide();
+        HideProperties();
         EndDialog();
         return;
     }
@@ -3596,7 +3598,7 @@ void RenderPropertiesDialog() {
     SameLine();
     if (Button("Close")) {
         needsRefresh = true;
-        Hide();
+        HideProperties();
     }
 
     EndDialog();
@@ -3612,102 +3614,21 @@ void RenderLinkPointsDialog() {
     }
     
     if (!open) {
-        Hide();
+        HideLinkPoints();
         EndDialog();
         return;
     }
 
-    if (globalView && curCell && (*curCell) && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
-        
-        // Static data - same approach as your DoUpdateLinkPointProc
-        static int linkCount = 0;
-        static int linkX[12] = {0};
-        static int linkY[12] = {0};
-        static int linkPri[12] = {0};
-        static int linkType[12] = {0};
-        static bool needsRefresh = true;
-        
-        // Refresh from globals when needed
-        if (needsRefresh) {
-            CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-            linkCount = bCell->linkTableCount;
-            
-            for (int i = 0; i < 12; i++) {
-                if (i < linkCount) {
-                    linkX[i] = (*curCell)->linkPoints[i].x;
-                    linkY[i] = (*curCell)->linkPoints[i].y;
-                    linkPri[i] = (*curCell)->linkPoints[i].priority;
-                    linkType[i] = (*curCell)->linkPoints[i].positionType;
-                } else {
-                    linkX[i] = linkY[i] = linkPri[i] = linkType[i] = 0;
-                }
-            }
-            needsRefresh = false;
-        }
-        
-        InputInt("Count", &linkCount);
-        if (linkCount < 0) linkCount = 0;
-        if (linkCount > 12) linkCount = 12;
-        
-        Separator();
-        Text("Link Point Coordinates:");
-        
-        for (int i = 0; i < 12; i++) {
-            char label[32];
-            sprintf(label, "%d:", i + 1);
-            Text(label);
-            SameLine();
-            
-            sprintf(label, "X##%d", i);
-            InputInt(label, &linkX[i]);
-            SameLine();
-            
-            sprintf(label, "Y##%d", i);
-            InputInt(label, &linkY[i]);
-            SameLine();
-            
-            sprintf(label, "Pri##%d", i);
-            InputInt(label, &linkPri[i]);
-            SameLine();
-            
-            sprintf(label, "Type##%d", i);
-            InputInt(label, &linkType[i]);
-        }
-        
-        Separator();
-        
-        // Apply button - same logic as your DoLinkPointProc IDOK case
-        if (Button("Apply")) {
-            if (globalView && curCell && (*curCell)) {
-                CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                bCell->linkTableCount = linkCount;
-                
-                for (int i = 0; i < linkCount && i < 12; i++) {
-                    (*curCell)->linkPoints[i].x = linkX[i];
-                    (*curCell)->linkPoints[i].y = linkY[i];
-                    (*curCell)->linkPoints[i].priority = linkPri[i];
-                    (*curCell)->linkPoints[i].positionType = linkType[i];
-                }
-                
-                ShowLoopCell(curLoopIndex, curCellIndex);
-                datasaved = false;
-                needsRefresh = true;
-            }
-        }
-        
-        SameLine();
-        if (Button("Close")) {
-            needsRefresh = true;
-            Hide();
-        }
-        
-    } else {
-        Text("Link points are only available for");
-        Text("non-mirrored view loops");
-        
-        if (Button("Close")) {
-            Hide();
-        }
+    // Just show some basic content to test if the dialog is working at all
+    Text("Link Points Dialog");
+    Text("This is a test");
+    
+    if (Button("Test Button")) {
+        Text("Button clicked!");
+    }
+    
+    if (Button("Close")) {
+        HideLinkPoints();
     }
 
     EndDialog();

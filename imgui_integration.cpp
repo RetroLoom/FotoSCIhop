@@ -14,55 +14,121 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 namespace ImGuiDialogs {
     
-    // Internal state - using OpenGL3 as originally intended
-    struct EngineState {
-        HWND parent = nullptr;
-        HWND hwnd = nullptr;
-        HDC hdc = nullptr;
-        HGLRC hglrc = nullptr;
-        bool initialized = false;
+    // Individual dialog window state
+    struct DialogWindow {
+        HWND hwnd;
+        HDC hdc;
+        HGLRC hglrc;
+        bool visible;
+        ImGuiDialogCallback callback;
+        const char* title;
+        int width;
+        int height;
         
-        // Dialog visibility flags
-        bool showProperties = false;
-        bool showLinkPoints = false;
-        
-        // Callbacks to your dialog functions
-        ImGuiDialogCallback propertiesCallback = nullptr;
-        ImGuiDialogCallback linkPointsCallback = nullptr;
+        // Constructor
+        DialogWindow() : hwnd(NULL), hdc(NULL), hglrc(NULL), visible(false), 
+                        callback(NULL), title(""), width(400), height(300) {}
     };
     
-    static EngineState g_engine;
+    // Function declarations for DialogWindow operations
+    bool CreateDialogWindow(DialogWindow* dialog, HWND parent, const char* windowTitle, int w, int h);
+    void DestroyDialogWindow(DialogWindow* dialog);
+    bool CreateOpenGLContext(DialogWindow* dialog);
+    void CleanupOpenGL(DialogWindow* dialog);
+    void ShowDialogWindow(DialogWindow* dialog);
+    void HideDialogWindow(DialogWindow* dialog);
+    void RenderDialogWindow(DialogWindow* dialog);
     
-    // Window procedure for ImGui window
-    LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Global state
+    struct GlobalState {
+        HWND parent;
+        bool initialized;
+        
+        // Individual dialog windows
+        DialogWindow properties;
+        DialogWindow linkPoints;
+        
+        // Constructor
+        GlobalState() : parent(NULL), initialized(false) {}
+    };
+    
+    static GlobalState g_state;
+    
+    // Window procedure for ImGui dialogs
+    LRESULT WINAPI DialogWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
             return true;
             
         switch (msg) {
         case WM_SIZE:
-            if (g_engine.hglrc && wParam != SIZE_MINIMIZED) {
-                glViewport(0, 0, (GLsizei)LOWORD(lParam), (GLsizei)HIWORD(lParam));
+            if (wParam != SIZE_MINIMIZED) {
+                // Find which dialog this belongs to and update its viewport
+                DialogWindow* dialog = NULL;
+                if (hWnd == g_state.properties.hwnd) dialog = &g_state.properties;
+                else if (hWnd == g_state.linkPoints.hwnd) dialog = &g_state.linkPoints;
+                
+                if (dialog && dialog->hglrc) {
+                    wglMakeCurrent(dialog->hdc, dialog->hglrc);
+                    glViewport(0, 0, (GLsizei)LOWORD(lParam), (GLsizei)HIWORD(lParam));
+                }
             }
             return 0;
+            
+        case WM_CLOSE:
+            // Hide instead of destroying
+            ShowWindow(hWnd, SW_HIDE);
+            if (hWnd == g_state.properties.hwnd) g_state.properties.visible = false;
+            else if (hWnd == g_state.linkPoints.hwnd) g_state.linkPoints.visible = false;
+            return 0;
+            
         case WM_SYSCOMMAND:
             if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
                 return 0;
             break;
-        case WM_CLOSE:
-            Hide();
-            return 0;
-        case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
         }
         return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
     
-    bool CreateOpenGLContext(HWND hWnd) {
-        g_engine.hdc = GetDC(hWnd);
-        if (!g_engine.hdc) return false;
+    bool CreateDialogWindow(DialogWindow* dialog, HWND parent, const char* windowTitle, int w, int h) {
+        dialog->width = w;
+        dialog->height = h;
+        dialog->title = windowTitle;
         
-        PIXELFORMATDESCRIPTOR pfd = {};
+        // Create borderless window that looks like a dialog
+        dialog->hwnd = CreateWindowW(
+            L"ImGuiDialog", 
+            L"Dialog", 
+            WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME, // Borderless with caption for moving
+            CW_USEDEFAULT, CW_USEDEFAULT, 
+            dialog->width, dialog->height, 
+            parent, 
+            NULL, 
+            GetModuleHandle(NULL), 
+            NULL
+        );
+        
+        if (!dialog->hwnd) return false;
+        
+        // Set the window title
+        SetWindowTextA(dialog->hwnd, windowTitle);
+        
+        return CreateOpenGLContext(dialog);
+    }
+    
+    void DestroyDialogWindow(DialogWindow* dialog) {
+        CleanupOpenGL(dialog);
+        if (dialog->hwnd) {
+            DestroyWindow(dialog->hwnd);
+            dialog->hwnd = NULL;
+        }
+    }
+    
+    bool CreateOpenGLContext(DialogWindow* dialog) {
+        dialog->hdc = GetDC(dialog->hwnd);
+        if (!dialog->hdc) return false;
+        
+        PIXELFORMATDESCRIPTOR pfd;
+        memset(&pfd, 0, sizeof(pfd));
         pfd.nSize = sizeof(pfd);
         pfd.nVersion = 1;
         pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
@@ -71,189 +137,88 @@ namespace ImGuiDialogs {
         pfd.cDepthBits = 16;
         pfd.iLayerType = PFD_MAIN_PLANE;
         
-        int pixelFormat = ChoosePixelFormat(g_engine.hdc, &pfd);
+        int pixelFormat = ChoosePixelFormat(dialog->hdc, &pfd);
         if (!pixelFormat) return false;
         
-        if (!SetPixelFormat(g_engine.hdc, pixelFormat, &pfd)) return false;
+        if (!SetPixelFormat(dialog->hdc, pixelFormat, &pfd)) return false;
         
-        g_engine.hglrc = wglCreateContext(g_engine.hdc);
-        if (!g_engine.hglrc) return false;
+        dialog->hglrc = wglCreateContext(dialog->hdc);
+        if (!dialog->hglrc) return false;
         
-        if (!wglMakeCurrent(g_engine.hdc, g_engine.hglrc)) return false;
+        if (!wglMakeCurrent(dialog->hdc, dialog->hglrc)) return false;
         
         return true;
     }
     
-    void CleanupOpenGL() {
-        if (g_engine.hglrc) {
-            wglMakeCurrent(nullptr, nullptr);
-            wglDeleteContext(g_engine.hglrc);
-            g_engine.hglrc = nullptr;
+    void CleanupOpenGL(DialogWindow* dialog) {
+        if (dialog->hglrc) {
+            wglMakeCurrent(NULL, NULL);
+            wglDeleteContext(dialog->hglrc);
+            dialog->hglrc = NULL;
         }
-        if (g_engine.hdc && g_engine.hwnd) {
-            ReleaseDC(g_engine.hwnd, g_engine.hdc);
-            g_engine.hdc = nullptr;
+        if (dialog->hdc && dialog->hwnd) {
+            ReleaseDC(dialog->hwnd, dialog->hdc);
+            dialog->hdc = NULL;
         }
     }
     
-    bool Initialize(HWND parent) {
-        g_engine.parent = parent;
+    void ShowDialogWindow(DialogWindow* dialog) {
+        if (!dialog->hwnd) return;
         
-        // Create window class
-        WNDCLASSEXW wc = {};
-        wc.cbSize = sizeof(WNDCLASSEXW);
-        wc.style = CS_OWNDC; // Important for OpenGL
-        wc.lpfnWndProc = WndProc;
-        wc.hInstance = GetModuleHandle(nullptr);
-        wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-        wc.lpszClassName = L"ImGuiDialogs";
+        dialog->visible = true;
+        ShowWindow(dialog->hwnd, SW_SHOW);
+        SetForegroundWindow(dialog->hwnd);
         
-        if (!RegisterClassExW(&wc)) {
-            return false;
-        }
-        
-        // Create window (initially hidden, borderless dialog style)
-        g_engine.hwnd = CreateWindowW(
-            wc.lpszClassName, 
-            L"Properties", 
-            WS_POPUP | WS_BORDER | WS_CAPTION | WS_SYSMENU, // Dialog-like style
-            100, 100, 500, 600, 
-            parent, // Use parent so it stays with main window
-            nullptr, 
-            wc.hInstance, 
-            nullptr
-        );
-        
-        if (!g_engine.hwnd) {
-            return false;
-        }
+        // Center on parent
+        if (g_state.parent) {
+            RECT parentRect, windowRect;
+            GetWindowRect(g_state.parent, &parentRect);
+            GetWindowRect(dialog->hwnd, &windowRect);
             
-        // Initialize OpenGL
-        if (!CreateOpenGLContext(g_engine.hwnd)) {
-            CleanupOpenGL();
-            DestroyWindow(g_engine.hwnd);
-            UnregisterClassW(wc.lpszClassName, wc.hInstance);
-            return false;
-        }
-        
-        // Setup Dear ImGui context
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        
-        // Setup style
-        ImGui::StyleColorsDark();
-        
-        // Setup Platform/Renderer backends
-        if (!ImGui_ImplWin32_Init(g_engine.hwnd)) {
-            return false;
-        }
-        
-        if (!ImGui_ImplOpenGL3_Init("#version 130")) {
-            return false;
-        }
-        
-        g_engine.initialized = true;
-        return true;
-    }
-    
-    void Shutdown() {
-        if (!g_engine.initialized) return;
-        
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplWin32_Shutdown();
-        ImGui::DestroyContext();
-        
-        CleanupOpenGL();
-        DestroyWindow(g_engine.hwnd);
-        UnregisterClassW(L"ImGuiDialogs", GetModuleHandle(nullptr));
-        
-        g_engine = {}; // Reset state
-    }
-    
-    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback, ImGuiDialogCallback linkPointsCallback) {
-        g_engine.propertiesCallback = propertiesCallback;
-        g_engine.linkPointsCallback = linkPointsCallback;
-    }
-    
-    void ShowProperties() {
-        if (!g_engine.initialized) return;
-        g_engine.showProperties = true;
-        if (g_engine.hwnd) {
-            ShowWindow(g_engine.hwnd, SW_SHOW);
-            SetForegroundWindow(g_engine.hwnd);
-            SetWindowTextW(g_engine.hwnd, L"Properties");
-        }
-    }
-    
-    void ShowLinkPoints() {
-        if (!g_engine.initialized) return;
-        g_engine.showLinkPoints = true;
-        if (g_engine.hwnd) {
-            ShowWindow(g_engine.hwnd, SW_SHOW);
-            SetForegroundWindow(g_engine.hwnd);
-            SetWindowTextW(g_engine.hwnd, L"Link Points");
-        }
-    }
-    
-    void Hide() {
-        g_engine.showProperties = false;
-        g_engine.showLinkPoints = false;
-        if (g_engine.hwnd)
-            ShowWindow(g_engine.hwnd, SW_HIDE);
-    }
-    
-    bool IsAnyDialogOpen() {
-        return g_engine.showProperties || g_engine.showLinkPoints;
-    }
-    
-    bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // Only handle messages for the ImGui window
-        if (g_engine.hwnd && hwnd == g_engine.hwnd) {
-            return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
-        }
-        return false;
-    }
-    
-    void Render() {
-        if (!g_engine.initialized) return;
-        if (!g_engine.showProperties && !g_engine.showLinkPoints) return;
-        if (!IsWindowVisible(g_engine.hwnd)) return;
+            int centerX = parentRect.left + (parentRect.right - parentRect.left - dialog->width) / 2;
+            int centerY = parentRect.top + (parentRect.bottom - parentRect.top - dialog->height) / 2;
             
-        // Make OpenGL context current
-        if (!wglMakeCurrent(g_engine.hdc, g_engine.hglrc)) return;
-            
+            SetWindowPos(dialog->hwnd, HWND_TOP, centerX, centerY, 0, 0, SWP_NOSIZE);
+        }
+    }
+    
+    void HideDialogWindow(DialogWindow* dialog) {
+        dialog->visible = false;
+        if (dialog->hwnd) ShowWindow(dialog->hwnd, SW_HIDE);
+    }
+    
+    void RenderDialogWindow(DialogWindow* dialog) {
+        if (!dialog->visible || !dialog->hwnd || !dialog->callback || !dialog->hglrc) return;
+        
+        // Make this window's context current
+        if (!wglMakeCurrent(dialog->hdc, dialog->hglrc)) return;
+        
         // Get window size for viewport
         RECT rect;
-        GetClientRect(g_engine.hwnd, &rect);
-        int width = rect.right - rect.left;
-        int height = rect.bottom - rect.top;
+        GetClientRect(dialog->hwnd, &rect);
+        int windowWidth = rect.right - rect.left;
+        int windowHeight = rect.bottom - rect.top;
         
-        if (width <= 0 || height <= 0) return; // Avoid invalid viewport
+        if (windowWidth <= 0 || windowHeight <= 0) return;
         
-        glViewport(0, 0, width, height);
+        glViewport(0, 0, windowWidth, windowHeight);
         
-        // Start the Dear ImGui frame
+        // Start ImGui frame for this window
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         
-        // Call your dialog callbacks
-        if (g_engine.showProperties && g_engine.propertiesCallback) {
-            g_engine.propertiesCallback();
+        // Call the dialog callback
+        dialog->callback();
+        
+        // Check if dialog was closed by callback
+        if (!dialog->visible) {
+            HideDialogWindow(dialog);
+            ImGui::EndFrame();
+            return;
         }
         
-        if (g_engine.showLinkPoints && g_engine.linkPointsCallback) {
-            g_engine.linkPointsCallback();
-        }
-        
-        // Hide window if no dialogs are open after callbacks
-        if (!g_engine.showProperties && !g_engine.showLinkPoints) {
-            Hide();
-        }
-        
-        // Rendering
+        // Render
         ImGui::Render();
         glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -263,12 +228,136 @@ namespace ImGuiDialogs {
             ImGui_ImplOpenGL3_RenderDrawData(draw_data);
         }
         
-        SwapBuffers(g_engine.hdc);
+        SwapBuffers(dialog->hdc);
     }
     
-    // Utility functions for your dialog callbacks
+    bool Initialize(HWND parent) {
+        g_state.parent = parent;
+        
+        // Register window class for dialog windows
+        WNDCLASSEXW wc;
+        memset(&wc, 0, sizeof(wc));
+        wc.cbSize = sizeof(WNDCLASSEXW);
+        wc.style = CS_OWNDC; // Important for OpenGL
+        wc.lpfnWndProc = DialogWndProc;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.lpszClassName = L"ImGuiDialog";
+        
+        if (!RegisterClassExW(&wc)) {
+            return false;
+        }
+        
+        // Setup Dear ImGui context (shared across all dialogs)
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        ImGuiIO& io = ImGui::GetIO();
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        
+        // Setup style
+        ImGui::StyleColorsDark();
+        
+        // Create individual dialog windows
+        if (!CreateDialogWindow(&g_state.properties, parent, "Properties", 500, 600)) {
+            return false;
+        }
+        
+        if (!CreateDialogWindow(&g_state.linkPoints, parent, "Link Points", 600, 500)) {
+            return false;
+        }
+        
+        // Initialize ImGui backends for each window
+        // We'll switch contexts as needed during rendering
+        wglMakeCurrent(g_state.properties.hdc, g_state.properties.hglrc);
+        if (!ImGui_ImplWin32_Init(g_state.properties.hwnd)) {
+            return false;
+        }
+        
+        if (!ImGui_ImplOpenGL3_Init("#version 130")) {
+            return false;
+        }
+        
+        g_state.initialized = true;
+        return true;
+    }
+    
+    void Shutdown() {
+        if (!g_state.initialized) return;
+        
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplWin32_Shutdown();
+        ImGui::DestroyContext();
+        
+        DestroyDialogWindow(&g_state.properties);
+        DestroyDialogWindow(&g_state.linkPoints);
+        
+        UnregisterClassW(L"ImGuiDialog", GetModuleHandle(NULL));
+        
+        // Reset state
+        g_state = GlobalState();
+    }
+    
+    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback, ImGuiDialogCallback linkPointsCallback) {
+        g_state.properties.callback = propertiesCallback;
+        g_state.linkPoints.callback = linkPointsCallback;
+    }
+    
+    void ShowProperties() {
+        if (!g_state.initialized) return;
+        ShowDialogWindow(&g_state.properties);
+    }
+    
+    void ShowLinkPoints() {
+        if (!g_state.initialized) return;
+        ShowDialogWindow(&g_state.linkPoints);
+    }
+    
+    void Hide() {
+        HideDialogWindow(&g_state.properties);
+        HideDialogWindow(&g_state.linkPoints);
+    }
+    
+    void HideProperties() {
+        HideDialogWindow(&g_state.properties);
+    }
+    
+    void HideLinkPoints() {
+        HideDialogWindow(&g_state.linkPoints);
+    }
+    
+    bool IsAnyDialogOpen() {
+        return g_state.properties.visible || g_state.linkPoints.visible;
+    }
+    
+    bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        // Check if message is for one of our dialog windows
+        if ((g_state.properties.hwnd && hwnd == g_state.properties.hwnd) ||
+            (g_state.linkPoints.hwnd && hwnd == g_state.linkPoints.hwnd)) {
+            return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
+        }
+        return false;
+    }
+    
+    void Render() {
+        if (!g_state.initialized) return;
+        
+        // Render each dialog in its own window
+        RenderDialogWindow(&g_state.properties);
+        RenderDialogWindow(&g_state.linkPoints);
+    }
+    
+    // Utility functions for your dialog callbacks - these create borderless ImGui windows
     bool BeginDialog(const char* title, bool* open) {
-        return ImGui::Begin(title, open);
+        // Create a borderless window that fills the entire Win32 window
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+        
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | 
+                                ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+                                ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                
+        return ImGui::Begin(title, open, flags);
     }
     
     void EndDialog() {
@@ -289,6 +378,13 @@ namespace ImGuiDialogs {
     
     void Text(const char* text) {
         ImGui::Text("%s", text);
+    }
+    
+    void TextFormatted(const char* fmt, ...) {
+        va_list args;
+        va_start(args, fmt);
+        ImGui::TextV(fmt, args);
+        va_end(args);
     }
     
     void Separator() {
