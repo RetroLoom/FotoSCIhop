@@ -117,12 +117,39 @@ namespace ImGuiDialogs {
             return false;
         }
         
+        // Calculate centered position relative to parent window
+        int dialogWidth = 500;
+        int dialogHeight = 600;
+        int x = 100; // Default fallback position
+        int y = 100;
+        
+        if (parent) {
+            RECT parentRect;
+            if (GetWindowRect(parent, &parentRect)) {
+                int parentWidth = parentRect.right - parentRect.left;
+                int parentHeight = parentRect.bottom - parentRect.top;
+                
+                // Center the dialog relative to the parent window
+                x = parentRect.left + (parentWidth - dialogWidth) / 2;
+                y = parentRect.top + (parentHeight - dialogHeight) / 2;
+                
+                // Make sure the dialog doesn't go off-screen
+                int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+                int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+                
+                if (x < 0) x = 0;
+                if (y < 0) y = 0;
+                if (x + dialogWidth > screenWidth) x = screenWidth - dialogWidth;
+                if (y + dialogHeight > screenHeight) y = screenHeight - dialogHeight;
+            }
+        }
+        
         // Create single window (hidden initially)
         g_engine.hwnd = CreateWindowW(
             wc.lpszClassName, 
             L"Dialog", 
             WS_POPUP | WS_BORDER | WS_CAPTION | WS_SYSMENU, 
-            100, 100, 500, 600, 
+            x, y, dialogWidth, dialogHeight,  // Use calculated centered position
             parent, 
             NULL, 
             wc.hInstance, 
