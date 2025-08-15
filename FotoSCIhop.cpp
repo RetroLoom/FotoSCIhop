@@ -14,6 +14,7 @@
 #include "FotoSCIhop.h"
 #define MAX_LOADSTRING 100
 #include "imgui_integration.h"
+#include "fotoscihop_styles.h"
 
 
 
@@ -3042,6 +3043,8 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
         return FALSE;
     }
 
+    FotoSCIhopStyles::Initialize();
+
     // Set up dialog callbacks
     ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog);
 
@@ -3079,6 +3082,7 @@ void exit_proc(HWND hwnd)
         hfDefault = NULL;  // Prevent double deletion
     }
 
+    FotoSCIhopStyles::Shutdown();
     ImGuiDialogs::Shutdown();
     
     DestroyWindow(hwnd);
