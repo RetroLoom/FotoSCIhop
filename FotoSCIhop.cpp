@@ -874,29 +874,6 @@ BOOL CLIFileImport(char BMPFileName[MAX_PATH])
    return TRUE;
 }
 
-
-BOOL DoImageConversion(char fileName[MAX_PATH])
-{
-	// char tempFile[32];
-	// sprintf(tempFile, "%s/temp", gAppPath);
-
-	char cmd[1024];
-
-	sprintf(cmd, "%s-pal-temp.bmp", fileName);
-	CLIFileExport(cmd);
-
-	sprintf(cmd, "%s/tools/SCIC/SCIC --for %d -t %d -c %s-pal-temp.bmp -f %s.png -o %s.bmp", gAppPath, colorLimit, tolerance, fileName, fileName, fileName);
-	system(cmd);
-
-	//sprintf(cmd, "%s/tools/nconvert -quiet -overwrite -out bmp %s.bmp", gAppPath, fileName);
-	//system(cmd);
-
-	sprintf(cmd, "del %s-pal-temp.bmp", fileName);
-	system(cmd);
-	
-	return TRUE;
-}
-
 BOOL DoFileImport(HWND hwnd)
 {
 	OPENFILENAME ofn;
@@ -914,30 +891,6 @@ BOOL DoFileImport(HWND hwnd)
 	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
 	if (GetOpenFileName(&ofn))
 	{
-
-		if (stricmp(szBMPFileName + ofn.nFileExtension, "bmp"))
-		{
-
-			char fileName[sizeof(szBMPFileName)];
-			sprintf(fileName, szBMPFileName);
-
-			fileName[strlen(fileName) - 4] = '\0';
-
-			if (DialogBox(NULL,
-						  MAKEINTRESOURCE(IDD_IMPORT_IMAGE),
-						  hwnd,
-						  (DLGPROC)DoImportImageDlg) == IDOK)
-			{
-				DoImageConversion(fileName);
-				RedrawWindow(hWnd, NULL, NULL, RDW_UPDATENOW);
-			}
-
-			
-
-			// return TRUE;
-			sprintf(szBMPFileName, "%s.bmp", fileName);
-		}
-
 		FILE *tempfile = fopen(szBMPFileName, "rb");
 		if (tempfile)
 		{
@@ -1249,48 +1202,6 @@ BOOL DoPaletteExport(HWND hwnd)
 
    return TRUE; 
 }
-
-BOOL CALLBACK ChangeFrameSizeProc(HWND hwndDlg, 
-                             UINT message, 
-                             WPARAM wParam, 
-                             LPARAM lParam) 
-{ 
-    switch (message) 
-    { 
-        case WM_INITDIALOG:
-        {
-       		if (curCell)
-            {
-              // SetDlgItemInt(hwndDlg, IDDI_LEFT, (*curCell)->Left(), TRUE);
-               //SetDlgItemInt(hwndDlg, IDDI_TOP, (*curCell)->Top(), TRUE);
-               //SetDlgItemInt(hwndDlg, IDDI_WIDTH, (*curCell)->Width(), TRUE);
-              // SetDlgItemInt(hwndDlg, IDDI_HEIGHT, (*curCell)->Height(), TRUE);
-            }
-        
-            return TRUE;
-        }   
-    
-        case WM_COMMAND: 
-            switch (LOWORD(wParam)) 
-            { 
-                case IDOK: 
-                
-       		       if (curCell)
-                   {
-                       // (*curCell)->Left(GetDlgItemInt(hwndDlg, IDDI_LEFT, NULL, TRUE));
-                       // (*curCell)->Top(GetDlgItemInt(hwndDlg, IDDI_TOP, NULL, TRUE));
-                       // (*curCell)->Width(GetDlgItemInt(hwndDlg, IDDI_WIDTH, NULL, TRUE));
-                       // (*curCell)->Height(GetDlgItemInt(hwndDlg, IDDI_HEIGHT, NULL, TRUE));
-
-                   }
- 
-                case IDCANCEL: 
-                    EndDialog(hwndDlg, wParam); 
-                    return TRUE; 
-            } 
-    } 
-    return FALSE; 
-} 
 
 BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
 							   UINT message,
