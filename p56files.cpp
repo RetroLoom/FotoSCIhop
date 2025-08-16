@@ -814,16 +814,37 @@ int P56file32::modifyCells(int base, int delta)
         const int removeCount = -delta;
         const int startRemoveIndex = newCellCount; // Start removing from this index
         
-        // Clean up cells being removed
+        // Additional safety check - don't remove more cells than we have
+        if (removeCount >= currentCellCount) {
+            return 0; // This would remove all cells, which we don't allow
+        }
+        
+        // Clean up cells being removed with safer memory management
         for (int i = startRemoveIndex; i < currentCellCount; i++) {
             if (cells[i]) {
+                // Safe cleanup of cell image data
                 if (cells[i]->cellImage) {
                     CellImage* img = cells[i]->cellImage;
-                    delete[] img->image;
-                    delete[] img->pack;
-                    delete[] img->lines;
+                    
+                    // Safely delete each component with null checks
+                    if (img->image) {
+                        delete[] img->image;
+                        img->image = nullptr;
+                    }
+                    if (img->pack) {
+                        delete[] img->pack;
+                        img->pack = nullptr;
+                    }
+                    if (img->lines) {
+                        delete[] img->lines;
+                        img->lines = nullptr;
+                    }
+                    
                     delete img;
+                    cells[i]->cellImage = nullptr;
                 }
+                
+                // Delete the cell itself
                 delete cells[i];
                 cells[i] = nullptr;
             }
@@ -924,6 +945,26 @@ int P56file32::addCells(int base, int amount)
 
 int P56file32::deleteCell(int position)
 {
+    // Support both formats
+    if (format != _PIC_32 && format != _PIC_11) {
+        return 0;
+    }
+    
+    // Validate parameters
+    if (position < 0 || position >= getCellsCount()) {
+        return 0;
+    }
+    
+    // Don't allow deleting the last cell (ensure at least 1 remains)
+    if (getCellsCount() <= 1) {
+        return 0;
+    }
+    
+    // Additional safety check - ensure the cell exists
+    if (!cells[position]) {
+        return 0;
+    }
+    
     // Use the more robust deleteCells function
     return deleteCells(position, 1);
 }
@@ -946,7 +987,7 @@ int P56file32::deleteCells(int start, int count)
         return 0;
     }
     
-    // Don't allow deleting all cells
+    // Don't allow deleting all cells (ensure at least 1 remains)
     if (count >= cellCount) {
         return 0;
     }
@@ -957,16 +998,32 @@ int P56file32::deleteCells(int start, int count)
     }
     
     // For middle deletion, we need complex shifting
-    // Clean up memory for cells being deleted
+    // Clean up memory for cells being deleted with safer cleanup
     for (int i = start; i < start + count; i++) {
         if (cells[i]) {
+            // Safe cleanup of cell image data
             if (cells[i]->cellImage) {
                 CellImage* img = cells[i]->cellImage;
-                delete[] img->image;
-                delete[] img->pack;
-                delete[] img->lines;
+                
+                // Safely delete each component with null checks
+                if (img->image) {
+                    delete[] img->image;
+                    img->image = nullptr;
+                }
+                if (img->pack) {
+                    delete[] img->pack;
+                    img->pack = nullptr;
+                }
+                if (img->lines) {
+                    delete[] img->lines;
+                    img->lines = nullptr;
+                }
+                
                 delete img;
+                cells[i]->cellImage = nullptr;
             }
+            
+            // Delete the cell itself
             delete cells[i];
             cells[i] = nullptr;
         }
@@ -978,13 +1035,20 @@ int P56file32::deleteCells(int start, int count)
         cells[start + i] = cells[start + count + i];
     }
     
-    // Clear pointers at the end
+    // Clear pointers at the end to prevent dangling references
     for (int i = cellCount - count; i < cellCount; i++) {
         cells[i] = nullptr;
     }
     
     // Update count using helper function
     setCellsCount(cellCount - count);
+    
+    // Final validation that we still have valid state
+    if (getCellsCount() < 1) {
+        // This should never happen due to our checks above, but safety first
+        setCellsCount(1);
+        return 0;
+    }
     
     return 1;
 }

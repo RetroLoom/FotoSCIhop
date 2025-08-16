@@ -4025,6 +4025,7 @@ void RenderPropertiesDialog() {
                                 // No cells left - set invalid index
                                 curCellIndex = -1;
                                 // Don't call ShowCell - handle empty state
+                                // This should never happen due to our "don't delete last cell" check
                             }
                         }
                     }
