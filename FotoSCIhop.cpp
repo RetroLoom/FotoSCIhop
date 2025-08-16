@@ -3622,6 +3622,289 @@ void RenderPropertiesDialog() {
         }
         PopStyleVar();
     }
+
+    // =========================================================================
+    // REFERENCE IMAGE SECTION WITH AUTO-APPLY
+    // =========================================================================
+    if (CollapsingHeader("Reference Image")) {
+        
+        // Current reference image data
+        static float refScaleX = 100.0f, refScaleY = 100.0f;
+        static char refBitmapName[_MAX_PATH] = "";
+        static int refXHot = 0, refYHot = 0;
+        static int refLinkPoint = 0, refLinkPointX = 0, refLinkPointY = 0;
+        static bool refPriority = false;
+        
+        // Original values for reset/cancel
+        static float originalRefScaleX = 100.0f, originalRefScaleY = 100.0f;
+        static char originalRefBitmapName[_MAX_PATH] = "";
+        static int originalRefXHot = 0, originalRefYHot = 0;
+        static int originalRefLinkPoint = 0, originalRefLinkPointX = 0, originalRefLinkPointY = 0;
+        static bool originalRefPriority = false;
+        
+        // Previous values for change detection
+        static float prevRefScaleX = 100.0f, prevRefScaleY = 100.0f;
+        static char prevRefBitmapName[_MAX_PATH] = "";
+        static int prevRefXHot = 0, prevRefYHot = 0;
+        static int prevRefLinkPoint = 0, prevRefLinkPointX = 0, prevRefLinkPointY = 0;
+        static bool prevRefPriority = false;
+        
+        static bool refNeedsRefresh = true;
+        static bool refEditingStarted = false;
+        static bool refHasChanges = false;
+        
+        // Refresh reference image data
+        if (refNeedsRefresh) {
+            refScaleX = originalRefScaleX = prevRefScaleX = gReferenceScaleX;
+            refScaleY = originalRefScaleY = prevRefScaleY = gReferenceScaleY;
+            strncpy(refBitmapName, gReferenceBM, _MAX_PATH - 1);
+            strncpy(originalRefBitmapName, gReferenceBM, _MAX_PATH - 1);
+            strncpy(prevRefBitmapName, gReferenceBM, _MAX_PATH - 1);
+            refBitmapName[_MAX_PATH - 1] = '\0';
+            originalRefBitmapName[_MAX_PATH - 1] = '\0';
+            prevRefBitmapName[_MAX_PATH - 1] = '\0';
+            
+            refXHot = originalRefXHot = prevRefXHot = gReferenceXHot;
+            refYHot = originalRefYHot = prevRefYHot = gReferenceYHot;
+            refLinkPoint = originalRefLinkPoint = prevRefLinkPoint = gReferenceLinkPoint;
+            refLinkPointX = originalRefLinkPointX = prevRefLinkPointX = gReferenceLinkPointX;
+            refLinkPointY = originalRefLinkPointY = prevRefLinkPointY = gReferenceLinkPointY;
+            refPriority = originalRefPriority = prevRefPriority = gReferencePriority;
+            
+            refNeedsRefresh = false;
+            refEditingStarted = false;
+            refHasChanges = false;
+        }
+
+        // Scale Settings
+        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Scale Settings:");  // Light blue header
+        
+        // Limit scale input to 3 digits (like original dialog)
+        PushItemWidth(120);
+        if (InputFloat("Scale X (%)", &refScaleX, 0.0f, 0.0f, 1)) refEditingStarted = true;
+        if (refScaleX < 0) refScaleX = 0;
+        if (refScaleX > 999) refScaleX = 999;
+        
+        if (InputFloat("Scale Y (%)", &refScaleY, 0.0f, 0.0f, 1)) refEditingStarted = true;
+        if (refScaleY < 0) refScaleY = 0;
+        if (refScaleY > 999) refScaleY = 999;
+        PopItemWidth();
+        
+        Separator();
+        
+        // Bitmap File
+        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Reference Bitmap:");  // Light blue header
+        if (InputText("Bitmap File", refBitmapName, _MAX_PATH)) refEditingStarted = true;
+        
+        Separator();
+        
+        // Hot Spot Settings
+        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Hot Spot:");  // Light blue header
+        
+        PushItemWidth(120);
+        // Limit hot spot values to 4 digits (like original dialog)
+        if (InputInt("X Hot", &refXHot)) refEditingStarted = true;
+        if (refXHot < -9999) refXHot = -9999;
+        if (refXHot > 9999) refXHot = 9999;
+        
+        if (InputInt("Y Hot", &refYHot)) refEditingStarted = true;
+        if (refYHot < -9999) refYHot = -9999;
+        if (refYHot > 9999) refYHot = 9999;
+        PopItemWidth();
+        
+        Separator();
+        
+        // Link Point Settings
+        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Link Point:");  // Light blue header
+        
+        PushItemWidth(120);
+        // Limit link point to 2 digits (like original dialog)
+        if (InputInt("Link Point Index", &refLinkPoint)) refEditingStarted = true;
+        if (refLinkPoint < 0) refLinkPoint = 0;
+        if (refLinkPoint > 99) refLinkPoint = 99;
+        
+        // Limit link point coordinates to 4 digits (like original dialog)
+        if (InputInt("Link Point X", &refLinkPointX)) refEditingStarted = true;
+        if (refLinkPointX < -9999) refLinkPointX = -9999;
+        if (refLinkPointX > 9999) refLinkPointX = 9999;
+        
+        if (InputInt("Link Point Y", &refLinkPointY)) refEditingStarted = true;
+        if (refLinkPointY < -9999) refLinkPointY = -9999;
+        if (refLinkPointY > 9999) refLinkPointY = 9999;
+        PopItemWidth();
+        
+        Separator();
+        
+        // Priority Setting
+        if (Checkbox("Priority", &refPriority)) refEditingStarted = true;
+        
+        // Auto-apply changes when values change
+        if (refEditingStarted && (
+            refScaleX != prevRefScaleX || refScaleY != prevRefScaleY ||
+            strcmp(refBitmapName, prevRefBitmapName) != 0 ||
+            refXHot != prevRefXHot || refYHot != prevRefYHot ||
+            refLinkPoint != prevRefLinkPoint || 
+            refLinkPointX != prevRefLinkPointX || refLinkPointY != prevRefLinkPointY ||
+            refPriority != prevRefPriority)) {
+            
+            // Apply changes immediately to global variables
+            gReferenceScaleX = refScaleX;
+            gReferenceScaleY = refScaleY;
+            strncpy(gReferenceBM, refBitmapName, _MAX_PATH - 1);
+            gReferenceBM[_MAX_PATH - 1] = '\0';
+            gReferenceXHot = refXHot;
+            gReferenceYHot = refYHot;
+            gReferenceLinkPoint = refLinkPoint;
+            gReferenceLinkPointX = refLinkPointX;
+            gReferenceLinkPointY = refLinkPointY;
+            gReferencePriority = refPriority;
+            
+            // Write to INI file (same as original dialog)
+            char buffer[16];
+            WritePrivateProfileStringA("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
+            
+            sprintf(buffer, "%d", gReferenceXHot);
+            WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
+            
+            sprintf(buffer, "%d", gReferenceYHot);
+            WritePrivateProfileStringA("reference", "referenceYHot", buffer, gConfigIni);
+
+            sprintf(buffer, "%f", gReferenceScaleX);
+            WritePrivateProfileStringA("reference", "referenceScaleX", buffer, gConfigIni);
+
+            sprintf(buffer, "%f", gReferenceScaleY);
+            WritePrivateProfileStringA("reference", "referenceScaleY", buffer, gConfigIni);
+
+            sprintf(buffer, "%d", gReferenceLinkPoint);
+            WritePrivateProfileStringA("reference", "referenceLinkPoint", buffer, gConfigIni);	
+
+            sprintf(buffer, "%d", gReferenceLinkPointX);
+            WritePrivateProfileStringA("reference", "referenceLinkPointX", buffer, gConfigIni);
+
+            sprintf(buffer, "%d", gReferenceLinkPointY);
+            WritePrivateProfileStringA("reference", "referenceLinkPointY", buffer, gConfigIni);
+
+            sprintf(buffer, "%d", gReferencePriority);
+            WritePrivateProfileStringA("reference", "referencePriority", buffer, gConfigIni);
+            
+            // Invalidate main window (same as original dialog)
+            InvalidateRgn(hWnd, NULL, true);
+            
+            // Update tracking variables
+            prevRefScaleX = refScaleX;
+            prevRefScaleY = refScaleY;
+            strncpy(prevRefBitmapName, refBitmapName, _MAX_PATH - 1);
+            prevRefBitmapName[_MAX_PATH - 1] = '\0';
+            prevRefXHot = refXHot;
+            prevRefYHot = refYHot;
+            prevRefLinkPoint = refLinkPoint;
+            prevRefLinkPointX = refLinkPointX;
+            prevRefLinkPointY = refLinkPointY;
+            prevRefPriority = refPriority;
+            
+            // Check if we have changes from original
+            refHasChanges = (refScaleX != originalRefScaleX || refScaleY != originalRefScaleY ||
+                           strcmp(refBitmapName, originalRefBitmapName) != 0 ||
+                           refXHot != originalRefXHot || refYHot != originalRefYHot ||
+                           refLinkPoint != originalRefLinkPoint || 
+                           refLinkPointX != originalRefLinkPointX || refLinkPointY != originalRefLinkPointY ||
+                           refPriority != originalRefPriority);
+            
+            if (refHasChanges) {
+                datasaved = false;
+            }
+        }
+        
+        // Reset and Cancel buttons (only show if we have changes or are editing)
+        if (refEditingStarted) {
+            Separator();
+            
+            // Show changed indicator with colors
+            if (refHasChanges) {
+                TextColored(1.0f, 0.8f, 0.3f, 1.0f, "* Reference image settings have been modified *");  // Orange
+            } else {
+                TextColored(0.7f, 0.7f, 0.7f, 1.0f, "No changes");  // Gray
+            }
+            
+            if (refHasChanges && ButtonColored("Reset to Original", 0.8f, 0.3f, 0.3f, 1.0f)) {  // Red button
+                refScaleX = originalRefScaleX;
+                refScaleY = originalRefScaleY;
+                strncpy(refBitmapName, originalRefBitmapName, _MAX_PATH - 1);
+                refBitmapName[_MAX_PATH - 1] = '\0';
+                refXHot = originalRefXHot;
+                refYHot = originalRefYHot;
+                refLinkPoint = originalRefLinkPoint;
+                refLinkPointX = originalRefLinkPointX;
+                refLinkPointY = originalRefLinkPointY;
+                refPriority = originalRefPriority;
+                
+                // Apply the reset values
+                gReferenceScaleX = refScaleX;
+                gReferenceScaleY = refScaleY;
+                strncpy(gReferenceBM, refBitmapName, _MAX_PATH - 1);
+                gReferenceBM[_MAX_PATH - 1] = '\0';
+                gReferenceXHot = refXHot;
+                gReferenceYHot = refYHot;
+                gReferenceLinkPoint = refLinkPoint;
+                gReferenceLinkPointX = refLinkPointX;
+                gReferenceLinkPointY = refLinkPointY;
+                gReferencePriority = refPriority;
+                
+                // Write reset values to INI
+                char buffer[16];
+                WritePrivateProfileStringA("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
+                sprintf(buffer, "%d", gReferenceXHot);
+                WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
+                sprintf(buffer, "%d", gReferenceYHot);
+                WritePrivateProfileStringA("reference", "referenceYHot", buffer, gConfigIni);
+                sprintf(buffer, "%f", gReferenceScaleX);
+                WritePrivateProfileStringA("reference", "referenceScaleX", buffer, gConfigIni);
+                sprintf(buffer, "%f", gReferenceScaleY);
+                WritePrivateProfileStringA("reference", "referenceScaleY", buffer, gConfigIni);
+                sprintf(buffer, "%d", gReferenceLinkPoint);
+                WritePrivateProfileStringA("reference", "referenceLinkPoint", buffer, gConfigIni);	
+                sprintf(buffer, "%d", gReferenceLinkPointX);
+                WritePrivateProfileStringA("reference", "referenceLinkPointX", buffer, gConfigIni);
+                sprintf(buffer, "%d", gReferenceLinkPointY);
+                WritePrivateProfileStringA("reference", "referenceLinkPointY", buffer, gConfigIni);
+                sprintf(buffer, "%d", gReferencePriority);
+                WritePrivateProfileStringA("reference", "referencePriority", buffer, gConfigIni);
+                
+                InvalidateRgn(hWnd, NULL, true);
+                
+                // Update tracking
+                prevRefScaleX = refScaleX;
+                prevRefScaleY = refScaleY;
+                strncpy(prevRefBitmapName, refBitmapName, _MAX_PATH - 1);
+                prevRefBitmapName[_MAX_PATH - 1] = '\0';
+                prevRefXHot = refXHot;
+                prevRefYHot = refYHot;
+                prevRefLinkPoint = refLinkPoint;
+                prevRefLinkPointX = refLinkPointX;
+                prevRefLinkPointY = refLinkPointY;
+                prevRefPriority = refPriority;
+                refHasChanges = false;
+                refEditingStarted = false;
+            }
+            
+            SameLine();
+            if (ButtonColored("Done Editing", 0.2f, 0.7f, 0.2f, 1.0f)) {  // Green button
+                refEditingStarted = false;
+                refHasChanges = false;
+                // Keep current values as new originals
+                originalRefScaleX = refScaleX;
+                originalRefScaleY = refScaleY;
+                strncpy(originalRefBitmapName, refBitmapName, _MAX_PATH - 1);
+                originalRefBitmapName[_MAX_PATH - 1] = '\0';
+                originalRefXHot = refXHot;
+                originalRefYHot = refYHot;
+                originalRefLinkPoint = refLinkPoint;
+                originalRefLinkPointX = refLinkPointX;
+                originalRefLinkPointY = refLinkPointY;
+                originalRefPriority = refPriority;
+            }
+        }
+    }
     
     // =========================================================================
     // MAIN BUTTONS
