@@ -108,7 +108,6 @@
 #define ID_IMMAGINE_ESPORTA             32775
 #define ID_IMPORTABMP                   32782
 #define ID_ESPORTABMP                   32783
-#define ID_INFO                         32784
 #define ID_CELLASUCCESSIVA              32786
 #define ID_CELLAPRECEDENTE              32787
 #define ID_CICLOPRECEDENTE              32788

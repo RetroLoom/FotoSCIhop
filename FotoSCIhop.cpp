@@ -46,8 +46,6 @@ HWND hPropertiesDialog = NULL;
 HWND hLinkPointDialog = NULL;
 
 void RenderPropertiesDialog();
-void RenderLinkPointsDialog();
-
 
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 {
@@ -368,7 +366,6 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 	  EnableMenuItem(menu, ID_SALVACOME, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_IMPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_ESPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
-	  EnableMenuItem(menu, ID_INFO, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, IDM_PROPERTIES, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED)); 
 	  EnableMenuItem(menu, IDM_REFERENCE, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED)); 
 	  EnableMenuItem(menu, IDM_LINKPOINTS, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED));
@@ -1707,142 +1704,6 @@ void DoLinkPointDialog(HWND hwnd)
     {
         // Failed to create dialog
     }
-}
-
-void DoPropertyBox(HWND hwnd)
-{
-	/*
-	char propstr[1024]="";
-
-	if (isPicture)
-	{
-		char tscreenres[64];
-		sprintf(tscreenres, "%d x %d", globalPicture->MaxWidth(), globalPicture->MaxHeight());
-		if (globalPicture->MaxHeight()==0)
-			switch (globalPicture->MaxWidth())
-			{
-			case 0:
-				strcat(tscreenres, " (320 x 200)");
-				break;
-			case 1:
-				strcat(tscreenres, " (640 x 480)");
-				break;
-			case 2:
-				strcat(tscreenres, " (640 x 400)");
-				break;
-			}
-		sprintf(propstr, INTERFACE_P56PROPSTR,
-						' ',' ',
-						globalPicture->CellsCount(),
-						(globalPicture->IsCompressed()?"":INTERFACE_NOTSTR),
-						tscreenres,
-						globalPicture->CellRecSize());
-						
-		if (globalPicture->format == _PIC_11)
-		{
-			sprintf(tscreenres, "\n%s%ld\n", INTERFACE_VECTORSIZESTR, globalPicture->Head.oldhead.VectorDataLenght);
-			strcat(propstr, tscreenres);
-			
-			sprintf(tscreenres, INTERFACE_PRIORITYSTR, globalPicture->Head.oldhead.nPriorities, globalPicture->Head.oldhead.priLineCount);
-			strcat(propstr, tscreenres);
-		}
-		
-		if (curCell)
-		{
-			CelHeaderPic *bCell = new CelHeaderPic;
-			bCell = (CelHeaderPic*)&(*curCell)->Head;
-
-            char tcell[256];
-            sprintf(tcell, INTERFACE_P56CELLPROPSTR,
-						' ',
-						curCellIndex+1,
-						' ',
-						//(*curCell)->Width(),(*curCell)->Height(),
-						bCell->xDim,bCell->yDim,
-						bCell->xHot, bCell->yHot,
-						bCell->skip,
-						bCell->compressType,
-						bCell->dataFlags,
-						bCell->priority,
-						bCell->xpos,
-						bCell->ypos
-						);
-
-			strcat(propstr, tcell);
-        }
-	}
-	else //isView
-	{
-		char tviewres[64], tscreenres[64], tcell[256];
-		sprintf(tviewres, "%d", globalView->Head.ViewSize);
-		switch (globalView->Head.ViewSize)
-		{
-		case 0:
-			strcat(tviewres, " (320 x 200)");
-			break;
-		case 1:
-			strcat(tviewres, " (640 x 480)");
-			break;
-		case 2:
-			strcat(tviewres, " (640 x 400)");
-			break;
-		}
-
-		sprintf(tscreenres, "%d x %d", globalView->Head.ResolutionX, globalView->Head.ResolutionY);
-		if ((globalView->Head.ResolutionX == 0) && (globalView->Head.ResolutionY == 0))
-		{
-			strcat(tscreenres, INTERFACE_SEEVIEWRESSTR);
-		}
-
-		Loop *tloop=globalView->loops[curLoopIndex];
-
-		sprintf(propstr, INTERFACE_PROPVIEWSTR,
-						' ', ' ',
-						globalView->Head.LoopCount,
-						globalView->Head.stripView,
-						(globalView->Head.Compressed?"":INTERFACE_NOTSTR),
-						tviewres,
-						globalView->Head.CellsCount,
-						globalView->Head.LoopRecSize,
-						globalView->Head.CellRecSize,
-						tscreenres,
-
-						' ',
-						curLoopIndex+1,
-						' ',
-						tloop->Head.numCels,
-						tloop->Head.altLoop,
-						(tloop->Head.flags?"":INTERFACE_NOTSTR),
-						tloop->Head.contLoop,
-                        tloop->Head.startCel,
-                        tloop->Head.endCel,
-                        tloop->Head.repeatCount,
-                        tloop->Head.stepSize
-						);
-		
-		if (curCell)
-		{
-			CelHeaderView *bCell = new CelHeaderView;
-			bCell = (CelHeaderView*)&(*curCell)->Head;
-
-			sprintf(tcell, INTERFACE_VIEWCELLPROPSTR,
-							' ',
-							curCellIndex+1,
-							' ',
-							bCell->xDim, bCell->yDim,
-							bCell->xHot, bCell->yHot,
-							bCell->skip,
-							bCell->compressType,
-							bCell->dataFlags
-							);
-			strcat(propstr, tcell);
-			
-		}
-	}
-	
-	MessageBox(hwnd, propstr, INTERFACE_PROPERTIES, MB_OK);
-
-	*/
 }
 
 // Reference Image Dialog
@@ -3205,10 +3066,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PROPERTIES:
             ImGuiDialogs::ShowProperties();
-            break;
-
-        case ID_INFO:
-            DoPropertyBox(hWnd);
             break;
 
         case IDM_LINKPOINTS:
