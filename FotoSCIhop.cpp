@@ -3435,7 +3435,11 @@ void RenderPropertiesDialog() {
         EndDialog();
         return;
     }
-    
+
+    // Calculate responsive widths
+    float availableWidth = GetContentRegionAvailWidth();
+    float buttonWidth = availableWidth * 0.22f; // 22% for each button
+
     // =========================================================================
     // FILE INFO SECTION (just adding colors)
     // =========================================================================
@@ -3502,6 +3506,7 @@ void RenderPropertiesDialog() {
         }
 
         // Single column layout for resolution
+        PushItemWidth(120);
         InputInt("Width", &resX);
         InputInt("Height", &resY);
         
@@ -3746,9 +3751,9 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // ELEMENT MANAGEMENT SECTION
+    // ADD / REMOVE SECTION
     // =========================================================================
-    if (FotoSCIhopStyles::BeginManagementSection("Element Management"))
+    if (FotoSCIhopStyles::BeginManagementSection("Add / Remove"))
     {
 
         // Determine what we're working with
@@ -3784,11 +3789,6 @@ void RenderPropertiesDialog() {
         // =====================================================================
         if (CollapsingHeader("Quick Operations", true))
         {
-
-            // Calculate responsive widths
-            float availableWidth = GetContentRegionAvailWidth();
-            float buttonWidth = availableWidth * 0.22f; // 22% for each button
-
             // Loop operations (V56 only)
             if (hasLoops)
             {
@@ -3811,25 +3811,6 @@ void RenderPropertiesDialog() {
                 if (IsItemHovered())
                 {
                     SetTooltip("Add a new loop after the current loop");
-                }
-
-                SameLine();
-                if (Button("Duplicate Loop", buttonWidth, 0))
-                {
-                    if (globalView->duplicateLoops(curLoopIndex, 1))
-                    {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                        datasaved = false;
-                        FotoSCIhopStyles::SuccessText("Loop duplicated successfully");
-                    }
-                    else
-                    {
-                        FotoSCIhopStyles::ErrorText("Failed to duplicate loop");
-                    }
-                }
-                if (IsItemHovered())
-                {
-                    SetTooltip("Create a copy of the current loop");
                 }
 
                 SameLine();
@@ -3905,37 +3886,6 @@ void RenderPropertiesDialog() {
             if (IsItemHovered())
             {
                 SetTooltip("Add a new empty cell after the current cell");
-            }
-
-            SameLine();
-            if (Button("Duplicate Cell", buttonWidth, 0))
-            {
-                bool success = false;
-                if (globalView)
-                {
-                    success = globalView->duplicateCells(curLoopIndex, curCellIndex, 1);
-                    if (success)
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                }
-                else if (globalPicture)
-                {
-                    success = globalPicture->duplicateCells(curCellIndex, 1);
-                    if (success)
-                        ShowCell(curCellIndex);
-                }
-                if (success)
-                {
-                    datasaved = false;
-                    FotoSCIhopStyles::SuccessText("Cell duplicated successfully");
-                }
-                else
-                {
-                    FotoSCIhopStyles::ErrorText("Failed to duplicate cell");
-                }
-            }
-            if (IsItemHovered())
-            {
-                SetTooltip("Create a copy of the current cell");
             }
 
             SameLine();
@@ -4057,434 +4007,6 @@ void RenderPropertiesDialog() {
             }
             EndGroup();
         }
-
-        // =====================================================================
-        // BATCH OPERATIONS
-        // =====================================================================
-        if (CollapsingHeader("Batch Operations"))
-        {
-
-            static int batchAmount = 5;
-
-            // Calculate responsive widths
-            float availableWidth = GetContentRegionAvailWidth();
-            float inputWidth = availableWidth * 0.15f;
-            float buttonWidth = availableWidth * 0.25f;
-
-            BeginGroup();
-            Text("Amount:");
-            SameLine();
-            PushItemWidth(inputWidth);
-            if (PropertyInt("##batchamount", &batchAmount, 1, 100))
-            {
-                // Value is automatically clamped
-            }
-            PopItemWidth();
-            if (IsItemHovered())
-            {
-                SetTooltip("Number of elements to add in batch operation");
-            }
-            EndGroup();
-
-            Spacing();
-
-            // Loop batch operations (V56 only)
-            if (hasLoops)
-            {
-                FotoSCIhopStyles::HeaderText("Batch Loop Operations:");
-
-                BeginGroup();
-                if (FotoSCIhopStyles::AddButton("Add Multiple Loops"))
-                {
-                    if (globalView->addLoops(curLoopIndex, batchAmount))
-                    {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                        datasaved = false;
-                        char msg[64];
-                        sprintf(msg, "Added %d loops successfully", batchAmount);
-                        FotoSCIhopStyles::SuccessText(msg);
-                    }
-                    else
-                    {
-                        FotoSCIhopStyles::ErrorText("Failed to add loops");
-                    }
-                }
-                if (IsItemHovered())
-                {
-                    char tooltip[128];
-                    sprintf(tooltip, "Add %d new loops after the current loop", batchAmount);
-                    SetTooltip(tooltip);
-                }
-
-                SameLine();
-                if (globalView->Head.view32.loopCount > batchAmount)
-                {
-                    if (FotoSCIhopStyles::RemoveButton("Remove Multiple Loops"))
-                    {
-                        if (globalView->addLoops(curLoopIndex, -batchAmount))
-                        {
-                            if (curLoopIndex >= globalView->Head.view32.loopCount && globalView->Head.view32.loopCount > 0)
-                            {
-                                curLoopIndex = globalView->Head.view32.loopCount - 1;
-                            }
-                            ShowLoopCell(curLoopIndex, curCellIndex);
-                            datasaved = false;
-                            char msg[64];
-                            sprintf(msg, "Removed %d loops successfully", batchAmount);
-                            FotoSCIhopStyles::SuccessText(msg);
-                        }
-                        else
-                        {
-                            FotoSCIhopStyles::ErrorText("Failed to remove loops");
-                        }
-                    }
-                    if (IsItemHovered())
-                    {
-                        char tooltip[128];
-                        sprintf(tooltip, "Remove %d loops starting from current position", batchAmount);
-                        SetTooltip(tooltip);
-                    }
-                }
-                else
-                {
-                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
-                    Button("Remove Multiple Loops", buttonWidth, 0);
-                    PopStyleVar();
-                    if (IsItemHovered())
-                    {
-                        char tooltip[128];
-                        sprintf(tooltip, "Cannot remove %d loops (only %d available)", batchAmount, globalView->Head.view32.loopCount);
-                        SetTooltip(tooltip);
-                    }
-                }
-                EndGroup();
-
-                Separator();
-            }
-
-            // Cell batch operations
-            FotoSCIhopStyles::HeaderText("Batch Cell Operations:");
-
-            BeginGroup();
-            if (FotoSCIhopStyles::AddButton("Add Multiple Cells"))
-            {
-                bool success = false;
-                if (globalView)
-                {
-                    success = globalView->addCells(curLoopIndex, curCellIndex, batchAmount);
-                    if (success)
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                }
-                else if (globalPicture)
-                {
-                    success = globalPicture->addCells(curCellIndex, batchAmount);
-                    if (success)
-                        ShowCell(curCellIndex);
-                }
-                if (success)
-                {
-                    datasaved = false;
-                    char msg[64];
-                    sprintf(msg, "Added %d cells successfully", batchAmount);
-                    FotoSCIhopStyles::SuccessText(msg);
-                }
-                else
-                {
-                    FotoSCIhopStyles::ErrorText("Failed to add cells");
-                }
-            }
-            if (IsItemHovered())
-            {
-                char tooltip[128];
-                sprintf(tooltip, "Add %d new empty cells after the current cell", batchAmount);
-                SetTooltip(tooltip);
-            }
-
-            SameLine();
-            bool canRemoveBatchCells = false;
-            if (globalView && curLoop && (*curLoop))
-            {
-                canRemoveBatchCells = ((*curLoop)->Head.numCels > batchAmount);
-            }
-            else if (globalPicture)
-            {
-                canRemoveBatchCells = (globalPicture->CellsCount() > batchAmount);
-            }
-
-            if (canRemoveBatchCells)
-            {
-                if (FotoSCIhopStyles::RemoveButton("Remove Multiple Cells"))
-                {
-                    bool success = false;
-                    if (globalView)
-                    {
-                        success = globalView->addCells(curLoopIndex, curCellIndex, -batchAmount);
-                        if (success)
-                        {
-                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0)
-                            {
-                                curCellIndex = (*curLoop)->Head.numCels - 1;
-                            }
-                            ShowLoopCell(curLoopIndex, curCellIndex);
-                        }
-                    }
-                    else if (globalPicture)
-                    {
-                        success = globalPicture->addCells(curCellIndex, -batchAmount);
-                        if (success)
-                        {
-                            if (curCellIndex >= globalPicture->CellsCount() && globalPicture->CellsCount() > 0)
-                            {
-                                curCellIndex = globalPicture->CellsCount() - 1;
-                            }
-                            ShowCell(curCellIndex);
-                        }
-                    }
-                    if (success)
-                    {
-                        datasaved = false;
-                        char msg[64];
-                        sprintf(msg, "Removed %d cells successfully", batchAmount);
-                        FotoSCIhopStyles::SuccessText(msg);
-                    }
-                    else
-                    {
-                        FotoSCIhopStyles::ErrorText("Failed to remove cells");
-                    }
-                }
-                if (IsItemHovered())
-                {
-                    char tooltip[128];
-                    sprintf(tooltip, "Remove %d cells starting from current position", batchAmount);
-                    SetTooltip(tooltip);
-                }
-            }
-            else
-            {
-                PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
-                Button("Remove Multiple Cells", buttonWidth, 0);
-                PopStyleVar();
-                if (IsItemHovered())
-                {
-                    int availableCells = 0;
-                    if (globalView && curLoop && (*curLoop))
-                    {
-                        availableCells = (*curLoop)->Head.numCels;
-                    }
-                    else if (globalPicture)
-                    {
-                        availableCells = globalPicture->CellsCount();
-                    }
-                    char tooltip[128];
-                    sprintf(tooltip, "Cannot remove %d cells (only %d available)", batchAmount, availableCells);
-                    SetTooltip(tooltip);
-                }
-            }
-            EndGroup();
-        }
-
-        // =====================================================================
-        // ADVANCED OPERATIONS
-        // =====================================================================
-        if (CollapsingHeader("Advanced Operations"))
-        {
-
-            // Calculate responsive widths
-            float availableWidth = GetContentRegionAvailWidth();
-            float inputWidth = availableWidth * 0.2f;
-
-            static int sourceIndex = 0;
-            static int targetIndex = 0;
-            static int swapIndexA = 0;
-            static int swapIndexB = 1;
-
-            // Loop operations (V56 only)
-            if (hasLoops)
-            {
-                FotoSCIhopStyles::HeaderText("Loop Advanced Operations:");
-
-                // Swap loops
-                BeginGroup();
-                Text("Swap Loops - Index A:");
-                SameLine();
-                PushItemWidth(inputWidth);
-                PropertyInt("##swapAloop", &swapIndexA, 0, globalView->Head.view32.loopCount - 1);
-                PopItemWidth();
-                SameLine();
-                Text("Index B:");
-                SameLine();
-                PushItemWidth(inputWidth);
-                PropertyInt("##swapBloop", &swapIndexB, 0, globalView->Head.view32.loopCount - 1);
-                PopItemWidth();
-                SameLine();
-                if (Button("Swap"))
-                {
-                    if (swapIndexA != swapIndexB &&
-                        swapIndexA >= 0 && swapIndexA < globalView->Head.view32.loopCount &&
-                        swapIndexB >= 0 && swapIndexB < globalView->Head.view32.loopCount)
-                    {
-                        if (globalView->swapLoops(swapIndexA, swapIndexB))
-                        {
-                            ShowLoopCell(curLoopIndex, curCellIndex);
-                            datasaved = false;
-                            FotoSCIhopStyles::SuccessText("Loops swapped successfully");
-                        }
-                        else
-                        {
-                            FotoSCIhopStyles::ErrorText("Failed to swap loops");
-                        }
-                    }
-                    else
-                    {
-                        FotoSCIhopStyles::ErrorText("Invalid loop indices for swap");
-                    }
-                }
-                if (IsItemHovered())
-                {
-                    SetTooltip("Swap the positions of two loops");
-                }
-                EndGroup();
-
-                // Reverse all loops
-                if (Button("Reverse All Loops"))
-                {
-                    int loopCount = globalView->Head.view32.loopCount;
-                    if (globalView->reverseLoops(0, loopCount))
-                    {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                        datasaved = false;
-                        FotoSCIhopStyles::SuccessText("All loops reversed successfully");
-                    }
-                    else
-                    {
-                        FotoSCIhopStyles::ErrorText("Failed to reverse loops");
-                    }
-                }
-                if (IsItemHovered())
-                {
-                    SetTooltip("Reverse the order of all loops in the view");
-                }
-
-                Separator();
-            }
-
-            // Cell advanced operations
-            FotoSCIhopStyles::HeaderText("Cell Advanced Operations:");
-
-            // Note about missing operations
-            BeginGroup();
-            FotoSCIhopStyles::DisabledText("Advanced cell operations (copy/move/swap) are temporarily unavailable");
-            FotoSCIhopStyles::InfoText("These operations require verification of the V56file function signatures:");
-            BulletText("copyCells() - needs correct parameter count");
-            BulletText("moveCells() - needs correct parameter count");
-            BulletText("swapCells() - needs correct parameter count");
-            BulletText("reverseCells() - needs correct parameter count");
-            EndGroup();
-
-            Spacing();
-            FotoSCIhopStyles::InfoText("Use Quick Operations and Batch Operations for element management");
-        }
-
-        // =====================================================================
-        // NAVIGATION HELPERS
-        // =====================================================================
-        if (CollapsingHeader("Navigation"))
-        {
-
-            FotoSCIhopStyles::HeaderText("Quick Navigation:");
-
-            BeginGroup();
-            if (hasLoops)
-            {
-                if (Button("First Loop"))
-                {
-                    ShowLoopCell(0, curCellIndex);
-                }
-                SameLine();
-                if (Button("Last Loop"))
-                {
-                    ShowLoopCell(globalView->Head.view32.loopCount - 1, curCellIndex);
-                }
-                SameLine();
-            }
-
-            if (Button("First Cell"))
-            {
-                if (globalView)
-                {
-                    ShowLoopCell(curLoopIndex, 0);
-                }
-                else if (globalPicture)
-                {
-                    ShowCell(0);
-                }
-            }
-            SameLine();
-            if (Button("Last Cell"))
-            {
-                if (globalView && curLoop && (*curLoop))
-                {
-                    ShowLoopCell(curLoopIndex, (*curLoop)->Head.numCels - 1);
-                }
-                else if (globalPicture)
-                {
-                    ShowCell(globalPicture->CellsCount() - 1);
-                }
-            }
-            EndGroup();
-
-            Spacing();
-
-            // Jump to specific indices
-            static int jumpLoopIndex = 0;
-            static int jumpCellIndex = 0;
-
-            if (hasLoops)
-            {
-                BeginGroup();
-                Text("Jump to Loop:");
-                SameLine();
-                PushItemWidth(80);
-                PropertyInt("##jumploopindex", &jumpLoopIndex, 0, globalView->Head.view32.loopCount - 1);
-                PopItemWidth();
-                SameLine();
-                if (Button("Go##loop"))
-                {
-                    ShowLoopCell(jumpLoopIndex, curCellIndex);
-                }
-                EndGroup();
-            }
-
-            BeginGroup();
-            Text("Jump to Cell:");
-            SameLine();
-            PushItemWidth(80);
-            int maxCellIndex = 0;
-            if (globalView && curLoop && (*curLoop))
-            {
-                maxCellIndex = (*curLoop)->Head.numCels - 1;
-            }
-            else if (globalPicture)
-            {
-                maxCellIndex = globalPicture->CellsCount() - 1;
-            }
-            PropertyInt("##jumpcellindex", &jumpCellIndex, 0, maxCellIndex);
-            PopItemWidth();
-            SameLine();
-            if (Button("Go##cell"))
-            {
-                if (globalView)
-                {
-                    ShowLoopCell(curLoopIndex, jumpCellIndex);
-                }
-                else if (globalPicture)
-                {
-                    ShowCell(jumpCellIndex);
-                }
-            }
-            EndGroup();
-        }
-
         FotoSCIhopStyles::EndSection();
     }
     
@@ -4505,24 +4027,24 @@ void RenderPropertiesDialog() {
             
             // Current link point data
             static int linkCount = 0;
-            static int linkX[12] = {0};
-            static int linkY[12] = {0};
-            static int linkPri[12] = {0};
-            static int linkType[12] = {0};
+            static int linkX[10] = {0};
+            static int linkY[10] = {0};
+            static int linkPri[10] = {0};
+            static int linkType[10] = {0};
             
             // Original values for reset/cancel
             static int originalLinkCount = 0;
-            static int originalLinkX[12] = {0};
-            static int originalLinkY[12] = {0};
-            static int originalLinkPri[12] = {0};
-            static int originalLinkType[12] = {0};
+            static int originalLinkX[10] = {0};
+            static int originalLinkY[10] = {0};
+            static int originalLinkPri[10] = {0};
+            static int originalLinkType[10] = {0};
             
             // Previous values for change detection
             static int prevLinkCount = 0;
-            static int prevLinkX[12] = {0};
-            static int prevLinkY[12] = {0};
-            static int prevLinkPri[12] = {0};
-            static int prevLinkType[12] = {0};
+            static int prevLinkX[10] = {0};
+            static int prevLinkY[10] = {0};
+            static int prevLinkPri[10] = {0};
+            static int prevLinkType[10] = {0};
             
             static bool linkNeedsRefresh = true;
             static bool linkEditingStarted = false;
@@ -4534,7 +4056,7 @@ void RenderPropertiesDialog() {
                 linkCount = originalLinkCount = prevLinkCount = bCell->linkTableCount;
                 
                 // Clear all arrays first
-                for (int i = 0; i < 12; i++) {
+                for (int i = 0; i < 10; i++) {
                     linkX[i] = originalLinkX[i] = prevLinkX[i] = 0;
                     linkY[i] = originalLinkY[i] = prevLinkY[i] = 0;
                     linkPri[i] = originalLinkPri[i] = prevLinkPri[i] = 0;
@@ -4542,7 +4064,7 @@ void RenderPropertiesDialog() {
                 }
                 
                 // Fill in the actual link points
-                for (int i = 0; i < linkCount && i < 12; i++) {
+                for (int i = 0; i < linkCount && i < 10; i++) {
                     linkX[i] = originalLinkX[i] = prevLinkX[i] = (*curCell)->linkPoints[i].x;
                     linkY[i] = originalLinkY[i] = prevLinkY[i] = (*curCell)->linkPoints[i].y;
                     linkPri[i] = originalLinkPri[i] = prevLinkPri[i] = (*curCell)->linkPoints[i].priority;
@@ -4560,7 +4082,7 @@ void RenderPropertiesDialog() {
                 linkEditingStarted = true;
             }
             if (linkCount < 0) linkCount = 0;
-            if (linkCount > 12) linkCount = 12;
+            if (linkCount > 10) linkCount = 10;
             
             if (linkCount > 0) {
                 Separator();
@@ -4592,7 +4114,7 @@ void RenderPropertiesDialog() {
             // Check for changes and auto-apply
             bool valuesChanged = (linkCount != prevLinkCount);
             if (!valuesChanged) {
-                for (int i = 0; i < linkCount && i < 12; i++) {
+                for (int i = 0; i < linkCount && i < 10; i++) {
                     if (linkX[i] != prevLinkX[i] || linkY[i] != prevLinkY[i] || 
                         linkPri[i] != prevLinkPri[i] || linkType[i] != prevLinkType[i]) {
                         valuesChanged = true;
@@ -4608,7 +4130,7 @@ void RenderPropertiesDialog() {
                     
                     bCell->linkTableCount = linkCount;
                     
-                    for (int i = 0; i < bCell->linkTableCount && i < 12; i++) {
+                    for (int i = 0; i < bCell->linkTableCount && i < 10; i++) {
                         (*curCell)->linkPoints[i].x = linkX[i];
                         (*curCell)->linkPoints[i].y = linkY[i];
                         (*curCell)->linkPoints[i].priority = linkPri[i];
@@ -4621,7 +4143,7 @@ void RenderPropertiesDialog() {
                 
                 // Update previous values
                 prevLinkCount = linkCount;
-                for (int i = 0; i < 12; i++) {
+                for (int i = 0; i < 10; i++) {
                     prevLinkX[i] = linkX[i];
                     prevLinkY[i] = linkY[i];
                     prevLinkPri[i] = linkPri[i];
@@ -4631,7 +4153,7 @@ void RenderPropertiesDialog() {
                 // Check if we have changes from original
                 linkHasChanges = (linkCount != originalLinkCount);
                 if (!linkHasChanges) {
-                    for (int i = 0; i < linkCount && i < 12; i++) {
+                    for (int i = 0; i < linkCount && i < 10; i++) {
                         if (linkX[i] != originalLinkX[i] || linkY[i] != originalLinkY[i] || 
                             linkPri[i] != originalLinkPri[i] || linkType[i] != originalLinkType[i]) {
                             linkHasChanges = true;
@@ -4654,7 +4176,7 @@ void RenderPropertiesDialog() {
                 
                 if (linkHasChanges && Button("Reset Link Points")) {
                     linkCount = originalLinkCount;
-                    for (int i = 0; i < 12; i++) {
+                    for (int i = 0; i < 10; i++) {
                         linkX[i] = originalLinkX[i];
                         linkY[i] = originalLinkY[i];
                         linkPri[i] = originalLinkPri[i];
@@ -4666,7 +4188,7 @@ void RenderPropertiesDialog() {
                         CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
                         bCell->linkTableCount = linkCount;
                         
-                        for (int i = 0; i < bCell->linkTableCount && i < 12; i++) {
+                        for (int i = 0; i < bCell->linkTableCount && i < 10; i++) {
                             (*curCell)->linkPoints[i].x = linkX[i];
                             (*curCell)->linkPoints[i].y = linkY[i];
                             (*curCell)->linkPoints[i].priority = linkPri[i];
@@ -4677,7 +4199,7 @@ void RenderPropertiesDialog() {
                     
                     // Update tracking
                     prevLinkCount = linkCount;
-                    for (int i = 0; i < 12; i++) {
+                    for (int i = 0; i < 10; i++) {
                         prevLinkX[i] = linkX[i];
                         prevLinkY[i] = linkY[i];
                         prevLinkPri[i] = linkPri[i];
@@ -4693,7 +4215,7 @@ void RenderPropertiesDialog() {
                     linkHasChanges = false;
                     // Keep current values as new originals
                     originalLinkCount = linkCount;
-                    for (int i = 0; i < 12; i++) {
+                    for (int i = 0; i < 10; i++) {
                         originalLinkX[i] = linkX[i];
                         originalLinkY[i] = linkY[i];
                         originalLinkPri[i] = linkPri[i];
