@@ -1324,32 +1324,57 @@ int V56file::modifyLoops(int base, int delta)
         const int removeCount = -delta;
         const int startRemoveIndex = newLoopCount; // Start removing from this index
         
-        // Clean up loops being removed and update cell count
+        // Additional safety check - don't remove more loops than we have
+        if (removeCount >= currentLoopCount) {
+            return 0; // This would remove all loops, which we don't allow
+        }
+        
+        // Clean up loops being removed and update cell count with safer cleanup
         for (int j = startRemoveIndex; j < currentLoopCount; j++) {
             if (loops[j]) {
+                // Update cell count before deletion
                 Head.view32.celCount -= loops[j]->Head.numCels;
                 
-                // Delete all cells in this loop
+                // Delete all cells in this loop with safer cleanup
                 for (int i = 0; i < loops[j]->Head.numCels; i++) {
                     if (loops[j]->cells[i]) {
-                        // Delete cell image data
+                        // Safe cleanup of cell image data
                         if (loops[j]->cells[i]->cellImage) {
-                            delete[] loops[j]->cells[i]->cellImage->image;
-                            delete[] loops[j]->cells[i]->cellImage->pack;
-                            delete[] loops[j]->cells[i]->cellImage->lines;
-                            delete loops[j]->cells[i]->cellImage;
+                            CellImage* img = loops[j]->cells[i]->cellImage;
+                            
+                            // Safely delete each component with null checks
+                            if (img->image) {
+                                delete[] img->image;
+                                img->image = nullptr;
+                            }
+                            if (img->pack) {
+                                delete[] img->pack;
+                                img->pack = nullptr;
+                            }
+                            if (img->lines) {
+                                delete[] img->lines;
+                                img->lines = nullptr;
+                            }
+                            
+                            delete img;
+                            loops[j]->cells[i]->cellImage = nullptr;
                         }
                         
-                        // Delete cell
+                        // Delete the cell itself
                         delete loops[j]->cells[i];
                         loops[j]->cells[i] = nullptr;
                     }
                 }
                 
-                // Delete loop
+                // Delete the loop itself
                 delete loops[j];
                 loops[j] = nullptr;
             }
+        }
+        
+        // Final safety check to ensure we didn't go negative
+        if (Head.view32.celCount < 0) {
+            Head.view32.celCount = 0;
         }
     }
     
@@ -1461,6 +1486,21 @@ int V56file::addLoops(int base, int amount)
 
 int V56file::deleteLoop(int position)
 {
+    // Validate parameters
+    if (position < 0 || position >= Head.view32.loopCount) {
+        return 0;
+    }
+    
+    // Don't allow deleting the last loop (ensure at least 1 remains)
+    if (Head.view32.loopCount <= 1) {
+        return 0;
+    }
+    
+    // Additional safety check - ensure the loop exists
+    if (!loops[position]) {
+        return 0;
+    }
+    
     // Use the more robust deleteLoops function
     return deleteLoops(position, 1);
 }
@@ -1472,11 +1512,13 @@ int V56file::deleteLoops(int start, int count)
     }
     
     const int loopCount = Head.view32.loopCount;
+    
+    // Validate range
     if (start < 0 || start >= loopCount || start + count > loopCount) {
         return 0;
     }
     
-    // Don't allow deleting all loops
+    // Don't allow deleting all loops (ensure at least 1 remains)
     if (count >= loopCount) {
         return 0;
     }
@@ -1487,27 +1529,44 @@ int V56file::deleteLoops(int start, int count)
     }
     
     // For middle deletion, we need complex shifting
-    // Clean up memory for loops being deleted
+    // Clean up memory for loops being deleted with safer cleanup
     for (int i = start; i < start + count; i++) {
         if (loops[i]) {
-            // Delete all cells in this loop
+            // Delete all cells in this loop with safer cleanup
             for (int j = 0; j < loops[i]->Head.numCels; j++) {
                 if (loops[i]->cells[j]) {
+                    // Safe cleanup of cell image data
                     if (loops[i]->cells[j]->cellImage) {
                         CellImage* img = loops[i]->cells[j]->cellImage;
-                        delete[] img->image;
-                        delete[] img->pack;
-                        delete[] img->lines;
+                        
+                        // Safely delete each component with null checks
+                        if (img->image) {
+                            delete[] img->image;
+                            img->image = nullptr;
+                        }
+                        if (img->pack) {
+                            delete[] img->pack;
+                            img->pack = nullptr;
+                        }
+                        if (img->lines) {
+                            delete[] img->lines;
+                            img->lines = nullptr;
+                        }
+                        
                         delete img;
+                        loops[i]->cells[j]->cellImage = nullptr;
                     }
+                    
+                    // Delete the cell itself
                     delete loops[i]->cells[j];
+                    loops[i]->cells[j] = nullptr;
                 }
             }
             
-            // Update cell count
+            // Update cell count before deleting the loop
             Head.view32.celCount -= loops[i]->Head.numCels;
             
-            // Delete loop
+            // Delete the loop itself
             delete loops[i];
             loops[i] = nullptr;
         }
@@ -1519,13 +1578,25 @@ int V56file::deleteLoops(int start, int count)
         loops[start + i] = loops[start + count + i];
     }
     
-    // Clear pointers at the end
+    // Clear pointers at the end to prevent dangling references
     for (int i = loopCount - count; i < loopCount; i++) {
         loops[i] = nullptr;
     }
     
     // Update loop count
     Head.view32.loopCount -= count;
+    
+    // Final validation that we still have valid state
+    if (Head.view32.loopCount < 1) {
+        // This should never happen due to our checks above, but safety first
+        Head.view32.loopCount = 1;
+        return 0;
+    }
+    
+    // Ensure cell count doesn't go negative
+    if (Head.view32.celCount < 0) {
+        Head.view32.celCount = 0;
+    }
     
     return 1;
 }
