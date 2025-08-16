@@ -80,13 +80,7 @@
 #define ID_COLORI_ESPORTACOLORI         32819
 #define ID_PRIORITYBARS                 32824
 #define ID_FILE_NEXTFILE                32825
-#define ID_Menu                         32829
-#define IDM_MODIFY_MENU                 32830
 #define IDM_PROPERTIES                  32831
-#define IDM_MODIFY                      32832
-#define IDM_MODIFY_BOX                  32833
-#define ID_IMAGE_LINKPOINTS             32834
-#define ID_Menu32836                    32836
 #define IDM_REFERENCE                   32837
 #define ID_LINKS                        -200
 #define ID_NOPALETTE                    -121
