@@ -356,7 +356,6 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 	  EnableMenuItem(menu, ID_IMPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_ESPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, IDM_PROPERTIES, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED)); 
-	  EnableMenuItem(menu, IDM_REFERENCE, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED)); 
 	  EnableMenuItem(menu, ID_PRIORITYBARS, (((result==ID_NOERROR)&&(isPicture)) ?((globalPicture)->format == _PIC_11 ?MF_ENABLED:MF_ENABLED):MF_GRAYED));
 
 	  EnableMenuItem(menu, ID_PALETTE, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
@@ -1239,141 +1238,6 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
 		}
 	return FALSE; 
 } 
-
-// Reference Image Dialog
-void DoUpdateReferenceProc(HWND hwndDlg)
-{
-	SendDlgItemMessage(hwndDlg, IDC_REF_SCALE_X, EM_LIMITTEXT, (WPARAM)3, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_SCALE_Y, EM_LIMITTEXT, (WPARAM)3, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_XHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_YHOT_1, EM_LIMITTEXT, (WPARAM)4, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_LP_X_1, EM_LIMITTEXT, (WPARAM)4, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_LP_Y_1, EM_LIMITTEXT, (WPARAM)4, 0);
-	SendDlgItemMessage(hwndDlg, IDC_REF_LP_1, EM_LIMITTEXT, (WPARAM)2, 0);
-
-
-	SetDlgItemInt(hwndDlg, IDC_REF_SCALE_X, gReferenceScaleX, TRUE);
-	SetDlgItemInt(hwndDlg, IDC_REF_SCALE_Y, gReferenceScaleY, TRUE);
-
-	SetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM);
-	SetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, gReferenceXHot, TRUE);
-	SetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, gReferenceYHot, TRUE);
-
-	SetDlgItemInt(hwndDlg, IDC_REF_LP_1, gReferenceLinkPoint, TRUE);
-	
-	CelHeaderView *bCell = new CelHeaderView;
-	bCell = (CelHeaderView *)&(*curCell)->Head;
-
-	SetDlgItemInt(hwndDlg, IDC_REF_LP_X_1, gReferenceLinkPointX , TRUE);
-	SetDlgItemInt(hwndDlg, IDC_REF_LP_Y_1, gReferenceLinkPointY, TRUE);
-
-	CheckDlgButton(hwndDlg, IDC_REF_PRI_1, gReferencePriority ? BST_CHECKED : BST_UNCHECKED);
-	
-	InvalidateRgn(hReferenceDialog, NULL, true);
-}
-
-
-BOOL CALLBACK DoReferenceProc(HWND hwndDlg,
-									 UINT message,
-									 WPARAM wParam,
-									 LPARAM lParam)
-{
-	switch (message)
-	{
-	case WM_INITDIALOG:
-	{
-		
-		DoUpdateReferenceProc(hwndDlg);
-		
-		return TRUE;
-	}
-
-	case WM_COMMAND:
-		switch (LOWORD(wParam))
-		{
-		case IDOK:
-
-			gReferenceScaleX = GetDlgItemInt(hwndDlg, IDC_REF_SCALE_X, NULL, TRUE);
-			gReferenceScaleY = GetDlgItemInt(hwndDlg, IDC_REF_SCALE_Y, NULL, TRUE);
-
-			GetDlgItemTextA (hwndDlg, IDC_REF_NAME_1, gReferenceBM, _MAX_FNAME);
-			gReferenceXHot = GetDlgItemInt(hwndDlg, IDC_REF_XHOT_1, NULL, TRUE);
-			gReferenceYHot = GetDlgItemInt(hwndDlg, IDC_REF_YHOT_1, NULL, TRUE);
-
-			gReferenceLinkPoint = GetDlgItemInt(hwndDlg, IDC_REF_LP_1, NULL, TRUE);
-			gReferenceLinkPointX = GetDlgItemInt(hwndDlg, IDC_REF_LP_X_1, NULL, TRUE);
-			gReferenceLinkPointY = GetDlgItemInt(hwndDlg, IDC_REF_LP_Y_1, NULL, TRUE);
-
-			gReferencePriority = (IsDlgButtonChecked(hwndDlg, IDC_REF_PRI_1) == BST_CHECKED);
-
-			InvalidateRgn(hWnd, NULL, true);
-			
-			// write strings to ini
-			WritePrivateProfileStringA ("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
-			
-			// write integers to ini
-			char buffer[16];
-			sprintf(buffer, "%d", gReferenceXHot);
-			WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
-			
-			sprintf(buffer, "%d", gReferenceYHot);
-			WritePrivateProfileStringA ("reference", "referenceYHot", buffer, gConfigIni);
-
-			sprintf(buffer, "%f", gReferenceScaleX);
-			WritePrivateProfileStringA ("reference", "referenceScaleX", buffer, gConfigIni);
-
-			sprintf(buffer, "%f", gReferenceScaleY);
-			WritePrivateProfileStringA ("reference", "referenceScaleY", buffer, gConfigIni);
-
-			sprintf(buffer, "%d", gReferenceLinkPoint);
-			WritePrivateProfileStringA ("reference", "referenceLinkPoint", buffer, gConfigIni);	
-
-			sprintf(buffer, "%d", gReferenceLinkPointX);
-			WritePrivateProfileStringA ("reference", "referenceLinkPointX", buffer, gConfigIni);
-
-			sprintf(buffer, "%d", gReferenceLinkPointY);
-			WritePrivateProfileStringA ("reference", "referenceLinkPointY", buffer, gConfigIni);
-
-			sprintf(buffer, "%d", gReferencePriority);
-			WritePrivateProfileStringA ("reference", "referencePriority", buffer, gConfigIni);
-
-			//datasaved = false;
-
-			return TRUE;
-
-		case IDCANCEL:
-			EndDialog(hwndDlg, wParam);
-			return TRUE;
-
-		case WM_KEYDOWN:
-			if (wParam == VK_RETURN)
-			{
-				SendMessage(hwndDlg, WM_COMMAND, IDOK, 0);
-				return TRUE;
-			}
-			break;
-		}
-	}
-	return FALSE;
-}
-
-
-void DoReferenceDialog(HWND hwnd)
-{
-    hReferenceDialog = CreateDialog(NULL, 
-                                                MAKEINTRESOURCE(IDD_REFERENCE_IMG), 
-                                                hwnd, 
-                                                (DLGPROC)DoReferenceProc);
-    if (hReferenceDialog != NULL)
-    {
-        ShowWindow(hReferenceDialog, SW_SHOW);
-    }
-    else
-    {
-        // Failed to create dialog
-    }
-}
-
 
 int cliExport(char *name)
 {
@@ -2600,10 +2464,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PROPERTIES:
             ImGuiDialogs::ShowProperties();
-            break;
-
-        case IDM_REFERENCE:
-            DoReferenceDialog(hWnd);
             break;
                 
         case ID_PALETTE:

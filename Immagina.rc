@@ -89,22 +89,6 @@ BEGIN
         HORZGUIDE, 86
         HORZGUIDE, 107
     END
-
-    IDD_REFERENCE_IMG, DIALOG
-    BEGIN
-        LEFTMARGIN, 7
-        RIGHTMARGIN, 230
-        VERTGUIDE, 66
-        VERTGUIDE, 92
-        VERTGUIDE, 110
-        VERTGUIDE, 219
-        BOTTOMMARGIN, 105
-        HORZGUIDE, 14
-        HORZGUIDE, 27
-        HORZGUIDE, 46
-        HORZGUIDE, 76
-        HORZGUIDE, 94
-    END
 END
 #endif    // APSTUDIO_INVOKED
 
@@ -196,31 +180,6 @@ BEGIN
     EDITTEXT        IDC_POS_PRI,85,58,35,14,ES_AUTOHSCROLL
 END
 
-IDD_REFERENCE_IMG DIALOGEX 65236, 0, 237, 112
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-EXSTYLE WS_EX_TRANSPARENT
-CAPTION "Reference Images"
-FONT 8, "MS Shell Dlg", 400, 0, 0x0
-BEGIN
-    DEFPUSHBUTTON   "Apply",IDOK,110,87,50,14
-    PUSHBUTTON      "Close",IDCANCEL,169,87,50,14
-    EDITTEXT        IDC_REF_NAME_1,110,69,109,14,ES_AUTOHSCROLL,WS_EX_ACCEPTFILES
-    EDITTEXT        IDC_REF_XHOT_1,56,69,21,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_REF_YHOT_1,82,69,21,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_REF_SCALE_X,55,20,21,14,ES_AUTOHSCROLL | ES_NUMBER
-    EDITTEXT        IDC_REF_SCALE_Y,82,20,21,14,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "Scale",IDC_STATIC,23,23,18,8
-    LTEXT           "Bitmap",IDC_STATIC,23,72,22,8
-    LTEXT           "X",IDC_STATIC,62,10,8,8
-    LTEXT           "Y",IDC_STATIC,88,10,8,8
-    EDITTEXT        IDC_REF_LP_1,145,39,21,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_REF_LP_X_1,56,39,21,14,ES_AUTOHSCROLL
-    EDITTEXT        IDC_REF_LP_Y_1,82,39,21,14,ES_AUTOHSCROLL
-    LTEXT           "Link Point",IDC_STATIC,17,42,31,8
-    LTEXT           "View Link",IDC_STATIC,110,42,30,8
-    CONTROL         "Priority",IDC_REF_PRI_1,"Button",BS_AUTOCHECKBOX | WS_TABSTOP,35,89,39,10
-END
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -250,7 +209,6 @@ BEGIN
         MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI
         MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI
         MENUITEM SEPARATOR
-        MENUITEM "&Reference",                  IDM_REFERENCE, GRAYED
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES, GRAYED
         POPUP "Magnification"
         BEGIN
@@ -302,7 +260,6 @@ BEGIN
     "N",            ID_FILE_NEXTFILE,       VIRTKEY, CONTROL, NOINVERT
     "P",            IDM_PROPERTIES,         VIRTKEY, CONTROL, NOINVERT
     "T",            ID_PALETTE,             VIRTKEY, CONTROL, NOINVERT
-    "R",            IDM_REFERENCE,          VIRTKEY, CONTROL, NOINVERT
 END
 
 #endif    // English (United States) resources
