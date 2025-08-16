@@ -51,13 +51,37 @@ void RenderLinkPointsDialog();
 
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 {
+	// Validate loop index first
+	if (!globalView || newloop >= globalView->Head.view32.loopCount) {
+		return; // Invalid loop index
+	}
+	
+	// Validate that the loop exists
+	if (!globalView->loops[newloop]) {
+		return; // Loop is null
+	}
+	
+	// Validate cell index for this specific loop
+	if (newcell >= globalView->loops[newloop]->Head.numCels) {
+		// If cell index is too high, use the last cell in this loop
+		if (globalView->loops[newloop]->Head.numCels > 0) {
+			newcell = globalView->loops[newloop]->Head.numCels - 1;
+		} else {
+			newcell = 0; // Loop has no cells, use 0
+		}
+	}
+	
 	curLoopIndex = newloop;
 	
-
 	curLoop = &globalView->loops[newloop];
 	if (curLoop)
 	{		
-		curCell=&globalView->loops[newloop]->cells[newcell];
+		// Additional safety check before accessing cells
+		if (newcell < globalView->loops[newloop]->Head.numCels && globalView->loops[newloop]->cells[newcell]) {
+			curCell = &globalView->loops[newloop]->cells[newcell];
+		} else {
+			curCell = nullptr; // Set to null if cell doesn't exist
+		}
 		
 		if (curCell || (*curLoop)->Head.flags)
 		{					
@@ -66,11 +90,6 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 
 			HMENU menu = GetMenu(hWnd); 
 		
-			//EnableMenuItem(menu, ID_INGRANDIMENTO_NORMALE, ((*tloop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-			//EnableMenuItem(menu, ID_INGRANDIMENTO_X2, ((*tloop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-			//EnableMenuItem(menu, ID_INGRANDIMENTO_X3, ((*tloop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-			//EnableMenuItem(menu, ID_INGRANDIMENTO_X4, ((*tloop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-
 			EnableMenuItem(menu, ID_IMPORTABMP, ((*curLoop)->Head.flags ?MF_GRAYED :MF_ENABLED));
 			EnableMenuItem(menu, ID_ESPORTABMP, ((*curLoop)->Head.flags ?MF_GRAYED :MF_ENABLED));
 			EnableMenuItem(menu, ID_CICLOPRECEDENTE, MF_ENABLED);
@@ -139,22 +158,44 @@ void SetMagnify(int value)
 
 void ShowCell(unsigned char newcell)
 {
+	// Validate that we have a picture loaded
+	if (!globalPicture) {
+		return;
+	}
+	
+	// Validate cell index
+	int totalCells = globalPicture->CellsCount();
+	if (newcell >= totalCells) {
+		// If cell index is too high, use the last cell
+		if (totalCells > 0) {
+			newcell = totalCells - 1;
+		} else {
+			newcell = 0; // No cells, use 0
+		}
+	}
+	
+	// Additional bounds check
+	if (newcell < 0) {
+		newcell = 0;
+	}
+	
 	curCellIndex = newcell;
-	curCell=&globalPicture->cells[curCellIndex];
+	
+	// Validate that the cell exists before accessing it
+	if (newcell < globalPicture->CellsCount() && globalPicture->cells[newcell]) {
+		curCell = &globalPicture->cells[curCellIndex];
+	} else {
+		curCell = nullptr; // Set to null if cell doesn't exist
+		return; // Exit early if cell is invalid
+	}
+	
 	if (curCell)
 	{	
-		//globalPicture->SelectedCell(newcell);
-
 		HMENU menu = GetMenu(hWnd); 
 
-		//EnableMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_ENABLED);
-		//EnableMenuItem(menu, ID_INGRANDIMENTO_X2, MF_ENABLED);
-		//EnableMenuItem(menu, ID_INGRANDIMENTO_X3, MF_ENABLED);
-		//EnableMenuItem(menu, ID_INGRANDIMENTO_X4, MF_ENABLED);
-	
 		EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_ENABLED);
 		EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_ENABLED);
-		if (curCellIndex == globalPicture->CellsCount() -1)
+		if (curCellIndex == globalPicture->CellsCount() - 1)
 			EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
 		
 		if (curCellIndex == 0)
@@ -168,7 +209,6 @@ void ShowCell(unsigned char newcell)
 		}
 	}
 }
-
 
 BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 {
