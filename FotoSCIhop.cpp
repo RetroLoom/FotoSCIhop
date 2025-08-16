@@ -3380,10 +3380,6 @@ LRESULT CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 // ==== ImGui Dialog Callbacks ====
-// ==== Enhanced ImGui Dialog Callback with Auto-Apply ====
-// MINIMAL ENHANCED VERSION - Direct drop-in replacement for your existing dialog
-// This adds just color improvements and keeps everything else exactly the same
-
 void RenderPropertiesDialog() {
     using namespace ImGuiDialogs;
     
@@ -3710,162 +3706,751 @@ void RenderPropertiesDialog() {
     }
     
     // =========================================================================
-    // ELEMENT MANAGEMENT SECTION (keeping original, just adding colored headers)
+    // ELEMENT MANAGEMENT SECTION
     // =========================================================================
-    if (CollapsingHeader("Element Management")) {
-        
-        // Add Elements
-        if (CollapsingHeader("Add Elements", true)) {
-            
-            if (globalView) {
-                TextColored(0.3f, 1.0f, 0.3f, 1.0f, "Add Loops:");  // Green header
-                if (Button("Add 1 Loop")) {
-                    if (DoAddLoops(curLoopIndex, 1)) {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                        datasaved = false;
-                    }
-                }
-                SameLine();
-                if (Button("Add 5 Loops")) {
-                    if (DoAddLoops(curLoopIndex, 5)) {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                        datasaved = false;
-                    }
-                }
-                
-                Separator();
-            }
-            
-            TextColored(0.3f, 1.0f, 0.3f, 1.0f, "Add Cells:");  // Green header
-            if (Button("Add 1 Cell")) {
-                bool success = false;
-                if (globalView) {
-                    success = DoAddCells(curLoopIndex, curCellIndex, 1);
-                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
-                } else if (globalPicture) {
-                    success = DoAddCells(0, curCellIndex, 1);
-                    if (success) ShowCell(curCellIndex);
-                }
-                if (success) datasaved = false;
-            }
-            
-            SameLine();
-            if (Button("Add 5 Cells")) {
-                bool success = false;
-                if (globalView) {
-                    success = DoAddCells(curLoopIndex, curCellIndex, 5);
-                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
-                } else if (globalPicture) {
-                    success = DoAddCells(0, curCellIndex, 5);
-                    if (success) ShowCell(curCellIndex);
-                }
-                if (success) datasaved = false;
-            }
-            
-            SameLine();
-            if (Button("Add 10 Cells")) {
-                bool success = false;
-                if (globalView) {
-                    success = DoAddCells(curLoopIndex, curCellIndex, 10);
-                    if (success) ShowLoopCell(curLoopIndex, curCellIndex);
-                } else if (globalPicture) {
-                    success = DoAddCells(0, curCellIndex, 10);
-                    if (success) ShowCell(curCellIndex);
-                }
-                if (success) datasaved = false;
-            }
+    if (FotoSCIhopStyles::BeginManagementSection("Element Management"))
+    {
+
+        // Determine what we're working with
+        bool hasLoops = (globalView != nullptr);
+        bool hasCells = (globalView != nullptr || globalPicture != nullptr);
+
+        if (!hasCells)
+        {
+            FotoSCIhopStyles::ErrorText("No file loaded");
+            FotoSCIhopStyles::InfoText("Load a .v56 or .p56 file to begin editing");
+            FotoSCIhopStyles::EndSection();
+            return;
         }
-        
-        // Remove Elements
-        if (CollapsingHeader("Remove Elements")) {
-            
-            if (globalView) {
-                TextColored(1.0f, 0.3f, 0.3f, 1.0f, "Remove Loops:");  // Red header
-                if (Button("Remove 1 Loop")) {
-                    // Only allow if we have more than 1 loop
-                    if (globalView->Head.view32.loopCount > 1) {
-                        if (DoAddLoops(curLoopIndex, -1)) {
-                            // Adjust current loop index if needed
-                            if (curLoopIndex >= globalView->Head.view32.loopCount) {
-                                curLoopIndex = globalView->Head.view32.loopCount - 1;
-                            }
-                            ShowLoopCell(curLoopIndex, curCellIndex);
-                            datasaved = false;
-                        }
+
+        // Display current file info
+        char fileInfo[256];
+        if (globalView)
+        {
+            sprintf(fileInfo, "View File: %d loops, current loop %d (%d cells)",
+                    globalView->Head.view32.loopCount, curLoopIndex + 1,
+                    (curLoop && (*curLoop)) ? (*curLoop)->Head.numCels : 0);
+        }
+        else if (globalPicture)
+        {
+            sprintf(fileInfo, "Picture File: %d cells, current cell %d",
+                    globalPicture->CellsCount(), curCellIndex + 1);
+        }
+        FotoSCIhopStyles::InfoText(fileInfo);
+        Separator();
+
+        // =====================================================================
+        // QUICK OPERATIONS
+        // =====================================================================
+        if (CollapsingHeader("Quick Operations", true))
+        {
+
+            // Calculate responsive widths
+            float availableWidth = GetContentRegionAvailWidth();
+            float buttonWidth = availableWidth * 0.22f; // 22% for each button
+
+            // Loop operations (V56 only)
+            if (hasLoops)
+            {
+                FotoSCIhopStyles::HeaderText("Loop Operations:");
+
+                BeginGroup();
+                if (Button("Add Loop", buttonWidth, 0))
+                {
+                    if (globalView->addLoop(curLoopIndex))
+                    {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                        FotoSCIhopStyles::SuccessText("Loop added successfully");
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to add loop");
                     }
                 }
-                
+                if (IsItemHovered())
+                {
+                    SetTooltip("Add a new loop after the current loop");
+                }
+
                 SameLine();
-                if (Button("Remove 5 Loops")) {
-                    // Only allow if we have more than 5 loops
-                    if (globalView->Head.view32.loopCount > 5) {
-                        if (DoAddLoops(curLoopIndex, -5)) {
+                if (Button("Duplicate Loop", buttonWidth, 0))
+                {
+                    if (globalView->duplicateLoops(curLoopIndex, 1))
+                    {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                        FotoSCIhopStyles::SuccessText("Loop duplicated successfully");
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to duplicate loop");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    SetTooltip("Create a copy of the current loop");
+                }
+
+                SameLine();
+                if (globalView->Head.view32.loopCount > 1)
+                {
+                    if (FotoSCIhopStyles::RemoveButton("Remove Loop"))
+                    {
+                        if (globalView->deleteLoop(curLoopIndex))
+                        {
                             // Adjust current loop index if needed
-                            if (curLoopIndex >= globalView->Head.view32.loopCount) {
+                            if (curLoopIndex >= globalView->Head.view32.loopCount && globalView->Head.view32.loopCount > 0)
+                            {
                                 curLoopIndex = globalView->Head.view32.loopCount - 1;
                             }
                             ShowLoopCell(curLoopIndex, curCellIndex);
                             datasaved = false;
+                            FotoSCIhopStyles::SuccessText("Loop removed successfully");
+                        }
+                        else
+                        {
+                            FotoSCIhopStyles::ErrorText("Failed to remove loop");
                         }
                     }
+                    if (IsItemHovered())
+                    {
+                        SetTooltip("Remove the current loop");
+                    }
                 }
-                
+                else
+                {
+                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
+                    Button("Remove Loop", buttonWidth, 0);
+                    PopStyleVar();
+                    if (IsItemHovered())
+                    {
+                        SetTooltip("Cannot remove the last loop");
+                    }
+                }
+                EndGroup();
+
                 Separator();
             }
-            
-            TextColored(1.0f, 0.3f, 0.3f, 1.0f, "Remove Cells:");  // Red header
-            if (Button("Remove 1 Cell")) {
-                bool canRemove = false;
-                if (globalView && curLoop && (*curLoop)) {
-                    canRemove = ((*curLoop)->Head.numCels > 1);
-                } else if (globalPicture) {
-                    canRemove = (globalPicture->getCellsCount() > 1);
+
+            // Cell operations (both P56 and V56)
+            FotoSCIhopStyles::HeaderText("Cell Operations:");
+
+            BeginGroup();
+            if (Button("Add Cell", buttonWidth, 0))
+            {
+                bool success = false;
+                if (globalView)
+                {
+                    success = globalView->addCell(curLoopIndex, curCellIndex);
+                    if (success)
+                        ShowLoopCell(curLoopIndex, curCellIndex);
                 }
-                
-                if (canRemove) {
+                else if (globalPicture)
+                {
+                    success = globalPicture->addCell(curCellIndex);
+                    if (success)
+                        ShowCell(curCellIndex);
+                }
+                if (success)
+                {
+                    datasaved = false;
+                    FotoSCIhopStyles::SuccessText("Cell added successfully");
+                }
+                else
+                {
+                    FotoSCIhopStyles::ErrorText("Failed to add cell");
+                }
+            }
+            if (IsItemHovered())
+            {
+                SetTooltip("Add a new empty cell after the current cell");
+            }
+
+            SameLine();
+            if (Button("Duplicate Cell", buttonWidth, 0))
+            {
+                bool success = false;
+                if (globalView)
+                {
+                    success = globalView->duplicateCells(curLoopIndex, curCellIndex, 1);
+                    if (success)
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                }
+                else if (globalPicture)
+                {
+                    success = globalPicture->duplicateCells(curCellIndex, 1);
+                    if (success)
+                        ShowCell(curCellIndex);
+                }
+                if (success)
+                {
+                    datasaved = false;
+                    FotoSCIhopStyles::SuccessText("Cell duplicated successfully");
+                }
+                else
+                {
+                    FotoSCIhopStyles::ErrorText("Failed to duplicate cell");
+                }
+            }
+            if (IsItemHovered())
+            {
+                SetTooltip("Create a copy of the current cell");
+            }
+
+            SameLine();
+            bool canRemoveCell = false;
+            if (globalView && curLoop && (*curLoop))
+            {
+                canRemoveCell = ((*curLoop)->Head.numCels > 1);
+            }
+            else if (globalPicture)
+            {
+                canRemoveCell = (globalPicture->CellsCount() > 1);
+            }
+
+            if (canRemoveCell)
+            {
+                if (FotoSCIhopStyles::RemoveButton("Remove Cell"))
+                {
                     bool success = false;
-                    if (globalView) {
-                        success = DoAddCells(curLoopIndex, curCellIndex, -1);
-                        if (success) {
-                            // Adjust current cell index if needed
-                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0) {
+
+                    if (globalView)
+                    {
+                        // Store current counts before deletion
+                        int oldCellCount = (*curLoop)->Head.numCels;
+
+                        success = globalView->deleteCell(curLoopIndex, curCellIndex);
+
+                        if (success)
+                        {
+                            int newCellCount = (*curLoop)->Head.numCels;
+
+                            // Handle index adjustment more safely
+                            if (newCellCount > 0)
+                            {
+                                // If we deleted the last cell, move to the new last cell
+                                if (curCellIndex >= newCellCount)
+                                {
+                                    curCellIndex = newCellCount - 1;
+                                }
+                                // Ensure index is still valid
+                                if (curCellIndex < 0)
+                                {
+                                    curCellIndex = 0;
+                                }
+
+                                // Only show if we have a valid cell to show
+                                ShowLoopCell(curLoopIndex, curCellIndex);
+                            }
+                            else
+                            {
+                                // No cells left - set invalid index and handle accordingly
+                                curCellIndex = -1;
+                                // Don't call ShowLoopCell - maybe show empty state instead
+                                // ShowEmptyLoop(curLoopIndex); // If you have such a function
+                            }
+                        }
+                    }
+                    else if (globalPicture)
+                    {
+                        // Store current count before deletion
+                        int oldCellCount = globalPicture->CellsCount();
+
+                        success = globalPicture->deleteCell(curCellIndex);
+
+                        if (success)
+                        {
+                            int newCellCount = globalPicture->CellsCount();
+
+                            // Handle index adjustment more safely
+                            if (newCellCount > 0)
+                            {
+                                // If we deleted the last cell, move to the new last cell
+                                if (curCellIndex >= newCellCount)
+                                {
+                                    curCellIndex = newCellCount - 1;
+                                }
+                                // Ensure index is still valid
+                                if (curCellIndex < 0)
+                                {
+                                    curCellIndex = 0;
+                                }
+
+                                // Only show if we have a valid cell to show
+                                ShowCell(curCellIndex);
+                            }
+                            else
+                            {
+                                // No cells left - set invalid index
+                                curCellIndex = -1;
+                                // Don't call ShowCell - handle empty state
+                            }
+                        }
+                    }
+
+                    if (success)
+                    {
+                        datasaved = false;
+                        FotoSCIhopStyles::SuccessText("Cell removed successfully");
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to remove cell");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    SetTooltip("Remove the current cell");
+                }
+            }
+            else
+            {
+                PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
+                Button("Remove Cell", buttonWidth, 0);
+                PopStyleVar();
+                if (IsItemHovered())
+                {
+                    SetTooltip("Cannot remove the last cell");
+                }
+            }
+            EndGroup();
+        }
+
+        // =====================================================================
+        // BATCH OPERATIONS
+        // =====================================================================
+        if (CollapsingHeader("Batch Operations"))
+        {
+
+            static int batchAmount = 5;
+
+            // Calculate responsive widths
+            float availableWidth = GetContentRegionAvailWidth();
+            float inputWidth = availableWidth * 0.15f;
+            float buttonWidth = availableWidth * 0.25f;
+
+            BeginGroup();
+            Text("Amount:");
+            SameLine();
+            PushItemWidth(inputWidth);
+            if (PropertyInt("##batchamount", &batchAmount, 1, 100))
+            {
+                // Value is automatically clamped
+            }
+            PopItemWidth();
+            if (IsItemHovered())
+            {
+                SetTooltip("Number of elements to add in batch operation");
+            }
+            EndGroup();
+
+            Spacing();
+
+            // Loop batch operations (V56 only)
+            if (hasLoops)
+            {
+                FotoSCIhopStyles::HeaderText("Batch Loop Operations:");
+
+                BeginGroup();
+                if (FotoSCIhopStyles::AddButton("Add Multiple Loops"))
+                {
+                    if (globalView->addLoops(curLoopIndex, batchAmount))
+                    {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                        char msg[64];
+                        sprintf(msg, "Added %d loops successfully", batchAmount);
+                        FotoSCIhopStyles::SuccessText(msg);
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to add loops");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    char tooltip[128];
+                    sprintf(tooltip, "Add %d new loops after the current loop", batchAmount);
+                    SetTooltip(tooltip);
+                }
+
+                SameLine();
+                if (globalView->Head.view32.loopCount > batchAmount)
+                {
+                    if (FotoSCIhopStyles::RemoveButton("Remove Multiple Loops"))
+                    {
+                        if (globalView->addLoops(curLoopIndex, -batchAmount))
+                        {
+                            if (curLoopIndex >= globalView->Head.view32.loopCount && globalView->Head.view32.loopCount > 0)
+                            {
+                                curLoopIndex = globalView->Head.view32.loopCount - 1;
+                            }
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                            datasaved = false;
+                            char msg[64];
+                            sprintf(msg, "Removed %d loops successfully", batchAmount);
+                            FotoSCIhopStyles::SuccessText(msg);
+                        }
+                        else
+                        {
+                            FotoSCIhopStyles::ErrorText("Failed to remove loops");
+                        }
+                    }
+                    if (IsItemHovered())
+                    {
+                        char tooltip[128];
+                        sprintf(tooltip, "Remove %d loops starting from current position", batchAmount);
+                        SetTooltip(tooltip);
+                    }
+                }
+                else
+                {
+                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
+                    Button("Remove Multiple Loops", buttonWidth, 0);
+                    PopStyleVar();
+                    if (IsItemHovered())
+                    {
+                        char tooltip[128];
+                        sprintf(tooltip, "Cannot remove %d loops (only %d available)", batchAmount, globalView->Head.view32.loopCount);
+                        SetTooltip(tooltip);
+                    }
+                }
+                EndGroup();
+
+                Separator();
+            }
+
+            // Cell batch operations
+            FotoSCIhopStyles::HeaderText("Batch Cell Operations:");
+
+            BeginGroup();
+            if (FotoSCIhopStyles::AddButton("Add Multiple Cells"))
+            {
+                bool success = false;
+                if (globalView)
+                {
+                    success = globalView->addCells(curLoopIndex, curCellIndex, batchAmount);
+                    if (success)
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                }
+                else if (globalPicture)
+                {
+                    success = globalPicture->addCells(curCellIndex, batchAmount);
+                    if (success)
+                        ShowCell(curCellIndex);
+                }
+                if (success)
+                {
+                    datasaved = false;
+                    char msg[64];
+                    sprintf(msg, "Added %d cells successfully", batchAmount);
+                    FotoSCIhopStyles::SuccessText(msg);
+                }
+                else
+                {
+                    FotoSCIhopStyles::ErrorText("Failed to add cells");
+                }
+            }
+            if (IsItemHovered())
+            {
+                char tooltip[128];
+                sprintf(tooltip, "Add %d new empty cells after the current cell", batchAmount);
+                SetTooltip(tooltip);
+            }
+
+            SameLine();
+            bool canRemoveBatchCells = false;
+            if (globalView && curLoop && (*curLoop))
+            {
+                canRemoveBatchCells = ((*curLoop)->Head.numCels > batchAmount);
+            }
+            else if (globalPicture)
+            {
+                canRemoveBatchCells = (globalPicture->CellsCount() > batchAmount);
+            }
+
+            if (canRemoveBatchCells)
+            {
+                if (FotoSCIhopStyles::RemoveButton("Remove Multiple Cells"))
+                {
+                    bool success = false;
+                    if (globalView)
+                    {
+                        success = globalView->addCells(curLoopIndex, curCellIndex, -batchAmount);
+                        if (success)
+                        {
+                            if (curCellIndex >= (*curLoop)->Head.numCels && (*curLoop)->Head.numCels > 0)
+                            {
                                 curCellIndex = (*curLoop)->Head.numCels - 1;
                             }
                             ShowLoopCell(curLoopIndex, curCellIndex);
                         }
-                    } else if (globalPicture) {
-                        success = DoAddCells(0, curCellIndex, -1);
-                        if (success) {
-                            // Adjust current cell index if needed
-                            if (curCellIndex >= globalPicture->getCellsCount() && globalPicture->getCellsCount() > 0) {
-                                curCellIndex = globalPicture->getCellsCount() - 1;
+                    }
+                    else if (globalPicture)
+                    {
+                        success = globalPicture->addCells(curCellIndex, -batchAmount);
+                        if (success)
+                        {
+                            if (curCellIndex >= globalPicture->CellsCount() && globalPicture->CellsCount() > 0)
+                            {
+                                curCellIndex = globalPicture->CellsCount() - 1;
                             }
                             ShowCell(curCellIndex);
                         }
                     }
-                    if (success) datasaved = false;
+                    if (success)
+                    {
+                        datasaved = false;
+                        char msg[64];
+                        sprintf(msg, "Removed %d cells successfully", batchAmount);
+                        FotoSCIhopStyles::SuccessText(msg);
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to remove cells");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    char tooltip[128];
+                    sprintf(tooltip, "Remove %d cells starting from current position", batchAmount);
+                    SetTooltip(tooltip);
                 }
             }
-            
-            // ... (rest of remove buttons stay the same, just keeping your original code)
+            else
+            {
+                PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
+                Button("Remove Multiple Cells", buttonWidth, 0);
+                PopStyleVar();
+                if (IsItemHovered())
+                {
+                    int availableCells = 0;
+                    if (globalView && curLoop && (*curLoop))
+                    {
+                        availableCells = (*curLoop)->Head.numCels;
+                    }
+                    else if (globalPicture)
+                    {
+                        availableCells = globalPicture->CellsCount();
+                    }
+                    char tooltip[128];
+                    sprintf(tooltip, "Cannot remove %d cells (only %d available)", batchAmount, availableCells);
+                    SetTooltip(tooltip);
+                }
+            }
+            EndGroup();
         }
-        
-        // Custom Amount (keeping original)
-        if (CollapsingHeader("Custom Amount")) {
-            static int customAmount = 1;
-            
-            Text("Amount:");
+
+        // =====================================================================
+        // ADVANCED OPERATIONS
+        // =====================================================================
+        if (CollapsingHeader("Advanced Operations"))
+        {
+
+            // Calculate responsive widths
+            float availableWidth = GetContentRegionAvailWidth();
+            float inputWidth = availableWidth * 0.2f;
+
+            static int sourceIndex = 0;
+            static int targetIndex = 0;
+            static int swapIndexA = 0;
+            static int swapIndexB = 1;
+
+            // Loop operations (V56 only)
+            if (hasLoops)
+            {
+                FotoSCIhopStyles::HeaderText("Loop Advanced Operations:");
+
+                // Swap loops
+                BeginGroup();
+                Text("Swap Loops - Index A:");
+                SameLine();
+                PushItemWidth(inputWidth);
+                PropertyInt("##swapAloop", &swapIndexA, 0, globalView->Head.view32.loopCount - 1);
+                PopItemWidth();
+                SameLine();
+                Text("Index B:");
+                SameLine();
+                PushItemWidth(inputWidth);
+                PropertyInt("##swapBloop", &swapIndexB, 0, globalView->Head.view32.loopCount - 1);
+                PopItemWidth();
+                SameLine();
+                if (Button("Swap"))
+                {
+                    if (swapIndexA != swapIndexB &&
+                        swapIndexA >= 0 && swapIndexA < globalView->Head.view32.loopCount &&
+                        swapIndexB >= 0 && swapIndexB < globalView->Head.view32.loopCount)
+                    {
+                        if (globalView->swapLoops(swapIndexA, swapIndexB))
+                        {
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                            datasaved = false;
+                            FotoSCIhopStyles::SuccessText("Loops swapped successfully");
+                        }
+                        else
+                        {
+                            FotoSCIhopStyles::ErrorText("Failed to swap loops");
+                        }
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Invalid loop indices for swap");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    SetTooltip("Swap the positions of two loops");
+                }
+                EndGroup();
+
+                // Reverse all loops
+                if (Button("Reverse All Loops"))
+                {
+                    int loopCount = globalView->Head.view32.loopCount;
+                    if (globalView->reverseLoops(0, loopCount))
+                    {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                        datasaved = false;
+                        FotoSCIhopStyles::SuccessText("All loops reversed successfully");
+                    }
+                    else
+                    {
+                        FotoSCIhopStyles::ErrorText("Failed to reverse loops");
+                    }
+                }
+                if (IsItemHovered())
+                {
+                    SetTooltip("Reverse the order of all loops in the view");
+                }
+
+                Separator();
+            }
+
+            // Cell advanced operations
+            FotoSCIhopStyles::HeaderText("Cell Advanced Operations:");
+
+            // Note about missing operations
+            BeginGroup();
+            FotoSCIhopStyles::DisabledText("Advanced cell operations (copy/move/swap) are temporarily unavailable");
+            FotoSCIhopStyles::InfoText("These operations require verification of the V56file function signatures:");
+            BulletText("copyCells() - needs correct parameter count");
+            BulletText("moveCells() - needs correct parameter count");
+            BulletText("swapCells() - needs correct parameter count");
+            BulletText("reverseCells() - needs correct parameter count");
+            EndGroup();
+
+            Spacing();
+            FotoSCIhopStyles::InfoText("Use Quick Operations and Batch Operations for element management");
+        }
+
+        // =====================================================================
+        // NAVIGATION HELPERS
+        // =====================================================================
+        if (CollapsingHeader("Navigation"))
+        {
+
+            FotoSCIhopStyles::HeaderText("Quick Navigation:");
+
+            BeginGroup();
+            if (hasLoops)
+            {
+                if (Button("First Loop"))
+                {
+                    ShowLoopCell(0, curCellIndex);
+                }
+                SameLine();
+                if (Button("Last Loop"))
+                {
+                    ShowLoopCell(globalView->Head.view32.loopCount - 1, curCellIndex);
+                }
+                SameLine();
+            }
+
+            if (Button("First Cell"))
+            {
+                if (globalView)
+                {
+                    ShowLoopCell(curLoopIndex, 0);
+                }
+                else if (globalPicture)
+                {
+                    ShowCell(0);
+                }
+            }
             SameLine();
-            InputInt("##customamount", &customAmount);
-            
-            // (keeping all your original custom amount logic here...)
+            if (Button("Last Cell"))
+            {
+                if (globalView && curLoop && (*curLoop))
+                {
+                    ShowLoopCell(curLoopIndex, (*curLoop)->Head.numCels - 1);
+                }
+                else if (globalPicture)
+                {
+                    ShowCell(globalPicture->CellsCount() - 1);
+                }
+            }
+            EndGroup();
+
+            Spacing();
+
+            // Jump to specific indices
+            static int jumpLoopIndex = 0;
+            static int jumpCellIndex = 0;
+
+            if (hasLoops)
+            {
+                BeginGroup();
+                Text("Jump to Loop:");
+                SameLine();
+                PushItemWidth(80);
+                PropertyInt("##jumploopindex", &jumpLoopIndex, 0, globalView->Head.view32.loopCount - 1);
+                PopItemWidth();
+                SameLine();
+                if (Button("Go##loop"))
+                {
+                    ShowLoopCell(jumpLoopIndex, curCellIndex);
+                }
+                EndGroup();
+            }
+
+            BeginGroup();
+            Text("Jump to Cell:");
+            SameLine();
+            PushItemWidth(80);
+            int maxCellIndex = 0;
+            if (globalView && curLoop && (*curLoop))
+            {
+                maxCellIndex = (*curLoop)->Head.numCels - 1;
+            }
+            else if (globalPicture)
+            {
+                maxCellIndex = globalPicture->CellsCount() - 1;
+            }
+            PropertyInt("##jumpcellindex", &jumpCellIndex, 0, maxCellIndex);
+            PopItemWidth();
+            SameLine();
+            if (Button("Go##cell"))
+            {
+                if (globalView)
+                {
+                    ShowLoopCell(curLoopIndex, jumpCellIndex);
+                }
+                else if (globalPicture)
+                {
+                    ShowCell(jumpCellIndex);
+                }
+            }
+            EndGroup();
         }
+
+        FotoSCIhopStyles::EndSection();
     }
     
     // =========================================================================
     // LINK POINTS SECTION WITH AUTO-APPLY
     // =========================================================================
-    
+
     // Only show Link Points section for valid view files
     bool canShowLinkPoints = false;
     if (globalView && curCell && (*curCell) && curLoop && (*curLoop)) {

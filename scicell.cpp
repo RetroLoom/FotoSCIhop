@@ -42,12 +42,43 @@ void Cell::initializeMembers()
 
 void Cell::cleanup()
 {
-    if (cellImage->image) delete[] cellImage->image; 
-    if (cellImage->pack) delete[] cellImage->pack;
-    if (cellImage->lines) delete[] cellImage->lines; 
-    if (bmImage && (cellImage->image != bmImage)) delete[] bmImage;
-    if (bmInfo) delete bmInfo;
-    delete cellImage;
+    // Check if cellImage exists before accessing its members
+    if (cellImage) {
+        // Store bmImage comparison before we delete cellImage->image
+        unsigned char* originalImage = cellImage->image;
+        
+        // Safely delete cellImage components
+        if (cellImage->image) {
+            delete[] cellImage->image;
+            cellImage->image = nullptr;
+        }
+        
+        if (cellImage->pack) {
+            delete[] cellImage->pack;
+            cellImage->pack = nullptr;
+        }
+        
+        if (cellImage->lines) {
+            delete[] cellImage->lines;
+            cellImage->lines = nullptr;
+        }
+        
+        // Now safely handle bmImage - check if it's different from the original image
+        if (bmImage && (bmImage != originalImage)) {
+            delete[] bmImage;
+            bmImage = nullptr;
+        }
+        
+        // Delete the cellImage structure itself
+        delete cellImage;
+        cellImage = nullptr;
+    }
+    
+    // Clean up bmInfo
+    if (bmInfo) {
+        delete bmInfo;
+        bmInfo = nullptr;
+    }
 }
 
 void Cell::GetImage(BITMAPINFO **imhd, unsigned char **im) 
