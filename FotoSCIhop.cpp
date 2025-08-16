@@ -111,9 +111,6 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 
 			if (hPropertiesDialog)
 				DoUpdatePropertiesProc(hPropertiesDialog);
-
-			if (hLinkPointDialog)
-				DoUpdateLinkPointProc(hLinkPointDialog);
 		}
 	}
 }
@@ -368,7 +365,6 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 	  EnableMenuItem(menu, ID_ESPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, IDM_PROPERTIES, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED)); 
 	  EnableMenuItem(menu, IDM_REFERENCE, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED)); 
-	  EnableMenuItem(menu, IDM_LINKPOINTS, ((result==ID_NOERROR)&&(globalView) ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_PRIORITYBARS, (((result==ID_NOERROR)&&(isPicture)) ?((globalPicture)->format == _PIC_11 ?MF_ENABLED:MF_ENABLED):MF_GRAYED));
 
 	  EnableMenuItem(menu, ID_PALETTE, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
@@ -1593,117 +1589,6 @@ void DoModifyProperties(HWND hwnd)
 		{
 			// Failed to create dialog
 		}
-}
-
-BOOL CALLBACK DoLinkPointProc(HWND hwndDlg,
-									 UINT message,
-									 WPARAM wParam,
-									 LPARAM lParam)
-{
-	int selLoop = 0;
-	
-	if (globalView)
-		selLoop = curLoopIndex;
-	if (globalPicture)
-		selLoop = 0;
-
-	switch (message)
-	{
-	case WM_INITDIALOG:
-	{
-		
-		DoUpdateLinkPointProc(hwndDlg);
-		
-		return TRUE;
-	}
-
-	case WM_COMMAND:
-		switch (LOWORD(wParam))
-		{
-		case IDOK:
-
-
-			if (globalView)
-			{
-				if (curCell)
-				{
-					CelHeaderView *bCell;
-					bCell = (CelHeaderView*)&(*curCell)->Head;
-
-					bCell->linkTableCount = GetDlgItemInt(hwndDlg, IDC_LINK_COUNT, NULL, TRUE);
-
-					for (int i = 0; i < bCell->linkTableCount; i++)
-					{
-							(*curCell)->linkPoints[i].x = GetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, NULL, TRUE);
-							(*curCell)->linkPoints[i].y = GetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, NULL, TRUE);
-							(*curCell)->linkPoints[i].priority = GetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, NULL, TRUE);
-							(*curCell)->linkPoints[i].positionType = GetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, NULL, TRUE);
-					}
-				}
-
-				ShowLoopCell(curLoopIndex, curCellIndex); // refresh screen
-			}
-
-			datasaved = false;
-				
-			return TRUE;
-
-		case IDCANCEL:
-			EndDialog(hwndDlg, wParam);
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-void DoUpdateLinkPointProc(HWND hwndDlg)
-{
-	int selLoop = 0;
-	
-	if (globalView)
-		selLoop = curLoopIndex;
-	if (globalPicture)
-		selLoop = 0;
-
-			
-		if (globalView)
-		{			
-			if (!(*curLoop)->Head.flags)
-			{
-				CelHeaderView *bCell;
-				bCell = (CelHeaderView*)&(*curCell)->Head;
-				
-				SetDlgItemInt(hwndDlg, IDC_LINK_COUNT, bCell->linkTableCount, TRUE);
-
-				// link table
-				for (int i = 0; i < bCell->linkTableCount; i++)
-				{
-					SetDlgItemInt(hwndDlg, IDC_LINK_X_1 + i, (*curCell)->linkPoints[i].x, TRUE);
-					SetDlgItemInt(hwndDlg, IDC_LINK_Y_1 + i, (*curCell)->linkPoints[i].y, TRUE);
-					SetDlgItemInt(hwndDlg, IDC_LINK_PRI_1 + i, (*curCell)->linkPoints[i].priority, TRUE);
-					SetDlgItemInt(hwndDlg, IDC_LINK_TYPE_1 + i, (*curCell)->linkPoints[i].positionType, TRUE);
-				}
-			}
-			
-			InvalidateRgn(hLinkPointDialog, NULL, true);
-
-		}
-}
-
-void DoLinkPointDialog(HWND hwnd)
-{
-    hLinkPointDialog = CreateDialog(NULL, 
-                                                MAKEINTRESOURCE(IDD_LINKPOINTS), 
-                                                hwnd, 
-                                                (DLGPROC)DoLinkPointProc);
-    if (hLinkPointDialog != NULL)
-    {
-        ShowWindow(hLinkPointDialog, SW_SHOW);
-    }
-    else
-    {
-        // Failed to create dialog
-    }
 }
 
 // Reference Image Dialog
@@ -3066,10 +2951,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PROPERTIES:
             ImGuiDialogs::ShowProperties();
-            break;
-
-        case IDM_LINKPOINTS:
-            ImGuiDialogs::ShowLinkPoints();
             break;
 
         case IDM_REFERENCE:

@@ -104,7 +104,6 @@ int tolerance = 50;
 
 // Dialog update procedures
 void DoUpdatePropertiesProc(HWND hwndDlg);
-void DoUpdateLinkPointProc(HWND hwndDlg);
 
 // CLI and palette functions
 BOOL CLIPaletteImport(char *palette);
