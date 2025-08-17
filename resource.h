@@ -3,10 +3,8 @@
 // Used by Immagina.rc
 //
 #define ID_NOERROR                      0
-#define IDC_MYICON                      2
 #define IDD_IMMAGINA_DIALOG             102
 #define IDS_APP_TITLE                   103
-#define IDD_ABOUTBOX                    103
 #define IDM_ABOUT                       104
 #define IDM_EXIT                        105
 #define IDM_MANUAL                      106
