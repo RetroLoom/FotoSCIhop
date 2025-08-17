@@ -101,6 +101,8 @@ int tolerance = 50;
 // ============================================================================
 // FUNCTION DECLARATIONS
 // ============================================================================
+bool HandleCliCommands(char* cmdLine);
+void ParseAppPath(void);
 
 // CLI and palette functions
 BOOL CLIPaletteImport(char *palette);

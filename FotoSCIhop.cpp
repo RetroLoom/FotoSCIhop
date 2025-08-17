@@ -603,706 +603,349 @@ int DoSaveChangesDialog(HWND hwnd)
 	return btn;	
 }
 
-BOOL DoFileExport(HWND hwnd)
+// Common utility to validate a bitmap file header
+static bool ValidateBitmapHeader(FILE* file, BITMAPFILEHEADER& fileHeader, BITMAPINFOHEADER& infoHeader) {
+    fread(&fileHeader, sizeof(fileHeader), 1, file);
+    fread(&infoHeader, sizeof(infoHeader), 1, file);
+
+    if (fileHeader.bfType != 'MB' || infoHeader.biBitCount != 8 || infoHeader.biCompression != BI_RGB)
+        return false;
+
+    return true;
+}
+
+bool ExportCurrentCellBMP(const char* filename) {
+    if (!filename || !curCell || !(*curCell)) return false;
+
+    FILE* file = fopen(filename, "wb");
+    if (!file) return false;
+
+    const BITMAPINFO* info = (*curCell)->bmInfo;
+    const BITMAPINFOHEADER* hdr = &info->bmiHeader;
+
+    BITMAPFILEHEADER fileHeader = {};
+    fileHeader.bfType = 'MB';
+    fileHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD);
+    fileHeader.bfSize = fileHeader.bfOffBits + hdr->biSizeImage;
+
+    fwrite(&fileHeader, sizeof(fileHeader), 1, file);
+
+    BITMAPINFOHEADER localHdr;
+    memcpy(&localHdr, hdr, sizeof(BITMAPINFOHEADER));
+    localHdr.biHeight = abs(localHdr.biHeight);
+    fwrite(&localHdr, sizeof(localHdr), 1, file);
+    fwrite(info->bmiColors, sizeof(RGBQUAD), 256, file);
+
+    long rowWidth = hdr->biSizeImage / abs(hdr->biHeight);
+    for (int i = abs(hdr->biHeight) - 1; i >= 0; --i)
+        fwrite((uint8_t*)(*curCell)->bmImage + i * rowWidth, rowWidth, 1, file);
+
+    fclose(file);
+    return true;
+}
+
+bool ImportBMPToCurrentCell(const char* filename, bool applyPalette) {
+    if (!filename || !curCell || !(*curCell)) return false;
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) return false;
+
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+
+    if (!ValidateBitmapHeader(file, fileHeader, infoHeader)) {
+        fclose(file);
+        return false;
+    }
+
+    RGBQUAD palette[256];
+    fread(palette, sizeof(RGBQUAD), 256, file);
+
+    unsigned long height = abs(infoHeader.biHeight);
+    unsigned long width = infoHeader.biWidth;
+    unsigned long rowPadding = (4 - (width % 4)) % 4;
+    unsigned long rowSize = width + rowPadding;
+    unsigned long imageSize = rowSize * height;
+
+    fseek(file, fileHeader.bfOffBits, SEEK_SET);
+
+    uint8_t* imageData = new uint8_t[imageSize];
+    if (infoHeader.biHeight < 0) {
+        fread(imageData, imageSize, 1, file);
+    } else {
+        for (int i = height - 1; i >= 0; --i)
+            fread(imageData + i * rowSize, rowSize, 1, file);
+    }
+
+    BITMAPINFO* bmpInfo = (BITMAPINFO*)new uint8_t[sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD)];
+    memset(bmpInfo, 0, sizeof(BITMAPINFOHEADER) + 256 * sizeof(RGBQUAD));
+    bmpInfo->bmiHeader = infoHeader;
+    bmpInfo->bmiHeader.biHeight = -height;
+    bmpInfo->bmiHeader.biSizeImage = imageSize;
+
+    if (applyPalette)
+        memcpy(bmpInfo->bmiColors, palette, sizeof(palette));
+    else
+        memcpy(bmpInfo->bmiColors, (*curCell)->bmInfo->bmiColors, sizeof(palette));
+
+    (*curCell)->SetImage(bmpInfo, imageData);
+    datasaved = false;
+
+    fclose(file);
+    return true;
+}
+
+bool ImportPaletteFromBMP(const char* filename, Palette* targetPal) {
+    if (!filename || !targetPal) return false;
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) return false;
+
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+
+    if (!ValidateBitmapHeader(file, fileHeader, infoHeader)) {
+        fclose(file);
+        return false;
+    }
+
+    RGBQUAD palette[256];
+    fread(palette, sizeof(palette), 1, file);
+
+    for (int i = 0; i < 256; ++i) {
+        PalEntry entry;
+        PalEntry *pe = targetPal->GetPalEntry(i);
+        entry.red = palette[i].rgbRed;
+        entry.green = palette[i].rgbGreen;
+        entry.blue = palette[i].rgbBlue;
+        entry.remap = (pe != nullptr) ? pe->remap : 0;
+        targetPal->SetPalEntry(entry, i);
+    }
+
+    fclose(file);
+    return true;
+}
+
+// Tiny cross-compiler safe copy
+static void copy_path(char* dst, const char* src, size_t cap) {
+#ifdef _MSC_VER
+    strncpy_s(dst, cap, src ? src : "", _TRUNCATE);
+#else
+    if (!src) { dst[0] = '\0'; return; }
+    strncpy(dst, src, cap - 1);
+    dst[cap - 1] = '\0';
+#endif
+}
+
+// GUI or CLI: export current cell BMP.
+// If 'path' is null/empty => show Save dialog (GUI). Otherwise, export directly (CLI).
+BOOL ExportBitmapUnified(HWND hwnd, const char* path)
 {
-   OPENFILENAME ofn;
-   char szBMPFileName[MAX_PATH] = "";
+    char filePath[MAX_PATH] = "";
+    if (path && path[0]) {
+        copy_path(filePath, path, MAX_PATH);
+    } else {
+        OPENFILENAME ofn = {0};
+        ofn.lStructSize  = sizeof(ofn);
+        ofn.hwndOwner    = hwnd;
+        ofn.lpstrFilter  = INTERFACE_BMPFILTER;
+        ofn.lpstrFile    = filePath;
+        ofn.nMaxFile     = MAX_PATH;
+        ofn.lpstrDefExt  = "bmp";
+        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+        if (!GetSaveFileName(&ofn)) return FALSE; // cancel
+    }
 
-   ZeroMemory(&ofn, sizeof(ofn));
+    if (!ExportCurrentCellBMP(filePath)) {
+        if (hwnd) MessageBox(hwnd, ERR_CANTEXPORTBMP, ERR_TITLE, MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+    return TRUE;
+}
 
-   ofn.lStructSize = sizeof(ofn);
-   ofn.hwndOwner = hwnd;
-   ofn.lpstrFilter = INTERFACE_BMPFILTER;
-   ofn.lpstrFile = szBMPFileName;
-   ofn.nMaxFile = MAX_PATH;
-   ofn.lpstrDefExt = "bmp";
+// GUI or CLI: import BMP into current cell (applyPalette=true uses file palette).
+// If 'path' is null/empty => show Open dialog (GUI). Otherwise, import directly (CLI).
+BOOL ImportBitmapUnified(HWND hwnd, const char* path, BOOL applyPalette)
+{
+    char filePath[MAX_PATH] = "";
+    if (path && path[0]) {
+        copy_path(filePath, path, MAX_PATH);
+    } else {
+        OPENFILENAME ofn = {0};
+        ofn.lStructSize  = sizeof(ofn);
+        ofn.hwndOwner    = hwnd;
+        ofn.lpstrFilter  = INTERFACE_BMPFILTER;
+        ofn.lpstrFile    = filePath;
+        ofn.nMaxFile     = MAX_PATH;
+        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        if (!GetOpenFileName(&ofn)) return FALSE; // cancel
+    }
 
-   ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY |
-               OFN_OVERWRITEPROMPT;
-         
-   if(GetSaveFileName(&ofn))
-   {
-		FILE *tempfile = fopen(szBMPFileName,"wb");
-		if (tempfile)
-		{
-			BITMAPFILEHEADER tfileheader;
-			tfileheader.bfType='MB';
-			tfileheader.bfOffBits=sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+256*(sizeof(RGBQUAD));
-			tfileheader.bfSize=tfileheader.bfOffBits+(*curCell)->bmInfo->bmiHeader.biSizeImage;
-			tfileheader.bfReserved1=0;
-			tfileheader.bfReserved2=0;
+    if (!ImportBMPToCurrentCell(filePath, !!applyPalette)) {
+        if (hwnd) MessageBox(hwnd, ERR_CANTLOADFILE, ERR_TITLE, MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
 
-			fwrite(&tfileheader, sizeof(BITMAPFILEHEADER),1,tempfile);
-			BITMAPINFOHEADER tbmiheader;
-            memcpy(&tbmiheader, &((*curCell)->bmInfo->bmiHeader),sizeof(BITMAPINFOHEADER));
-            tbmiheader.biHeight = abs(tbmiheader.biHeight);
-   
-            fwrite(&tbmiheader,sizeof(BITMAPINFOHEADER),1,tempfile);
-			fwrite((*curCell)->bmInfo->bmiColors,256*sizeof(RGBQUAD),1,tempfile);
-			
-            long mywidth = tbmiheader.biSizeImage / tbmiheader.biHeight; 
-            
-            for (long i=tbmiheader.biHeight-1; i>=0; i--)
-                fwrite((void *)((unsigned long)(*curCell)->bmImage + i*mywidth),mywidth,1,tempfile);
+    datasaved = false;
+    if (hwnd) InvalidateRect(hwnd, NULL, TRUE);
+    return TRUE;
+}
 
-			fclose(tempfile);
-		} else
-		{
-           MessageBox(hWnd, ERR_CANTEXPORTBMP, ERR_TITLE,
-                            MB_OK | MB_ICONSTOP);
-           return FALSE;
+// GUI or CLI: import palette. If BMP path, uses ImportPaletteFromBMP;
+// otherwise tries Palette::loadPalette on file.
+// If 'path' is null/empty => show Open dialog (GUI). Otherwise, import directly (CLI).
+BOOL ImportPaletteUnified(HWND hwnd, const char* path)
+{
+    char filePath[MAX_PATH] = "";
+    if (path && path[0]) {
+        copy_path(filePath, path, MAX_PATH);
+    } else {
+        OPENFILENAME ofn = {0};
+        ofn.lStructSize  = sizeof(ofn);
+        ofn.hwndOwner    = hwnd;
+        ofn.lpstrFilter  = INTERFACE_PALINFILTER;
+        ofn.lpstrFile    = filePath;
+        ofn.nMaxFile     = MAX_PATH;
+        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        if (!GetOpenFileName(&ofn)) return FALSE; // cancel
+    }
+
+    Palette* pal = isPicture ? globalPicture->palSCI : globalView->palSCI;
+
+    // First try BMP-style palette import
+    if (ImportPaletteFromBMP(filePath, pal)) {
+        datasaved = false;
+        if (hwnd) InvalidateRect(hwnd, NULL, TRUE);
+        return TRUE;
+    }
+
+    // Otherwise try native palette load
+    FILE* f = fopen(filePath, "rb");
+    if (!f) {
+        if (hwnd) MessageBox(hwnd, ERR_CANTLOADPALETTE, ERR_TITLE, MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
+
+    Palette* newPal = new Palette;
+    fseek(f, 0, SEEK_END);
+    unsigned long sz = (unsigned long)ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    BOOL ok = FALSE;
+    if (newPal->loadPalette(f, sz)) {
+        if (isPicture) {
+            delete globalPicture->palSCI;
+            globalPicture->palSCI = newPal;
+            pal = globalPicture->palSCI;
+        } else {
+            delete globalView->palSCI;
+            globalView->palSCI = newPal;
+            pal = globalView->palSCI;
         }
+        ok = TRUE;
+    } else {
+        delete newPal;
+        if (hwnd) MessageBox(hwnd, ERR_CANTLOADPALETTE, ERR_TITLE, MB_OK | MB_ICONSTOP);
+    }
+    fclose(f);
 
-   }
+    if (!ok) return FALSE;
 
-   return TRUE;
+    datasaved = false;
+    if (hwnd) InvalidateRect(hwnd, NULL, TRUE);
+    return TRUE;
 }
 
-// Dhel
-BOOL CLIFileExport(char BMPFileName[MAX_PATH])
+// GUI or CLI: export current palette.
+// If 'path' is null/empty => show Save dialog (GUI). Otherwise, export directly (CLI).
+BOOL ExportPaletteUnified(HWND hwnd, const char* path)
 {
-   if(BMPFileName)
-   {
-		FILE *tempfile = fopen(BMPFileName,"wb");
-		if (tempfile)
-		{
-			BITMAPFILEHEADER tfileheader;
-			tfileheader.bfType='MB';
-			tfileheader.bfOffBits=sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+256*(sizeof(RGBQUAD));
-			tfileheader.bfSize=tfileheader.bfOffBits+(*curCell)->bmInfo->bmiHeader.biSizeImage;
-			tfileheader.bfReserved1=0;
-			tfileheader.bfReserved2=0;
+    char filePath[MAX_PATH] = "";
+    if (path && path[0]) {
+        copy_path(filePath, path, MAX_PATH);
+    } else {
+        OPENFILENAME ofn = {0};
+        ofn.lStructSize  = sizeof(ofn);
+        ofn.hwndOwner    = hwnd;
+        ofn.lpstrFilter  = INTERFACE_PALFILTER;
+        ofn.lpstrFile    = filePath;
+        ofn.nMaxFile     = MAX_PATH;
+        ofn.lpstrDefExt  = "pal";
+        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+        if (!GetSaveFileName(&ofn)) return FALSE; // cancel
+    }
 
-			fwrite(&tfileheader, sizeof(BITMAPFILEHEADER),1,tempfile);
-			BITMAPINFOHEADER tbmiheader;
-            memcpy(&tbmiheader, &((*curCell)->bmInfo->bmiHeader),sizeof(BITMAPINFOHEADER));
-            tbmiheader.biHeight = abs(tbmiheader.biHeight);
-   
-            fwrite(&tbmiheader,sizeof(BITMAPINFOHEADER),1,tempfile);
-			fwrite((*curCell)->bmInfo->bmiColors,256*sizeof(RGBQUAD),1,tempfile);
-			
-            long mywidth = tbmiheader.biSizeImage / tbmiheader.biHeight; 
-            
-            for (long i=tbmiheader.biHeight-1; i>=0; i--)
-                fwrite((void *)((unsigned long)(*curCell)->bmImage+ i*mywidth),mywidth,1,tempfile);
+    FILE* f = fopen(filePath, "wb");
+    if (!f) {
+        if (hwnd) MessageBox(hwnd, ERR_CANTEXPORTPALETTE, ERR_TITLE, MB_OK | MB_ICONSTOP);
+        return FALSE;
+    }
 
-			fclose(tempfile);
-		} 
-   }
+    if (isPicture) globalPicture->palSCI->WritePalette(f, true);
+    else           globalView->palSCI->WritePalette(f, true);
 
-   return TRUE;
+    fclose(f);
+    return TRUE;
 }
 
-// Dhel
-BOOL CLIFileImport(char BMPFileName[MAX_PATH])
+int cliExport(char* baseName)
 {
-   if(BMPFileName)
-   {
-		FILE *tempfile = fopen(BMPFileName,"rb");
-		if (tempfile)
-		{
-			BITMAPFILEHEADER tfh;	
-			fread(&tfh, sizeof(BITMAPFILEHEADER),1,tempfile);
-
-			if (tfh.bfType!='MB')
-			{
-				//MessageBox(hWnd, ERR_INVALIDBMP, ERR_TITLE,
-                 //           MB_OK | MB_ICONSTOP);
-				fclose(tempfile);
-				return FALSE;
-			}
-
-			BITMAPINFOHEADER tbih;
-			fread(&tbih,sizeof(BITMAPINFOHEADER),1,tempfile);
-
-			if (tbih.biBitCount!=8)
-			{
-				//MessageBox(hWnd, ERR_INVALIDCBITBMP, ERR_TITLE,
-                //            MB_OK | MB_ICONSTOP);
-				fclose(tempfile);
-				return FALSE;
-			}
-
-			if (tbih.biCompression != BI_RGB)
-			{
-				//MessageBox(hWnd, ERR_INVALIDCOMPBMP, ERR_TITLE,
-                //            MB_OK | MB_ICONSTOP);
-				fclose(tempfile);
-				return FALSE;
-			}
-			
-			RGBQUAD tctab[256];
-			fread(tctab,256*sizeof(RGBQUAD),1,tempfile);
-
-			bool remap = false;
-
-			/*
-			if (memcmp(tctab, (*curCell)->bmInfo->bmiColors, 256 * sizeof(RGBQUAD)))
-			{
-				int btn;
-
-				btn = MessageBox(hwnd, WARN_DIFFERENTPAL, WARN_ATTENTION,
-								 MB_APPLMODAL | MB_ICONQUESTION | MB_YESNOCANCEL);
-
-				if (btn == IDYES)
-				{
-					CLIPaletteImport(szBMPFileName);
-					memcpy((*curCell)->bmInfo->bmiColors, tctab, 256 * sizeof(RGBQUAD));
-				}
-
-				if (btn == IDCANCEL)
-					return FALSE;
-
-				// remap = true;
-			}
-			*/
-
-			/*
-			{
-				MessageBox(hWnd, ERR_DIFFERENTPALBIS, ERR_TITLE,
-						   MB_OK | MB_ICONEXCLAMATION);
-				// fclose(tempfile);
-				// return FALSE;
-			}
-			*/
-
-			// import palette automatically
-			if (memcmp(tctab, (*curCell)->bmInfo->bmiColors, 256*sizeof(RGBQUAD)))			
-				CLIPaletteImport (BMPFileName);
-
-			bool isBottomTop=(tbih.biHeight>0);
-
-			unsigned long newHeight = abs(tbih.biHeight);
-
-			unsigned long expectedsize = tbih.biWidth*newHeight;
-			int dwremainder = tbih.biWidth%4;
-			if (dwremainder)
-				expectedsize+= newHeight*(4-dwremainder); //bmp requires DWORD align for each scanline
-
-			fseek(tempfile, 0, SEEK_END);
-			unsigned long imsize = ftell(tempfile) -tfh.bfOffBits;
-
-			fseek(tempfile, tfh.bfOffBits, SEEK_SET);
-
-			if (expectedsize>imsize)//(expectedsize!=imsize)      changed to support Photoshop BMPs
-			{
-				//MessageBox(hWnd, ERR_INVALIDSIZEBMP, ERR_TITLE,
-                //            MB_OK | MB_ICONSTOP);
-				fclose(tempfile);
-				return FALSE;
-			}
-
-			unsigned long newwidth = tbih.biWidth + (dwremainder ?4-dwremainder :0);
-			unsigned char *timage = (unsigned char *) new char[imsize];
-			if (!isBottomTop)
-				fread(timage, imsize, 1, tempfile);
-			else
-				for (long i = newHeight-1; i>=0; i--)
-					fread(&(timage[newwidth*i]),newwidth,1,tempfile);
-
-			long tsizep = ((sizeof(BITMAPINFO)) + 256*(sizeof(RGBQUAD)));
-
-			BITMAPINFO *tbinfo = (BITMAPINFO *) new char[tsizep];
-
-			tbinfo->bmiHeader.biBitCount=8;
-			tbinfo->bmiHeader.biClrImportant=256;
-			tbinfo->bmiHeader.biClrUsed=256;
-			tbinfo->bmiHeader.biCompression=BI_RGB;
-			tbinfo->bmiHeader.biHeight=-newHeight; //so that it will be a top-down DIB
-			tbinfo->bmiHeader.biPlanes=1;
-			tbinfo->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-			tbinfo->bmiHeader.biSizeImage=imsize;
-			tbinfo->bmiHeader.biWidth=tbih.biWidth;
-			tbinfo->bmiHeader.biXPelsPerMeter=0; 
-			tbinfo->bmiHeader.biYPelsPerMeter=0;
-
-			for (int i = 0; i < 256; i++)
-					tbinfo->bmiColors[i] = (*curCell)->bmInfo->bmiColors[i];
-
-			if (curCell)
-			{
-				(*curCell)->SetImage(tbinfo, timage);
-	
-				//HMENU menu = GetMenu(hwnd);
-
-				//EnableMenuItem(menu, ID_SALVA, MF_ENABLED);
-				//datasaved = false;
-			}
-			else
-			{
-				delete[] timage;
-				delete[] tbinfo;
-			}
-
-			fclose(tempfile);
-
-			return TRUE;
-		}
-
-        //MessageBox(hwnd, ERR_CANTLOADFILE, ERR_TITLE,
-		//					MB_OK | MB_ICONSTOP);
-   }
-
-   return TRUE;
-}
-
-BOOL DoFileImport(HWND hwnd)
-{
-	OPENFILENAME ofn;
-	char szBMPFileName[MAX_PATH] = "";
-
-	ZeroMemory(&ofn, sizeof(OPENFILENAME));
-	// szFileName[0] = 0;
-
-	ofn.lStructSize = sizeof(ofn);
-	ofn.hwndOwner = hwnd;
-	ofn.lpstrFilter = INTERFACE_BMPFILTER;
-	ofn.lpstrFile = szBMPFileName;
-	ofn.nMaxFile = MAX_PATH;
-
-	ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-	if (GetOpenFileName(&ofn))
-	{
-		FILE *tempfile = fopen(szBMPFileName, "rb");
-		if (tempfile)
-		{
-			if (!stricmp(szBMPFileName + ofn.nFileExtension, "bmp"))
-			{
-				CLIFileImport (szBMPFileName);
-
-				InvalidateRect(hwnd, NULL, true);
-
-				datasaved = false;
-
-				//sprintf(cmd, "del %s", szBMPFileName);
-				//system(cmd);
-
-				return TRUE;
-			}
-		}
-
-		MessageBox(hwnd, ERR_CANTLOADFILE, ERR_TITLE,
-							MB_OK | MB_ICONSTOP);
-	}
-
-   return TRUE;
-}
-
-BOOL CLIPaletteImport(char *palette)
-{
-  FILE *tempfile = fopen(palette, "rb");
-  if (tempfile)
-  {
-	  Palette *tnewpal;
-
-	  // load a palette from a bitmap
-	  BITMAPFILEHEADER tfh;
-	  fread(&tfh, sizeof(BITMAPFILEHEADER), 1, tempfile);
-
-	  if (tfh.bfType != 'MB')
-	  {
-		  // MessageBox(hWnd, ERR_INVALIDBMP, ERR_TITLE,
-		  //		  MB_OK | MB_ICONSTOP);
-		  fclose(tempfile);
-		  return FALSE;
-	  }
-
-	  BITMAPINFOHEADER tbih;
-	  fread(&tbih, sizeof(BITMAPINFOHEADER), 1, tempfile);
-
-	  if (tbih.biBitCount != 8)
-	  {
-		 // MessageBox(hWnd, ERR_INVALIDCBITBMP, ERR_TITLE,
-		//			 MB_OK | MB_ICONSTOP);
-		  fclose(tempfile);
-		  return FALSE;
-	  }
-
-	  if (tbih.biCompression != BI_RGB)
-	  {
-		//  MessageBox(hWnd, ERR_INVALIDCOMPBMP, ERR_TITLE,
-		//			 MB_OK | MB_ICONSTOP);
-		  fclose(tempfile);
-		  return FALSE;
-	  }
-
-	  RGBQUAD tctab[256];
-	  fread(tctab, 256 * sizeof(RGBQUAD), 1, tempfile);
-
-	  if (isPicture)
-		  tnewpal = globalPicture->palSCI;
-	  else
-		  tnewpal = globalView->palSCI;
-
-	  for (int i = 0; i < 256; i++)
-	  {
-		  PalEntry *pe = tnewpal->GetPalEntry(i);
-		  PalEntry npe;
-		  npe.remap = (pe == NULL ? 0 : pe->remap);
-		  npe.blue = tctab[i].rgbBlue;
-		  npe.green = tctab[i].rgbGreen;
-		  npe.red = tctab[i].rgbRed;
-		  tnewpal->SetPalEntry(npe, i);
-	  }
-
-	  //(*curCell)->bmImage = 0;
-	  //(*curCell)->bmInfo = 0;
-
-	  if (isPicture)
-	  {
-		  // cycle for clearing images cache
-		  for (int i = 0; i < globalPicture->CellsCount(); i++)
-		  {
-			  globalPicture->cells[i]->setPalette(&tnewpal);
-		  }
-
-		  ShowCell(curCellIndex);
-	  }
-	  else
-	  {
-		  // cycle for clearing images cache
-		  for (int j = 0; j < globalView->Head.view32.loopCount; j++)
-		  {
-			Loop *tloop = globalView->loops[j];
-			  for (int i = 0; i < tloop->Head.numCels; i++)
-			  {
-				  globalView->loops[j]->cells[i]->setPalette(&tnewpal);
-			  }
-		  }
-
-		  Loop *tloop = globalView->loops[curLoopIndex];
-
-		  ShowLoopCell(curLoopIndex, curCellIndex);
-	  }
-
-	  datasaved = false;
-
-	  fclose(tempfile);
-	  return TRUE;
-  }
-
-   //MessageBox(hwnd, ERR_CANTLOADFILE, ERR_TITLE,
-	//		  MB_OK | MB_ICONSTOP);
-}
-
-BOOL DoPaletteImport(HWND hwnd)
-{
-   OPENFILENAME ofn;
-   char szPALFileName[MAX_PATH] = "";
-
-   ZeroMemory(&ofn, sizeof(OPENFILENAME));
-   //szFileName[0] = 0;
-
-   ofn.lStructSize = sizeof(ofn);
-   ofn.hwndOwner = hwnd;
-   ofn.lpstrFilter = INTERFACE_PALINFILTER; 
-   ofn.lpstrFile = szPALFileName;
-   ofn.nMaxFile = MAX_PATH;
-
-   ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-   if(GetOpenFileName(&ofn))
-   {
-		FILE *tempfile = fopen(szPALFileName,"rb");
-		if (tempfile)
-		{
-            Palette *tnewpal;
-            if (!stricmp(szPALFileName+ofn.nFileExtension, "bmp"))
-			{
-                //load a palette from a bitmap
-                BITMAPFILEHEADER tfh;	
-                fread(&tfh, sizeof(BITMAPFILEHEADER),1,tempfile);
-
-                if (tfh.bfType!='MB')
-                {
-				  MessageBox(hWnd, ERR_INVALIDBMP, ERR_TITLE,
-                            MB_OK | MB_ICONSTOP);
-				  fclose(tempfile);
-				  return FALSE;
-			    }
-
-                BITMAPINFOHEADER tbih;
-			    fread(&tbih,sizeof(BITMAPINFOHEADER),1,tempfile);
-
-			    if (tbih.biBitCount!=8)
-			    {
-				  MessageBox(hWnd, ERR_INVALIDCBITBMP, ERR_TITLE,
-                            MB_OK | MB_ICONSTOP);
-				  fclose(tempfile);
-				  return FALSE;
-			    }
-
-			    if (tbih.biCompression != BI_RGB)
-			    {
-				  MessageBox(hWnd, ERR_INVALIDCOMPBMP, ERR_TITLE,
-                            MB_OK | MB_ICONSTOP);
-				  fclose(tempfile);
-				  return FALSE;
-			    }
-			
-			    RGBQUAD tctab[256];
-			    fread(tctab,256*sizeof(RGBQUAD),1,tempfile);
-                
-                if (isPicture)
-					tnewpal = globalPicture->palSCI;
-                else
-                    tnewpal = globalView->palSCI; 
-                                                      
-			    for (int i=0; i<256; i++)
-				{
-                   PalEntry *pe = tnewpal->GetPalEntry(i);
-                   PalEntry npe;
-                   npe.remap = (pe == NULL ? 0: pe->remap);
-                   npe.blue = tctab[i].rgbBlue;
-			       npe.green = tctab[i].rgbGreen;
-                   npe.red = tctab[i].rgbRed;
-                   tnewpal->SetPalEntry(npe, i);
+    if (!baseName) return 0;
+
+    if (globalView) {
+        for (int l = 0; l < globalView->Head.view32.loopCount; ++l) {
+            Loop* tloop = globalView->loops[l];
+            for (int c = 0; c < tloop->Head.numCels; ++c) {
+                ShowLoopCell(l, c);
+                if (!tloop->Head.flags) {
+                    char out[MAX_PATH];
+                    sprintf(out, "%s-%d-%d.bmp", baseName, l + 1, c + 1);
+                    ExportBitmapUnified(NULL, out);
                 }
-                
-                
-            } else {
-              tnewpal= new Palette;
-   
-              fseek(tempfile, 0, SEEK_END);
-              unsigned long tpsize = ftell(tempfile);
-              fseek(tempfile, 0, SEEK_SET);
-			  if (tnewpal->loadPalette(tempfile, tpsize))
-			  {
-				if (isPicture)
-				{
-					delete globalPicture->palSCI;
-					globalPicture->palSCI = tnewpal;
+            }
+        }
+    }
+
+    if (globalPicture) {
+        for (int c = 0; c < globalPicture->CellsCount(); ++c) {
+            ShowCell(c);
+            char out[MAX_PATH];
+            sprintf(out, "%s-%d.bmp", baseName, c + 1);
+            ExportBitmapUnified(NULL, out);
+        }
+    }
+    return 1;
+}
+
+int cliImport(char* baseName)
+{
+    if (!baseName) return 0;
+
+    if (globalView) {
+        for (int l = 0; l < globalView->Head.view32.loopCount; ++l) {
+            Loop* tloop = globalView->loops[l];
+            for (int c = 0; c < tloop->Head.numCels; ++c) {
+                ShowLoopCell(l, c);
+                if (!tloop->Head.flags) {
+                    char inPath[MAX_PATH];
+                    sprintf(inPath, "%s-%d-%d.bmp", baseName, l + 1, c + 1);
+                    ImportPaletteUnified(NULL, inPath);        // keep prior behavior
+                    ImportBitmapUnified(NULL, inPath, TRUE);
                 }
-				else
-				{
-					delete globalView->palSCI;
-					globalView->palSCI = tnewpal;	
-				}
-              }
-			  else
-			  {
-				delete tnewpal;
-				MessageBox(hwnd, ERR_CANTLOADPALETTE, ERR_TITLE,
-							MB_OK | MB_ICONSTOP);
-       
-                fclose(tempfile);
-			    return TRUE;
-				
-			  }
-
             }
-
-            (*curCell)->bmImage = 0;
-			(*curCell)->bmInfo = 0;
-   
-            if (isPicture)
-            {   
-                //cycle for clearing images cache
-                for (int i=0; i<globalPicture->CellsCount(); i++)
-				{
-						globalPicture->cells[i]->setPalette(&tnewpal);
-				}
-     
-                ShowCell(curCellIndex);                                                      
-            } else
-            {            
-                 //cycle for clearing images cache
-                for (int j=0; j<globalView->Head.view32.loopCount; j++)
-				{
-						Loop *tloop=globalView->loops[j];
-						for (int i=0; i < tloop->Head.numCels; i++)
-						{
-							tloop->cells[i]->setPalette(&tnewpal);
-							
-						}
-						
-				}
-				Loop *tloop = globalView->loops[curLoopIndex];
-
-				ShowLoopCell(curLoopIndex, curCellIndex);
-            }
-
-			datasaved = false;
-    
-			InvalidateRect(hwnd, NULL, true); 
-
-			fclose(tempfile);
-			return TRUE;
-		}
-
-		MessageBox(hwnd, ERR_CANTLOADFILE, ERR_TITLE,
-							MB_OK | MB_ICONSTOP);
-   }
-   return TRUE;
-}
-
-BOOL DoPaletteExport(HWND hwnd)
-{
-   OPENFILENAME ofn;
-   char szPALFileName[MAX_PATH] = "";
-
-   ZeroMemory(&ofn, sizeof(ofn));
-
-   ofn.lStructSize = sizeof(ofn);
-   ofn.hwndOwner = hwnd;
-   ofn.lpstrFilter = INTERFACE_PALFILTER;
-   ofn.lpstrFile = szPALFileName;
-   ofn.nMaxFile = MAX_PATH;
-   ofn.lpstrDefExt = "pal";
-
-   ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY |
-               OFN_OVERWRITEPROMPT;
-         
-   if(GetSaveFileName(&ofn))
-   {
-		FILE *tempfile = fopen(szPALFileName,"wb");
-		if (tempfile)
-		{
-			if (isPicture)
-				globalPicture->palSCI->WritePalette(tempfile, true);
-			else
-				globalView->palSCI->WritePalette(tempfile, true);
-
-			fclose(tempfile);
-		} else
-		{
-           MessageBox(hWnd, ERR_CANTEXPORTPALETTE, ERR_TITLE,
-                            MB_OK | MB_ICONSTOP);
-           return FALSE;
         }
+    }
 
-   }
-
-   return TRUE; 
-}
-
-BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
-							   UINT message,
-							   WPARAM wParam,
-							   LPARAM lParam)
-{ 
-	
-
-    switch (message) 
-    { 
-        case WM_INITDIALOG:
-        {
-       		if (curCell)
-            {
-               SetDlgItemInt(hwndDlg, IDC_IMPORT_CLIMIT, colorLimit, TRUE);
-               SetDlgItemInt(hwndDlg, IDC_IMPORT_TOLERANCE, tolerance, TRUE);
-              
-            }
-        
-            return TRUE;
+    if (globalPicture) {
+        for (int c = 0; c < globalPicture->CellsCount(); ++c) {
+            ShowCell(c);
+            char inPath[MAX_PATH];
+            sprintf(inPath, "%s-%d.bmp", baseName, c + 1);
+            ImportPaletteUnified(NULL, inPath);                // keep prior behavior
+            ImportBitmapUnified(NULL, inPath, TRUE);
         }
-
-		case WM_COMMAND:
-			switch (LOWORD(wParam))
-			{
-			case IDOK:
-
-				colorLimit = GetDlgItemInt(hwndDlg, IDC_IMPORT_CLIMIT, NULL, TRUE);
-				tolerance = GetDlgItemInt(hwndDlg, IDC_IMPORT_TOLERANCE, NULL, TRUE);
-
-			case IDCANCEL:
-				EndDialog(hwndDlg, wParam);
-				return TRUE;
-			}
-		}
-	return FALSE; 
-} 
-
-int cliExport(char *name)
-{
-	int retVal = 0;
-
-	if (globalView)
-	{
-		for (int l = 0; l < globalView->Head.view32.loopCount; l++)
-		{
-			Loop *tloop = globalView->loops[l];
-			for (int c = 0; c < tloop->Head.numCels; c++)
-			{
-				ShowLoopCell(l, c);
-
-				if (!tloop->Head.flags)
-				{
-					char cellName[MAX_PATH];
-
-					sprintf(cellName, "%s-%d-%d.bmp", name, l + 1, c + 1);
-
-					CLIFileExport(cellName);
-				}
-			}
-		}
-	}
-
-	if (globalPicture)
-	{
-		for (int c = 0; c < globalPicture->CellsCount(); c++)
-		{
-			ShowCell(c);
-
-			char cellName[MAX_PATH];
-
-			sprintf(cellName, "%s-%d.bmp", name, c + 1);
-
-			CLIFileExport(cellName);
-
-
-		}
-	}
-
-	retVal = 1;
-
-	return retVal;
-}
-
-int cliImport( char *name)
-{
-	int retVal = 0;
-
-	if (globalView)
-	{
-		for (int l = 0; l < globalView->Head.view32.loopCount; l++)
-		{
-			Loop *tloop = globalView->loops[l];
-
-			for (int c = 0; c < tloop->Head.numCels; c++)
-			{
-				ShowLoopCell(l, c);
-
-				if (!tloop->Head.flags)
-				{
-					char cellName[MAX_PATH];
-
-					sprintf(cellName, "%s-%d-%d.bmp", name, l + 1, c + 1);
-
-					CLIPaletteImport(cellName);
-					CLIFileImport(cellName);
-				}
-			}
-		}
-	}
-	if (globalPicture)
-	{
-
-		for (int c = 0; c < globalPicture->CellsCount(); c++)
-		{
-			ShowCell(c);
-
-			char cellName[MAX_PATH];
-
-			sprintf(cellName, "%s-%d.bmp", name, c + 1);
-
-			CLIPaletteImport(cellName);
-			CLIFileImport(cellName);
-		}
-	}
-
-	retVal = 1;
-
-	return retVal;
+    }
+    return 1;
 }
 
 int cliScale(int scaleX, int scaleY)
@@ -2071,192 +1714,199 @@ void LoadConfig ()
 typedef BOOL (WINAPI*Func)(HWND, char*, unsigned char, char*, char*);
 Func ExtractFromVolume;
 
+void ParseAppPath(void)
+{
+    GetModuleFileName(NULL, gAppPath, MAX_PATH);
+    char* lastBackslash = strrchr(gAppPath, '\\');
+    if (lastBackslash)
+        *lastBackslash = '\0';
+}
+
+typedef void (*CliHandler)(int argc, char** argv);
+
+typedef struct {
+    const char* name;
+    int minArgs;
+    CliHandler handler;
+    const char* description;
+} CliCommand;
+
+// === Command Handlers ===
+
+void HandleExport(int argc, char** argv) {
+    if (!ExportCurrentCellBMP(argv[2]))
+        fprintf(stderr, "[export] Failed to export to: %s\n", argv[2]);
+}
+
+void HandleImport(int argc, char** argv) {
+    if (!ImportBMPToCurrentCell(argv[2], true)) {
+        fprintf(stderr, "[import] Failed to import BMP: %s\n", argv[2]);
+        return;
+    }
+
+    if (argc >= 5)
+        cliScale(atoi(argv[3]), atoi(argv[4]));
+
+    if (argc >= 7)
+        cliSetHeader(atoi(argv[5]), atoi(argv[6]));
+
+    DoFileSave(hWnd);
+}
+
+void HandleScale(int argc, char** argv) {
+    cliScale(atoi(argv[2]), atoi(argv[3]));
+    DoFileSave(hWnd);
+}
+
+void HandleHeader(int argc, char** argv) {
+    cliSetHeader(atoi(argv[2]), atoi(argv[3]));
+    DoFileSave(hWnd);
+}
+
+void HandleAddCells(int argc, char** argv) {
+    DoAddCells(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
+    DoFileSave(hWnd);
+}
+
+void HandleAddLoops(int argc, char** argv) {
+    DoAddLoops(atoi(argv[2]), atoi(argv[3]));
+    DoFileSave(hWnd);
+}
+
+// === Command Table ===
+
+CliCommand cliCommands[] = {
+    { "export",   3, HandleExport,   "Export file to output path" },
+    { "import",   3, HandleImport,   "Import BMP with optional scale/header" },
+    { "scale",    4, HandleScale,    "Scale then save" },
+    { "header",   4, HandleHeader,   "Set header then save" },
+    { "addCells", 5, HandleAddCells, "Add animation cells" },
+    { "addLoops", 4, HandleAddLoops, "Add animation loops" },
+    { NULL, 0, NULL, NULL }
+};
+
+bool HandleCliCommands(char* cmdLine)
+{
+    const int MAX_ARGS = 16;
+    char* argv[MAX_ARGS] = {0};
+    int argc = 0;
+
+    char* token = strtok(cmdLine, " ");
+    while (token && argc < MAX_ARGS) {
+        argv[argc++] = token;
+        token = strtok(NULL, " ");
+    }
+
+    if (argc < 1) return false;
+
+    // Parse startup file
+    char startupfile[_MAX_PATH] = {0};
+    if (argv[0][0] == '"' && argv[0][strlen(argv[0]) - 1] == '"') {
+        strncpy(startupfile, argv[0] + 1, strlen(argv[0]) - 2);
+        startupfile[strlen(argv[0]) - 2] = '\0';
+    } else {
+        strncpy(startupfile, argv[0], sizeof(startupfile) - 1);
+    }
+
+    if (argc == 1) {
+        DoFileOpen(hWnd, startupfile, startupfile + strlen(startupfile) - 3);
+        fprintf(stderr, "[CLI] No command given. Opened file only.\n");
+        return true;
+    }
+
+    DoFileOpen(hWnd, startupfile, startupfile + strlen(startupfile) - 3);
+
+    const char* command = argv[1];
+    for (int i = 0; cliCommands[i].name; ++i) {
+        if (strcmp(cliCommands[i].name, command) == 0) {
+            if (argc < cliCommands[i].minArgs) {
+                fprintf(stderr, "[%s] Not enough args (have %d, need %d)\n", command, argc, cliCommands[i].minArgs);
+                return true;
+            }
+            cliCommands[i].handler(argc, argv);
+            return true;
+        }
+    }
+
+    fprintf(stderr, "[CLI Error] Unknown command: %s\n", command);
+    return true;
+}
+
 #ifdef __DEVC
-int STDCALL WinMain(HINSTANCE hInstance,
-                    HINSTANCE hPrevInstance,
-                    LPTSTR    lpCmdLine,
-                    int       nCmdShow)
+int STDCALL WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nCmdShow)
 #else 
-int APIENTRY _tWinMain(HINSTANCE hInstance,
-                       HINSTANCE hPrevInstance,
-                       LPSTR     lpCmdLine,
-                       int       nCmdShow)
+int APIENTRY _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
 #endif
 {
     MSG msg;
     HACCEL hAccelTable;
 
-    // Initialize global strings
     LoadString(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
     LoadString(hInstance, IDC_IMMAGINA, szWindowClass, MAX_LOADSTRING);
     MyRegisterClass(hInstance);
 
-    // Get app path - safer version of original logic
-    GetModuleFileName(NULL, gAppPath, MAX_PATH);
-    char* lastBackslash = strrchr(gAppPath, '\\');
-    if (lastBackslash != NULL) {
-        *lastBackslash = '\0';  // Safer than pointer arithmetic
-    }
-
+    ParseAppPath();
     LoadConfig();
 
-    char startupfile[_MAX_PATH];
-    memset(startupfile, 0, _MAX_PATH);
-
-    if (gCliEnabled)
+    if (gCliEnabled && lpCmdLine[0] != '\0')
     {
-        // Dhel - cli - Original logic preserved exactly
-        if (lpCmdLine[0] != 0)
+        if (HandleCliCommands(lpCmdLine))
         {
-            // tokenize arguments to array
-            int i = 0;
-            char *p = strtok(lpCmdLine, " ");
-
-            while (p != NULL)
-            {
-                argv[i++] = p;
-                p = strtok(NULL, " ");
-            }
-
-            if (lpCmdLine[0] == '\"')
-            {
-                size_t len = strlen(argv[0]);
-                if (len > 2) {  // Safety check
-                    strncpy(startupfile, argv[0] + 1, len - 2);
-                    startupfile[len - 2] = 0;
-                }
-            }
-            else
-                strcpy(startupfile, argv[0]);
-
-            // do cli processes - Original logic preserved
-            if (argv[1])
-            {
-                DoFileOpen(hWnd, startupfile, startupfile + (strlen(startupfile) - 3));
-
-                if (!strcmp(argv[1], "export"))
-                {
-                    cliExport(argv[2]);
-                    return 0;
-                }
-
-                if (!strcmp(argv[1], "import") && argv[2])
-                {
-                    cliImport(argv[2]);
-
-                    if (argv[3] && argv[4])
-                        cliScale(atoi(argv[3]), atoi(argv[4]));
-
-                    if (argv[5] && argv[6])
-                        cliSetHeader(atoi(argv[5]), atoi(argv[6]));
-
-                    DoFileSave(hWnd);
-                    return 0;
-                }
-
-                if (!strcmp(argv[1], "scale"))
-                {
-                    if (argv[2] && argv[3])
-                        cliScale(atoi(argv[2]), atoi(argv[3]));
-
-                    DoFileSave(hWnd);
-                    return 0;
-                }
-
-                if (!strcmp(argv[1], "header"))
-                {
-                    if (argv[2] && argv[3])
-                    {
-                        cliSetHeader(atoi(argv[2]), atoi(argv[3]));
-                    }
-
-                    DoFileSave(hWnd);
-                    return 0;
-                }
-
-                if (!strcmp(argv[1], "addCells"))
-                {
-                    if (argv[2] && argv[3] && argv[4])
-                        DoAddCells(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
-
-                    DoFileSave(hWnd);
-                    return 0;
-                }
-
-                if (!strcmp(argv[1], "addLoops"))
-                {
-                    if (argv[2] && argv[3])
-                        DoAddLoops(atoi(argv[2]), atoi(argv[3]));
-
-                    DoFileSave(hWnd);
-                    return 0;
-                }
-            }
+            return 0;
         }
     }
-    
-    // Perform application initialization:
-    if (!InitInstance(hInstance, nCmdShow)) 
-    {
+
+    if (!InitInstance(hInstance, nCmdShow)) {
         return FALSE;
     }
 
     hAccelTable = LoadAccelerators(hInstance, (LPCTSTR)IDC_IMMAGINA);
 
-    // DLL Loading - Original logic with safety improvements
-    #if defined _M_IX86
+#if defined _M_IX86
     HINSTANCE DLL = LoadLibrary("SCIdump.dll");
-    /* check for error on loading the DLL */
-    if (DLL == NULL) 
+    if (!DLL) {
         MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
-    else  // Only try to get function if DLL loaded successfully
-    {
-        ExtractFromVolume = (Func)GetProcAddress((HMODULE)DLL, "?ExtractFromVolumeSkel@@YAHPAUHWND__@@PADE11@Z");
-        /* check for error on getting the function */
-        if (ExtractFromVolume == NULL) 
-        {
-            FreeLibrary((HMODULE)DLL);
-            DLL = NULL;  // Mark as invalid
+    } else {
+        ExtractFromVolume = (Func)GetProcAddress(DLL, "?ExtractFromVolumeSkel@@YAHPAUHWND__@@PADE11@Z");
+        if (!ExtractFromVolume) {
+            FreeLibrary(DLL);
+            DLL = NULL;
             MessageBox(NULL, ERR_CANTLOADDLL, ERR_TITLE, MB_OK | MB_ICONERROR);
         }
     }
-    #endif
+#endif
 
-    // Original startup file handling
-    if (lpCmdLine[0] != 0)
-    {
-        if (lpCmdLine[0] == '\"')
-        {
+    if (lpCmdLine[0] != '\0') {
+        char startupfile[_MAX_PATH] = {0};
+
+        if (lpCmdLine[0] == '"') {
             size_t len = strlen(lpCmdLine);
-            if (len > 2) {  // Safety check
+            if (len > 2) {
                 strncpy(startupfile, lpCmdLine + 1, len - 2);
-                startupfile[len - 2] = 0;
+                startupfile[len - 2] = '\0';
             }
+        } else {
+            strncpy(startupfile, lpCmdLine, sizeof(startupfile) - 1);
         }
-        else
-            strcpy(startupfile, lpCmdLine);
 
-        size_t pathLen = strlen(startupfile);
-        if (pathLen >= 3) {  // Safety check
-            DoFileOpen(hWnd, startupfile, startupfile + (pathLen - 3));
+        size_t len = strlen(startupfile);
+        if (len >= 3) {
+            DoFileOpen(hWnd, startupfile, startupfile + (len - 3));
         }
     }
 
-    // Main message loop:
-    while (GetMessage(&msg, NULL, 0, 0)) 
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) 
-        {
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg)) {
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
     }
 
-    // Cleanup - Original logic preserved
-    #if defined _M_IX86
-    if (DLL != NULL)  // Only free if we have a valid handle
-        FreeLibrary((HMODULE)DLL);
-    #endif
+#if defined _M_IX86
+    if (DLL) {
+        FreeLibrary(DLL);
+    }
+#endif
 
     return (int) msg.wParam;
 }
@@ -2428,11 +2078,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
             
         case ID_IMPORTABMP:
-            DoFileImport(hWnd);
+            ImportBitmapUnified(hWnd, NULL, TRUE);
             break;
             
         case ID_ESPORTABMP:
-            DoFileExport(hWnd);
+            ExportBitmapUnified(hWnd, NULL);
             break;
 
         case IDM_PROPERTIES:
@@ -2460,11 +2110,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             
         case ID_COLORI_IMPORTACOLORI:
-            DoPaletteImport(hWnd);
+            ImportPaletteUnified(hWnd, NULL);
             break;
             
         case ID_COLORI_ESPORTACOLORI:
-            DoPaletteExport(hWnd);
+            ExportPaletteUnified(hWnd, NULL);
             break;
             
         case ID_INGRANDIMENTO_NORMALE:
