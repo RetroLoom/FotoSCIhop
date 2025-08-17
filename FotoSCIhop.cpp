@@ -2345,7 +2345,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     FotoSCIhopStyles::Initialize();
 
     // Set up dialog callbacks
-    ImGuiDialogs::SetDialogCallbacks(&RenderPropertiesDialog);
+    ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PROPERTIES, "Properties", &RenderPropertiesDialog);
 
     // Set up a timer for ImGui rendering (30 FPS - sufficient for dialogs)
     SetTimer(hWnd, 1, 33, NULL);
@@ -2463,7 +2463,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
 
         case IDM_PROPERTIES:
-            ImGuiDialogs::ShowProperties();
+            ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_PROPERTIES);
             break;
                 
         case ID_PALETTE:
@@ -2678,7 +2678,7 @@ void RenderPropertiesDialog() {
     
     // If user clicked the X button or pressed Escape, hide this dialog
     if (!open) {
-        HideProperties();
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PROPERTIES);
         EndDialog();
         return;
     }
@@ -3773,7 +3773,7 @@ void RenderPropertiesDialog() {
     Separator();
     
     if (ButtonColored("Close", 0.6f, 0.6f, 0.8f, 1.0f)) {  // Light purple button
-        HideProperties();
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PROPERTIES);
     }
 
     EndDialog();

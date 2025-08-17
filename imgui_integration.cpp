@@ -18,6 +18,25 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace ImGuiDialogs {
+        
+    struct DialogInfo {
+        char title[256];
+        ImGuiDialogCallback callback;
+        bool isOpen;
+        
+        DialogInfo() : callback(nullptr), isOpen(false) {
+            title[0] = '\0';
+        }
+        
+        DialogInfo(const char* t, ImGuiDialogCallback cb) : callback(cb), isOpen(false) {
+            if (t) {
+                strncpy(title, t, sizeof(title) - 1);
+                title[sizeof(title) - 1] = '\0';
+            } else {
+                title[0] = '\0';
+            }
+        }
+    };
     
     // Enhanced state management
     struct EngineState {
@@ -27,22 +46,50 @@ namespace ImGuiDialogs {
         HGLRC hglrc;
         bool initialized;
         
-        // Dialog visibility flags
-        bool showProperties;
-        
-        // Callback to your dialog function
-        ImGuiDialogCallback propertiesCallback;
-        
+        DialogInfo dialogs[DIALOG_COUNT];
+                
         // Style and theme management
         Theme currentTheme;
         
         // Constructor
         EngineState() : parent(NULL), hwnd(NULL), hdc(NULL), hglrc(NULL), 
-                       initialized(false), showProperties(false),
-                       propertiesCallback(NULL), currentTheme(THEME_DARK) {}
+                       initialized(false), currentTheme(THEME_DARK) {}
     };
     
     static EngineState g_engine;
+        
+    void RegisterDialog(DialogType type, const char* title, ImGuiDialogCallback callback) {
+        if (type >= 0 && type < DIALOG_COUNT) {
+            g_engine.dialogs[type] = DialogInfo(title, callback);
+        }
+    }
+    
+    void ShowDialog(DialogType type) {
+        if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT) return;
+        
+        g_engine.dialogs[type].isOpen = true;
+        if (g_engine.hwnd) {
+            ShowWindow(g_engine.hwnd, SW_SHOW);
+            SetForegroundWindow(g_engine.hwnd);
+        }
+    }
+    
+    void HideDialog(DialogType type) {
+        if (type >= 0 && type < DIALOG_COUNT) {
+            g_engine.dialogs[type].isOpen = false;
+        }
+    }
+    
+    bool IsDialogOpen(DialogType type) {
+        return (type >= 0 && type < DIALOG_COUNT) ? g_engine.dialogs[type].isOpen : false;
+    }
+    
+    bool IsAnyDialogOpen() {
+        for (int i = 0; i < DIALOG_COUNT; i++) {
+            if (g_engine.dialogs[i].isOpen) return true;
+        }
+        return false;
+    }
     
     // =========================================================================
     // INTERNAL HELPER FUNCTIONS
@@ -269,42 +316,15 @@ namespace ImGuiDialogs {
         g_engine = EngineState(); // Reset state
     }
     
-    void SetDialogCallbacks(ImGuiDialogCallback propertiesCallback) {
-        g_engine.propertiesCallback = propertiesCallback;
-    }
-    
-    void ShowProperties() {
-        if (!g_engine.initialized) return;
-        g_engine.showProperties = true;
-        if (g_engine.hwnd) {
-            SetWindowTextW(g_engine.hwnd, L"Properties");
-            ShowWindow(g_engine.hwnd, SW_SHOW);
-            SetForegroundWindow(g_engine.hwnd);
-        }
-    }
-    
-    void ShowLinkPoints() {
-        ShowProperties();
-    }
-    
     void Hide() {
-        g_engine.showProperties = false;
+        for (int i = 0; i < DIALOG_COUNT; i++) {
+            g_engine.dialogs[i].isOpen = false;
+        }
+               
         if (g_engine.hwnd)
             ShowWindow(g_engine.hwnd, SW_HIDE);
     }
-    
-    void HideProperties() {
-        Hide();
-    }
-    
-    void HideLinkPoints() {
-        Hide();
-    }
-    
-    bool IsAnyDialogOpen() {
-        return g_engine.showProperties;
-    }
-    
+           
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (g_engine.hwnd && hwnd == g_engine.hwnd) {
             return ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam);
@@ -314,7 +334,7 @@ namespace ImGuiDialogs {
     
     void Render() {
         if (!g_engine.initialized) return;
-        if (!g_engine.showProperties) return;
+        if (!IsAnyDialogOpen()) return;
         if (!IsWindowVisible(g_engine.hwnd)) return;
             
         // Make OpenGL context current
@@ -335,13 +355,17 @@ namespace ImGuiDialogs {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         
-        // Call the dialog callback
-        if (g_engine.showProperties && g_engine.propertiesCallback) {
-            g_engine.propertiesCallback();
+        for (int i = 0; i < DIALOG_COUNT; i++) {
+            if (g_engine.dialogs[i].isOpen && g_engine.dialogs[i].callback) {
+                if (g_engine.hwnd) {
+                    SetWindowTextA(g_engine.hwnd, g_engine.dialogs[i].title);
+                }
+                g_engine.dialogs[i].callback();
+            }
         }
         
         // Hide window if no dialogs are open after callbacks
-        if (!g_engine.showProperties) {
+        if (!IsAnyDialogOpen()) {
             Hide();
         }
         
