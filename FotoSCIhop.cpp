@@ -1969,6 +1969,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     // Set up dialog callbacks
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PROPERTIES, "Properties", &RenderPropertiesDialog);
+    ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_ABOUT, "About FotoSCIhop", &RenderAboutDialog);
 
     // Set up a timer for ImGui rendering (30 FPS - sufficient for dialogs)
     SetTimer(hWnd, 1, 33, NULL);
@@ -2029,7 +2030,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         switch (wmId)
         {
         case IDM_ABOUT:
-            DialogBox(hInst, (LPCTSTR)IDD_ABOUTBOX, hWnd, (DLGPROC)About);
+            ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_ABOUT);
             break;
             
         case IDM_MANUAL:
@@ -3399,6 +3400,194 @@ void RenderPropertiesDialog() {
         ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PROPERTIES);
     }
 
+    EndDialog();
+}
+
+void RenderAboutDialog() {
+    using namespace ImGuiDialogs;
+    
+    bool open = true;
+    if (!BeginDialog("About FotoSCIhop", &open)) {
+        EndDialog();
+        return;
+    }
+    
+    // If user clicked the X button or pressed Escape, hide this dialog
+    if (!open) {
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_ABOUT);
+        EndDialog();
+        return;
+    }
+
+    // Calculate responsive widths
+    float availableWidth = GetContentRegionAvailWidth();
+    
+    // =========================================================================
+    // APPLICATION INFO SECTION
+    // =========================================================================
+    
+    // Center the main title
+    const char* appTitle = "FotoSCIhop";
+    float titleWidth = CalcItemWidth() * 0.6f; // Estimate title width
+    CenterNextItem(titleWidth);
+    
+    // Large title with styling
+    PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 0, 10);
+    FotoSCIhopStyles::HeaderText(appTitle);
+    PopStyleVar();
+    
+    Spacing();
+    
+    // Subtitle
+    CenterNextItem(availableWidth * 0.8f);
+    Text("Sierra SCI1.1/SCI32 Games Image Editor");
+    
+    Spacing();
+    Separator();
+    Spacing();
+    
+    // =========================================================================
+    // VERSION AND BUILD INFO
+    // =========================================================================
+    
+    if (CollapsingHeader("Version Information", true)) {
+        Text("Version: 2.0 (ImGui Edition)");
+        Text("Build Date: " __DATE__ " " __TIME__);
+        Text("Platform: Windows");
+        
+        #ifdef _WIN64
+        Text("Architecture: x64");
+        #else
+        Text("Architecture: x86");
+        #endif
+        
+        #ifdef _DEBUG
+        FotoSCIhopStyles::WarningText("Build Type: Debug");
+        #else
+        FotoSCIhopStyles::SuccessText("Build Type: Release");
+        #endif
+    }
+    
+    // =========================================================================
+    // COPYRIGHT AND AUTHORS
+    // =========================================================================
+    
+    if (CollapsingHeader("Copyright & Credits", true)) {
+        FotoSCIhopStyles::HeaderText("Original Authors:");
+        Text("- Enrico Rolfi 'Endroz' (2004-2021)");
+        Text("- Daniel Arnold 'Dhel' (2022-2025)");
+        
+        Spacing();
+        FotoSCIhopStyles::HeaderText("ImGui Migration:");
+        Text("- Enhanced with modern ImGui interface");
+        
+        Spacing();
+        FotoSCIhopStyles::HeaderText("Copyright:");
+        Text("Copyright (C) Enrico Rolfi 'Endroz', 2004-2021");
+        Text("Copyright (C) Daniel Arnold 'Dhel', 2022-2025");
+        
+        Spacing();
+        FotoSCIhopStyles::InfoText("Part of the TraduSCI package");
+    }
+    
+    // =========================================================================
+    // DESCRIPTION
+    // =========================================================================
+    
+    if (CollapsingHeader("About This Tool")) {
+        TextWrapped("FotoSCIhop is a specialized tool for modifying .P56 and .V56 image files from Sierra SCI games. "
+                   "It supports both SCI1.1 and SCI32 formats, allowing game modders and translators to edit "
+                   "graphics, animations, and color palettes used in classic adventure games.");
+        
+        Spacing();
+        
+        FotoSCIhopStyles::HeaderText("Supported File Types:");
+        BulletText(".P56 files - Picture resources (SCI1.1 and SCI32)");
+        BulletText(".V56 files - View/Animation resources");
+        
+        Spacing();
+        
+        FotoSCIhopStyles::HeaderText("Key Features:");
+        BulletText("Import/Export BMP images");
+        BulletText("Edit color palettes");
+        BulletText("Modify animation loops and cells");
+        BulletText("Adjust link points and hot spots");
+        BulletText("Priority bar visualization");
+        BulletText("Reference image overlay support");
+    }
+    
+    // =========================================================================
+    // SYSTEM INFO (Optional)
+    // =========================================================================
+    
+    if (CollapsingHeader("System Information")) {
+        char systemInfo[256];
+        
+        // Get Windows version info
+        OSVERSIONINFO osvi;
+        ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
+        osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
+        
+        #pragma warning(push)
+        #pragma warning(disable: 4996) // Disable deprecation warning for GetVersionEx
+        if (GetVersionEx(&osvi)) {
+            sprintf(systemInfo, "OS: Windows %d.%d (Build %d)", 
+                   osvi.dwMajorVersion, osvi.dwMinorVersion, osvi.dwBuildNumber);
+            Text(systemInfo);
+        }
+        #pragma warning(pop)
+        
+        // Memory info
+        MEMORYSTATUSEX memInfo;
+        memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+        if (GlobalMemoryStatusEx(&memInfo)) {
+            sprintf(systemInfo, "Total RAM: %.1f GB", (float)memInfo.ullTotalPhys / (1024.0f * 1024.0f * 1024.0f));
+            Text(systemInfo);
+            
+            sprintf(systemInfo, "Available RAM: %.1f GB", (float)memInfo.ullAvailPhys / (1024.0f * 1024.0f * 1024.0f));
+            Text(systemInfo);
+        }
+        
+        // Current working directory
+        char currentDir[MAX_PATH];
+        if (GetCurrentDirectory(MAX_PATH, currentDir)) {
+            Text("Working Directory:");
+            FotoSCIhopStyles::DisabledText(currentDir);
+        }
+    }
+    
+    // =========================================================================
+    // THIRD PARTY ACKNOWLEDGMENTS
+    // =========================================================================
+    
+    if (CollapsingHeader("Third Party Libraries")) {
+        FotoSCIhopStyles::HeaderText("This application uses:");
+        
+        BulletText("Dear ImGui - Immediate Mode GUI");
+        FotoSCIhopStyles::DisabledText("   https://github.com/ocornut/imgui");
+        
+        BulletText("OpenGL - Graphics rendering");
+        BulletText("Windows GDI+ - Image processing");
+        
+        Spacing();
+        FotoSCIhopStyles::InfoText("Special thanks to the Sierra game preservation community!");
+    }
+    
+    // =========================================================================
+    // MAIN BUTTONS
+    // =========================================================================
+    
+    Separator();
+    Spacing();
+    
+    // Center the close button
+    float buttonWidth = 120.0f;
+    CenterNextItem(buttonWidth);
+    
+    if (FotoSCIhopStyles::CloseButton("Close")) {
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_ABOUT);
+    }
+    
     EndDialog();
 }
 

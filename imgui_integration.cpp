@@ -63,17 +63,23 @@ namespace ImGuiDialogs {
             g_engine.dialogs[type] = DialogInfo(title, callback);
         }
     }
-    
-    void ShowDialog(DialogType type) {
-        if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT) return;
-        
+
+    void ShowDialog(DialogType type)
+    {
+        if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT)
+            return;
+
+        // Small delay to ensure proper initialization
+        Sleep(1);
+
         g_engine.dialogs[type].isOpen = true;
-        if (g_engine.hwnd) {
+        if (g_engine.hwnd)
+        {
             ShowWindow(g_engine.hwnd, SW_SHOW);
             SetForegroundWindow(g_engine.hwnd);
         }
     }
-    
+
     void HideDialog(DialogType type) {
         if (type >= 0 && type < DIALOG_COUNT) {
             g_engine.dialogs[type].isOpen = false;

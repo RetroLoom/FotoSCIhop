@@ -51,10 +51,7 @@ namespace ImGuiDialogs {
     
     enum DialogType {
         DIALOG_PROPERTIES = 0,
-        // Easy to add new dialogs here:
-        // DIALOG_PREFERENCES,
-        // DIALOG_EXPORT_OPTIONS,
-        // DIALOG_BATCH_CONVERT,
+        DIALOG_ABOUT = 1,
         DIALOG_COUNT
     };
     
