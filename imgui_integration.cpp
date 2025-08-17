@@ -1118,20 +1118,4 @@ namespace ImGuiDialogs {
     void ProgressBar(float fraction, const char* overlay, float width, float height) {
         ImGui::ProgressBar(fraction, ImVec2(width, height), overlay);
     }
-    
-    bool FileDialog(const char* label, char* path, size_t path_size, const char* filter) {
-        bool changed = false;
-        
-        ImGui::InputText(label, path, path_size);
-        ImGui::SameLine();
-        
-        if (ImGui::Button("Browse")) {
-            // Here you would integrate with Windows file dialogs
-            // For now, just a placeholder
-            // You could use GetOpenFileName() or GetSaveFileName()
-            MessageBoxA(NULL, "File dialog not implemented yet", "Info", MB_OK);
-        }
-        
-        return changed;
-    }
 }

@@ -34,19 +34,6 @@ BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
 
-// ============================================================================
-// REFERENCE IMAGE SETTINGS
-// ============================================================================
-//HWND hReferenceDialog;
-
-// ============================================================================
-// DIALOG WINDOWS
-// ============================================================================
-HWND hPropertiesDialog = NULL;
-HWND hLinkPointDialog = NULL;
-
-void RenderPropertiesDialog();
-
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 {
 	// Validate loop index first
@@ -285,13 +272,6 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 				//	globalPicture->cells[i]->GetImage(&globalPicture->cells[i]->bmInfo, &globalPicture->cells[i]->bmImage);
 				//}
 				ShowCell(0);
-
-				// Close any old dialog windows
-				DestroyWindow(hPropertiesDialog);
-				hPropertiesDialog = NULL;
-
-				DestroyWindow(hLinkPointDialog);
-				hLinkPointDialog = NULL;
 			}
 
 	  }
@@ -334,13 +314,6 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 				globalView = newView;
 				//globalView->loadView(); // Dhel - view object load
 				ShowLoopCell(0,0);
-
-				// Close any old dialog windows
-				DestroyWindow(hPropertiesDialog);
-				hPropertiesDialog = NULL;
-
-				DestroyWindow(hLinkPointDialog);
-				hLinkPointDialog = NULL;
 			}
 
 	  }

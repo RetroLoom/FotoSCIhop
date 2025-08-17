@@ -102,9 +102,6 @@ int tolerance = 50;
 // FUNCTION DECLARATIONS
 // ============================================================================
 
-// Dialog update procedures
-void DoUpdatePropertiesProc(HWND hwndDlg);
-
 // CLI and palette functions
 BOOL CLIPaletteImport(char *palette);
 int cliExport(char *name);
@@ -114,5 +111,7 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
                                UINT message,
                                WPARAM wParam,
                                LPARAM lParam);
+
+void RenderPropertiesDialog();
 
 #endif // FOTOSCIHOP_H

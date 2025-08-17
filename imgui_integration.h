@@ -342,7 +342,4 @@ namespace ImGuiDialogs {
     // Progress indicators
     void ProgressBar(float fraction, float width = -1.0f, float height = 0.0f);
     void ProgressBar(float fraction, const char* overlay, float width = -1.0f, float height = 0.0f);
-    
-    // File dialog helpers (you might want to integrate with native Windows dialogs)
-    bool FileDialog(const char* label, char* path, size_t path_size, const char* filter = nullptr);
 }
