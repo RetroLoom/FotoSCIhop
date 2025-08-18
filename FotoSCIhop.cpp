@@ -2007,8 +2007,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_ABOUT, "About FotoSCIhop", &RenderAboutDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR, "CLUT Generator", &RenderClutGeneratorDialog);
 
-    // Set up a timer for ImGui rendering (30 FPS - sufficient for dialogs)
-    SetTimer(hWnd, 1, 33, NULL);
+    SetTimer(hWnd, 1, 16, NULL);
 
     // Show the window
     ShowWindow(hWnd, nCmdShow);
@@ -2308,7 +2307,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
     if (wParam == 1) { // Our ImGui timer
-        ImGuiDialogs::Render();
+        if (ImGuiDialogs::IsAnyDialogOpen())
+        {
+            ImGuiDialogs::Render();
+        }
     }
     break;
         

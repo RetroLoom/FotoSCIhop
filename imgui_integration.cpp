@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "imgui_integration.h"
+#include <windowsx.h>
 
 // ImGui includes
 #include "imgui.h"
@@ -38,7 +39,6 @@ namespace ImGuiDialogs {
         }
     };
     
-    // Enhanced state management
     struct EngineState {
         HWND parent;
         HWND hwnd;
@@ -47,13 +47,18 @@ namespace ImGuiDialogs {
         bool initialized;
         
         DialogInfo dialogs[DIALOG_COUNT];
-                
-        // Style and theme management
         Theme currentTheme;
+        
+        bool windowVisible;
+        bool windowResizing;
+        int currentWidth;
+        int currentHeight;
         
         // Constructor
         EngineState() : parent(NULL), hwnd(NULL), hdc(NULL), hglrc(NULL), 
-                       initialized(false), currentTheme(THEME_DARK) {}
+                       initialized(false), currentTheme(THEME_DARK),
+                       windowVisible(false), windowResizing(false),
+                       currentWidth(500), currentHeight(600) {}
     };
     
     static EngineState g_engine;
@@ -64,19 +69,16 @@ namespace ImGuiDialogs {
         }
     }
 
-    void ShowDialog(DialogType type)
-    {
+    void ShowDialog(DialogType type) {
         if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT)
             return;
 
-        // Small delay to ensure proper initialization
-        Sleep(10);
-
         g_engine.dialogs[type].isOpen = true;
-        if (g_engine.hwnd)
-        {
+        
+        if (g_engine.hwnd && !g_engine.windowVisible) {
             ShowWindow(g_engine.hwnd, SW_SHOW);
             SetForegroundWindow(g_engine.hwnd);
+            g_engine.windowVisible = true;
         }
     }
 
@@ -98,20 +100,17 @@ namespace ImGuiDialogs {
     }
     
     // =========================================================================
-    // INTERNAL HELPER FUNCTIONS
+    // HELPER FUNCTIONS
     // =========================================================================
     
-    // Convert our color struct to ImVec4
     ImVec4 ToImVec4(const ImGuiColor& color) {
         return ImVec4(color.r, color.g, color.b, color.a);
     }
     
-    // Convert our color values to ImU32
     ImU32 ToImU32(const ImGuiColor& color) {
         return IM_COL32((int)(color.r * 255), (int)(color.g * 255), (int)(color.b * 255), (int)(color.a * 255));
     }
     
-    // Convert ImGuiStyleVar constants
     ImGuiStyleVar ConvertStyleVar(int var) {
         switch (var) {
         case IMGUI_STYLE_VAR_ALPHA: return ImGuiStyleVar_Alpha;
@@ -126,7 +125,6 @@ namespace ImGuiDialogs {
         }
     }
     
-    // Convert ImGuiCol constants
     ImGuiCol ConvertStyleColor(int colorId) {
         switch (colorId) {
         case IMGUI_COL_TEXT: return ImGuiCol_Text;
@@ -150,31 +148,44 @@ namespace ImGuiDialogs {
         }
     }
     
-    // =========================================================================
-    // CORE WINDOW MANAGEMENT (EXISTING CODE MAINTAINED)
-    // =========================================================================
-    
-    // Window procedure for ImGui window
     LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+        // FIXED: Handle ImGui messages first, but with better conflict resolution
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
             return true;
             
         switch (msg) {
         case WM_SIZE:
-            if (g_engine.hglrc && wParam != SIZE_MINIMIZED) {
-                glViewport(0, 0, (GLsizei)LOWORD(lParam), (GLsizei)HIWORD(lParam));
+            
+            if (g_engine.hglrc && wParam != SIZE_MINIMIZED && !g_engine.windowResizing) {
+                g_engine.currentWidth = LOWORD(lParam);
+                g_engine.currentHeight = HIWORD(lParam);
+                glViewport(0, 0, g_engine.currentWidth, g_engine.currentHeight);
             }
             return 0;
+            
         case WM_SYSCOMMAND:
             if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
                 return 0;
             break;
+            
         case WM_CLOSE:
             Hide();
             return 0;
+            
         case WM_DESTROY:
-            PostQuitMessage(0);
-            return 0;
+           
+            if (g_engine.initialized) {
+                Hide();
+                return 0;
+            }
+            break;
+            
+        
+        case WM_ACTIVATE:
+            if (LOWORD(wParam) == WA_INACTIVE) {
+                // Don't auto-hide when losing focus - let user control this
+            }
+            break;
         }
         return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
@@ -235,40 +246,17 @@ namespace ImGuiDialogs {
             return false;
         }
         
-        // Calculate centered position relative to parent window
-        int dialogWidth = 500;
-        int dialogHeight = 600;
-        int x = 100; // Default fallback position
-        int y = 100;
+        int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+        int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+        int x = (screenWidth - g_engine.currentWidth) / 2;
+        int y = (screenHeight - g_engine.currentHeight) / 2;
         
-        if (parent) {
-            RECT parentRect;
-            if (GetWindowRect(parent, &parentRect)) {
-                int parentWidth = parentRect.right - parentRect.left;
-                int parentHeight = parentRect.bottom - parentRect.top;
-                
-                // Center the dialog relative to the parent window
-                x = parentRect.left + (parentWidth - dialogWidth) / 2;
-                y = parentRect.top + (parentHeight - dialogHeight) / 2;
-                
-                // Make sure the dialog doesn't go off-screen
-                int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-                int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-                
-                if (x < 0) x = 0;
-                if (y < 0) y = 0;
-                if (x + dialogWidth > screenWidth) x = screenWidth - dialogWidth;
-                if (y + dialogHeight > screenHeight) y = screenHeight - dialogHeight;
-            }
-        }
-        
-        // Create single window (hidden initially)
         g_engine.hwnd = CreateWindowW(
             wc.lpszClassName, 
             L"Dialog", 
-            WS_POPUP | WS_BORDER | WS_CAPTION | WS_SYSMENU, 
-            x, y, dialogWidth, dialogHeight,
-            parent, 
+            WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX, 
+            x, y, g_engine.currentWidth, g_engine.currentHeight,
+            NULL, 
             NULL, 
             wc.hInstance, 
             NULL
@@ -316,7 +304,10 @@ namespace ImGuiDialogs {
         ImGui::DestroyContext();
         
         CleanupOpenGL();
-        DestroyWindow(g_engine.hwnd);
+        if (g_engine.hwnd) {
+            DestroyWindow(g_engine.hwnd);
+            g_engine.hwnd = NULL;
+        }
         UnregisterClassW(L"ImGuiDialogs", GetModuleHandle(NULL));
         
         g_engine = EngineState(); // Reset state
@@ -327,8 +318,10 @@ namespace ImGuiDialogs {
             g_engine.dialogs[i].isOpen = false;
         }
                
-        if (g_engine.hwnd)
+        if (g_engine.hwnd && g_engine.windowVisible) {
             ShowWindow(g_engine.hwnd, SW_HIDE);
+            g_engine.windowVisible = false;
+        }
     }
            
     bool HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -389,9 +382,80 @@ namespace ImGuiDialogs {
     }
     
     // =========================================================================
-    // STYLE AND THEMING
+    // DIALOG MANAGEMENT
     // =========================================================================
     
+    bool BeginDialog(const char* title, bool* open) {
+        // FIXED: Create seamless fullscreen ImGui window that fills Win32 window exactly
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+        
+        // FIXED: Better window flags for seamless integration
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | 
+                                ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse |
+                                ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                
+        return ImGui::Begin(title, open, flags);
+    }
+    
+    void EndDialog() {
+        ImGui::End();
+    }
+    
+    // =========================================================================
+    // WINDOW SIZE MANAGEMENT
+    // =========================================================================
+    
+    void SetNextWindowPos(float x, float y) {
+        // FIXED: Move Win32 window instead of ImGui window for better control
+        if (g_engine.hwnd) {
+            SetWindowPos(g_engine.hwnd, NULL, (int)x, (int)y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        }
+    }
+    
+    void SetNextWindowSize(float width, float height) {
+        // FIXED: Much simpler sizing logic to avoid conflicts
+        if (g_engine.hwnd && width > 0 && height > 0) {
+            
+            // Prevent recursive resizing
+            g_engine.windowResizing = true;
+            
+            // Calculate Win32 window size to accommodate ImGui content
+            int winWidth = (int)width + 16;   // Small padding for borders
+            int winHeight = (int)height + 39; // Padding for title bar + borders
+            
+            // Clamp to reasonable sizes
+            winWidth = max(300, min(1200, winWidth));
+            winHeight = max(200, min(800, winHeight));
+            
+            // Only resize if size actually changed
+            if (winWidth != g_engine.currentWidth || winHeight != g_engine.currentHeight) {
+                g_engine.currentWidth = winWidth;
+                g_engine.currentHeight = winHeight;
+                
+                // Get current position to maintain it
+                RECT currentRect;
+                if (GetWindowRect(g_engine.hwnd, &currentRect)) {
+                    SetWindowPos(g_engine.hwnd, NULL, 
+                                currentRect.left, currentRect.top, 
+                                winWidth, winHeight, 
+                                SWP_NOZORDER | SWP_NOACTIVATE);
+                }
+            }
+            
+            g_engine.windowResizing = false;
+        }
+    }
+    
+    void SetNextWindowFocus() {
+        if (g_engine.hwnd) {
+            SetForegroundWindow(g_engine.hwnd);
+            SetFocus(g_engine.hwnd);
+        }
+    }
+        
+    // THEME FUNCTIONS
     void ApplyTheme(Theme theme) {
         g_engine.currentTheme = theme;
         ImGuiStyle& style = ImGui::GetStyle();
@@ -491,8 +555,6 @@ namespace ImGuiDialogs {
         ImGui::PopStyleColor(count);
     }
     
-    // Font functions removed for simplicity - can be added back later if needed
-    
     void SetWindowRounding(float rounding) {
         ImGui::GetStyle().WindowRounding = rounding;
     }
@@ -508,27 +570,7 @@ namespace ImGuiDialogs {
     void SetGrabRounding(float rounding) {
         ImGui::GetStyle().GrabRounding = rounding;
     }
-    
-    // =========================================================================
-    // BASIC LAYOUT AND WIDGETS (BACKWARD COMPATIBLE)
-    // =========================================================================
-    
-    bool BeginDialog(const char* title, bool* open) {
-        // Create a borderless window that fills the entire Win32 window
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
         
-        ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | 
-                                ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
-                                ImGuiWindowFlags_NoBringToFrontOnFocus;
-                                
-        return ImGui::Begin(title, open, flags);
-    }
-    
-    void EndDialog() {
-        ImGui::End();
-    }
-    
     bool BeginChild(const char* id, float width, float height, bool border) {
         return ImGui::BeginChild(id, ImVec2(width, height), border);
     }
@@ -594,10 +636,7 @@ namespace ImGuiDialogs {
         }
     }
     
-    // =========================================================================
-    // TEXT AND LABELS
-    // =========================================================================
-    
+    // TEXT FUNCTIONS
     void Text(const char* text) {
         ImGui::Text("%s", text);
     }
@@ -651,10 +690,7 @@ namespace ImGuiDialogs {
         ImGui::TreePop();
     }
     
-    // =========================================================================
-    // BUTTONS AND INTERACTABLES
-    // =========================================================================
-    
+    // BUTTON FUNCTIONS
     bool Button(const char* label) {
         return ImGui::Button(label);
     }
@@ -691,10 +727,7 @@ namespace ImGuiDialogs {
         return ButtonColored(label, ImGuiColor(r, g, b, a));
     }
     
-    // =========================================================================
     // INPUT WIDGETS
-    // =========================================================================
-    
     bool InputInt(const char* label, int* value, int step, int step_fast) {
         return ImGui::InputInt(label, value, step, step_fast);
     }
@@ -756,10 +789,7 @@ namespace ImGuiDialogs {
         return ImGui::ColorPicker4(label, col);
     }
     
-    // =========================================================================
     // SELECTION WIDGETS
-    // =========================================================================
-    
     bool BeginCombo(const char* label, const char* preview_value) {
         return ImGui::BeginCombo(label, preview_value);
     }
@@ -800,10 +830,7 @@ namespace ImGuiDialogs {
         return ImGui::RadioButton(label, v, v_button);
     }
     
-    // =========================================================================
     // TOOLTIPS AND POPUPS
-    // =========================================================================
-    
     void SetTooltip(const char* text) {
         ImGui::SetTooltip("%s", text);
     }
@@ -844,10 +871,7 @@ namespace ImGuiDialogs {
         ImGui::CloseCurrentPopup();
     }
     
-    // =========================================================================
     // TABLES
-    // =========================================================================
-    
     bool BeginTable(const char* str_id, int column_count) {
         return ImGui::BeginTable(str_id, column_count);
     }
@@ -872,24 +896,7 @@ namespace ImGuiDialogs {
         ImGui::TableHeadersRow();
     }
     
-    // =========================================================================
     // UTILITY FUNCTIONS
-    // =========================================================================
-
-    
-    
-    void SetNextWindowPos(float x, float y) {
-        ImGui::SetNextWindowPos(ImVec2(x, y));
-    }
-    
-    void SetNextWindowSize(float width, float height) {
-        ImGui::SetNextWindowSize(ImVec2(width, height));
-    }
-    
-    void SetNextWindowFocus() {
-        ImGui::SetNextWindowFocus();
-    }
-    
     void SetCursorPosX(float local_x) {
         ImGui::SetCursorPosX(local_x);
     }
@@ -982,10 +989,7 @@ namespace ImGuiDialogs {
         return ImGui::CalcItemWidth();
     }
     
-    // =========================================================================
     // DRAWING AND GRAPHICS
-    // =========================================================================
-    
     void DrawLine(float x1, float y1, float x2, float y2, ImGuiColor color, float thickness) {
         ImDrawList* draw_list = ImGui::GetWindowDrawList();
         draw_list->AddLine(ImVec2(x1, y1), ImVec2(x2, y2), ToImU32(color), thickness);
@@ -1016,10 +1020,7 @@ namespace ImGuiDialogs {
         draw_list->AddText(ImVec2(x, y), ToImU32(color), text);
     }
     
-    // =========================================================================
     // CONVENIENCE FUNCTIONS FOR YOUR APP
-    // =========================================================================
-    
     bool PropertyInt(const char* label, int* value, int min_val, int max_val) {
         bool changed = ImGui::InputInt(label, value);
         if (changed) {
