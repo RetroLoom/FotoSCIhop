@@ -25,16 +25,39 @@ namespace ImGuiDialogs {
         ImGuiDialogCallback callback;
         bool isOpen;
         
-        DialogInfo() : callback(nullptr), isOpen(false) {
+        // Per-dialog size settings
+        int preferredWidth;
+        int preferredHeight;
+        int currentWidth;
+        int currentHeight;
+        bool hasCustomSize;
+        
+        DialogInfo() : callback(nullptr), isOpen(false), 
+                      preferredWidth(500), preferredHeight(600),
+                      currentWidth(500), currentHeight(600),
+                      hasCustomSize(false) {
             title[0] = '\0';
         }
         
-        DialogInfo(const char* t, ImGuiDialogCallback cb) : callback(cb), isOpen(false) {
+        DialogInfo(const char* t, ImGuiDialogCallback cb) : callback(cb), isOpen(false),
+                                                           preferredWidth(500), preferredHeight(600),
+                                                           currentWidth(500), currentHeight(600),
+                                                           hasCustomSize(false) {
             if (t) {
                 strncpy(title, t, sizeof(title) - 1);
                 title[sizeof(title) - 1] = '\0';
             } else {
                 title[0] = '\0';
+            }
+        }
+        
+        // Set preferred size for this dialog type
+        void SetPreferredSize(int width, int height) {
+            preferredWidth = width;
+            preferredHeight = height;
+            if (!hasCustomSize) {
+                currentWidth = width;
+                currentHeight = height;
             }
         }
     };
@@ -49,16 +72,21 @@ namespace ImGuiDialogs {
         DialogInfo dialogs[DIALOG_COUNT];
         Theme currentTheme;
         
+        // Current active dialog tracking
+        int activeDialogType;
         bool windowVisible;
-        bool windowResizing;
-        int currentWidth;
-        int currentHeight;
+        bool isResizing;  // Simpler resize flag
         
         // Constructor
         EngineState() : parent(NULL), hwnd(NULL), hdc(NULL), hglrc(NULL), 
                        initialized(false), currentTheme(THEME_DARK),
-                       windowVisible(false), windowResizing(false),
-                       currentWidth(500), currentHeight(600) {}
+                       activeDialogType(-1), windowVisible(false), isResizing(false) {
+            
+            // Set default sizes for each dialog type
+            dialogs[DIALOG_PROPERTIES].SetPreferredSize(600, 500);      // Properties: smaller
+            dialogs[DIALOG_ABOUT].SetPreferredSize(550, 450);          // About: medium  
+            dialogs[DIALOG_CLUT_GENERATOR].SetPreferredSize(1000, 750); // CLUT: larger
+        }
     };
     
     static EngineState g_engine;
@@ -69,13 +97,59 @@ namespace ImGuiDialogs {
         }
     }
 
-    void ShowDialog(DialogType type) {
+    void ShowDialog(DialogType type)
+    {
         if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT)
             return;
 
+        // Hide other dialogs first
+        for (int i = 0; i < DIALOG_COUNT; i++)
+        {
+            if (i != type)
+            {
+                g_engine.dialogs[i].isOpen = false;
+            }
+        }
+
         g_engine.dialogs[type].isOpen = true;
-        
-        if (g_engine.hwnd && !g_engine.windowVisible) {
+        g_engine.activeDialogType = type;
+
+        if (g_engine.hwnd)
+        {
+            // Resize window to dialog's preferred size
+            DialogInfo &dialog = g_engine.dialogs[type];
+
+            // Calculate Win32 window size
+            int winWidth = dialog.currentWidth + 16;   // Padding for borders
+            int winHeight = dialog.currentHeight + 39; // Padding for title bar + borders
+
+            // Clamp to reasonable sizes
+            winWidth = max(300, min(1400, winWidth));
+            winHeight = max(200, min(900, winHeight));
+
+            // Get current position or center if first time
+            RECT currentRect;
+            bool hasCurrentPos = GetWindowRect(g_engine.hwnd, &currentRect);
+
+            if (!g_engine.windowVisible || !hasCurrentPos)
+            {
+                // Center on screen for first show
+                int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+                int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+                int x = (screenWidth - winWidth) / 2;
+                int y = (screenHeight - winHeight) / 2;
+
+                SetWindowPos(g_engine.hwnd, NULL, x, y, winWidth, winHeight, SWP_NOZORDER);
+            }
+            else
+            {
+                // Keep current position, just resize
+                SetWindowPos(g_engine.hwnd, NULL,
+                             currentRect.left, currentRect.top,
+                             winWidth, winHeight,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+
             ShowWindow(g_engine.hwnd, SW_SHOW);
             SetForegroundWindow(g_engine.hwnd);
             g_engine.windowVisible = true;
@@ -149,18 +223,37 @@ namespace ImGuiDialogs {
     }
     
     LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        // FIXED: Handle ImGui messages first, but with better conflict resolution
+        // Handle ImGui messages first
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
             return true;
             
         switch (msg) {
         case WM_SIZE:
-            
-            if (g_engine.hglrc && wParam != SIZE_MINIMIZED && !g_engine.windowResizing) {
-                g_engine.currentWidth = LOWORD(lParam);
-                g_engine.currentHeight = HIWORD(lParam);
-                glViewport(0, 0, g_engine.currentWidth, g_engine.currentHeight);
+            // Smoother resize handling
+            if (g_engine.hglrc && wParam != SIZE_MINIMIZED && !g_engine.isResizing) {
+                int newWidth = LOWORD(lParam);
+                int newHeight = HIWORD(lParam);
+                
+                // Update active dialog's size when user manually resizes
+                if (g_engine.activeDialogType >= 0) {
+                    DialogInfo& activeDialog = g_engine.dialogs[g_engine.activeDialogType];
+                    activeDialog.currentWidth = max(200, newWidth - 16);
+                    activeDialog.currentHeight = max(150, newHeight - 39);
+                    activeDialog.hasCustomSize = true;
+                }
+                
+                glViewport(0, 0, newWidth, newHeight);
             }
+            return 0;
+            
+        case WM_ENTERSIZEMOVE:
+            // User started resizing - set flag to prevent conflicts
+            g_engine.isResizing = true;
+            return 0;
+            
+        case WM_EXITSIZEMOVE:
+            // User finished resizing - clear flag
+            g_engine.isResizing = false;
             return 0;
             
         case WM_SYSCOMMAND:
@@ -169,21 +262,15 @@ namespace ImGuiDialogs {
             break;
             
         case WM_CLOSE:
+            // Better close handling
             Hide();
             return 0;
             
         case WM_DESTROY:
-           
+            // Only allow destroy during shutdown
             if (g_engine.initialized) {
                 Hide();
                 return 0;
-            }
-            break;
-            
-        
-        case WM_ACTIVATE:
-            if (LOWORD(wParam) == WA_INACTIVE) {
-                // Don't auto-hide when losing focus - let user control this
             }
             break;
         }
@@ -228,74 +315,85 @@ namespace ImGuiDialogs {
             g_engine.hdc = NULL;
         }
     }
-    
-    bool Initialize(HWND parent) {
+
+    bool Initialize(HWND parent)
+    {
         g_engine.parent = parent;
-        
+
         // Create window class
         WNDCLASSEXW wc;
         memset(&wc, 0, sizeof(wc));
         wc.cbSize = sizeof(WNDCLASSEXW);
-        wc.style = CS_OWNDC; // Important for OpenGL
+        wc.style = CS_OWNDC;
         wc.lpfnWndProc = WndProc;
         wc.hInstance = GetModuleHandle(NULL);
         wc.hCursor = LoadCursor(NULL, IDC_ARROW);
         wc.lpszClassName = L"ImGuiDialogs";
-        
-        if (!RegisterClassExW(&wc)) {
+
+        if (!RegisterClassExW(&wc))
+        {
             return false;
         }
-        
+
+        // FIXED: Use default size for initial window creation
+        int defaultWidth = 500;
+        int defaultHeight = 600;
+
+        // FIXED: Simplified positioning - center on screen by default
         int screenWidth = GetSystemMetrics(SM_CXSCREEN);
         int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-        int x = (screenWidth - g_engine.currentWidth) / 2;
-        int y = (screenHeight - g_engine.currentHeight) / 2;
-        
+        int x = (screenWidth - defaultWidth) / 2;
+        int y = (screenHeight - defaultHeight) / 2;
+
+        // FIXED: Correct CreateWindow call (not CreateWindowEx)
         g_engine.hwnd = CreateWindowW(
-            wc.lpszClassName, 
-            L"Dialog", 
-            WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX, 
-            x, y, g_engine.currentWidth, g_engine.currentHeight,
-            NULL, 
-            NULL, 
-            wc.hInstance, 
-            NULL
-        );
-        
-        if (!g_engine.hwnd) {
+            wc.lpszClassName,
+            L"Dialog",
+            WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX, // Remove maximize to avoid sizing conflicts
+            x, y, defaultWidth, defaultHeight,
+            NULL, // No parent to avoid complex interactions
+            NULL,
+            wc.hInstance,
+            NULL);
+
+        if (!g_engine.hwnd)
+        {
             return false;
         }
-            
+
         // Initialize OpenGL
-        if (!CreateOpenGLContext(g_engine.hwnd)) {
+        if (!CreateOpenGLContext(g_engine.hwnd))
+        {
             CleanupOpenGL();
             DestroyWindow(g_engine.hwnd);
             UnregisterClassW(wc.lpszClassName, wc.hInstance);
             return false;
         }
-        
+
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
+        ImGuiIO &io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        
+
         // Setup Platform/Renderer backends
-        if (!ImGui_ImplWin32_Init(g_engine.hwnd)) {
+        if (!ImGui_ImplWin32_Init(g_engine.hwnd))
+        {
             return false;
         }
-        
-        if (!ImGui_ImplOpenGL3_Init("#version 130")) {
+
+        if (!ImGui_ImplOpenGL3_Init("#version 130"))
+        {
             return false;
         }
-        
+
         // Apply default theme
         ApplyTheme(THEME_PHOTOSHOP);
-        
+
         g_engine.initialized = true;
         return true;
     }
-    
+
     void Shutdown() {
         if (!g_engine.initialized) return;
         
@@ -413,41 +511,58 @@ namespace ImGuiDialogs {
             SetWindowPos(g_engine.hwnd, NULL, (int)x, (int)y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
         }
     }
-    
-    void SetNextWindowSize(float width, float height) {
-        // FIXED: Much simpler sizing logic to avoid conflicts
-        if (g_engine.hwnd && width > 0 && height > 0) {
-            
+
+    void SetNextWindowSize(float width, float height)
+    {
+        if (g_engine.hwnd && width > 0 && height > 0 && g_engine.activeDialogType >= 0)
+        {
+
             // Prevent recursive resizing
-            g_engine.windowResizing = true;
-            
-            // Calculate Win32 window size to accommodate ImGui content
-            int winWidth = (int)width + 16;   // Small padding for borders
-            int winHeight = (int)height + 39; // Padding for title bar + borders
-            
-            // Clamp to reasonable sizes
-            winWidth = max(300, min(1200, winWidth));
-            winHeight = max(200, min(800, winHeight));
-            
-            // Only resize if size actually changed
-            if (winWidth != g_engine.currentWidth || winHeight != g_engine.currentHeight) {
-                g_engine.currentWidth = winWidth;
-                g_engine.currentHeight = winHeight;
-                
-                // Get current position to maintain it
-                RECT currentRect;
-                if (GetWindowRect(g_engine.hwnd, &currentRect)) {
-                    SetWindowPos(g_engine.hwnd, NULL, 
-                                currentRect.left, currentRect.top, 
-                                winWidth, winHeight, 
-                                SWP_NOZORDER | SWP_NOACTIVATE);
-                }
+            if (g_engine.isResizing)
+                return;
+            g_engine.isResizing = true;
+
+            DialogInfo &activeDialog = g_engine.dialogs[g_engine.activeDialogType];
+
+            // Only resize if size actually changed significantly (avoid micro-adjustments)
+            int newWidth = (int)width;
+            int newHeight = (int)height;
+
+            if (abs(newWidth - activeDialog.currentWidth) < 5 &&
+                abs(newHeight - activeDialog.currentHeight) < 5)
+            {
+                g_engine.isResizing = false;
+                return; // Skip minor size changes
             }
-            
-            g_engine.windowResizing = false;
+
+            // Update dialog's current size
+            activeDialog.currentWidth = newWidth;
+            activeDialog.currentHeight = newHeight;
+            activeDialog.hasCustomSize = true;
+
+            // Calculate Win32 window size
+            int winWidth = newWidth + 16;
+            int winHeight = newHeight + 39;
+
+            // Clamp to reasonable sizes
+            winWidth = max(300, min(1400, winWidth));
+            winHeight = max(200, min(900, winHeight));
+
+            // Get current position
+            RECT currentRect;
+            if (GetWindowRect(g_engine.hwnd, &currentRect))
+            {
+                // Smooth resize without forcing
+                SetWindowPos(g_engine.hwnd, NULL,
+                             currentRect.left, currentRect.top,
+                             winWidth, winHeight,
+                             SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
+            }
+
+            g_engine.isResizing = false;
         }
     }
-    
+
     void SetNextWindowFocus() {
         if (g_engine.hwnd) {
             SetForegroundWindow(g_engine.hwnd);
