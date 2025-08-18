@@ -2539,45 +2539,45 @@ void RenderPropertiesDialog() {
     }
 
     // Calculate responsive widths
-    float availableWidth = GetContentRegionAvailWidth();
+    float availableWidth = ImGui::GetContentRegionAvail().x;
     float buttonWidth = availableWidth * 0.22f; // 22% for each button
 
     // =========================================================================
     // FILE INFO SECTION (just adding colors)
     // =========================================================================
-    if (CollapsingHeader("File Information", true)) {
+    if (ImGui::CollapsingHeader("File Information", ImGuiTreeNodeFlags_DefaultOpen)) {
         char textBuffer[256];
         
         if (globalView) {
-            TextColored(0.8f, 0.9f, 1.0f, 1.0f, "File Type: View File (.v56)");  // Light blue
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "File Type: View File (.v56)");  // Light blue
             sprintf(textBuffer, "Current Loop: %d / %d", curLoopIndex + 1, globalView->Head.view32.loopCount);
-            Text(textBuffer);
+            ImGui::Text("%s", textBuffer);
             
             if (curLoop && (*curLoop)) {
                 if ((*curLoop)->Head.flags) {
                     sprintf(textBuffer, "Loop Type: Mirror of Loop %d", (*curLoop)->Head.altLoop + 1);
-                    TextColored(1.0f, 0.8f, 0.3f, 1.0f, textBuffer);  // Orange
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "%s", textBuffer);  // Orange
                 } else {
                     sprintf(textBuffer, "Current Cell: %d / %d", curCellIndex + 1, (*curLoop)->Head.numCels);
-                    Text(textBuffer);
-                    TextColored(0.3f, 1.0f, 0.3f, 1.0f, "Loop Type: Normal");  // Green
+                    ImGui::Text("%s", textBuffer);
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Loop Type: Normal");  // Green
                 }
             }
         } else if (globalPicture) {
             const char* version = (globalPicture->format == _PIC_11) ? "SCI1.1 Picture" : "SCI32 Picture";
             sprintf(textBuffer, "File Type: %s (.p56)", version);
-            TextColored(0.8f, 0.9f, 1.0f, 1.0f, textBuffer);  // Light blue
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 1.0f), "%s", textBuffer);  // Light blue
             sprintf(textBuffer, "Current Cell: %d / %d", curCellIndex + 1, globalPicture->CellsCount());
-            Text(textBuffer);
+            ImGui::Text("%s", textBuffer);
         } else {
-            TextColored(1.0f, 0.5f, 0.5f, 1.0f, "No file loaded");  // Red
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "No file loaded");  // Red
         }
     }
     
     // =========================================================================
     // RESOLUTION SECTION (keeping original logic, adding color to apply button)
     // =========================================================================
-    if (CollapsingHeader("Resolution Settings", true)) {
+    if (ImGui::CollapsingHeader("Resolution Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         
         // Get current data - same logic as before
         static int resX = 320, resY = 200;
@@ -2608,12 +2608,15 @@ void RenderPropertiesDialog() {
         }
 
         // Single column layout for resolution
-        PushItemWidth(120);
-        InputInt("Width", &resX);
-        InputInt("Height", &resY);
+        ImGui::PushItemWidth(120);
+        ImGui::InputInt("Width", &resX);
+        ImGui::InputInt("Height", &resY);
         
         // Apply resolution button (now with green color)
-        if (ButtonColored("Apply Resolution", 0.2f, 0.7f, 0.2f, 1.0f)) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.84f, 0.24f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.56f, 0.16f, 1.0f));
+        if (ImGui::Button("Apply Resolution")) {
             if (globalView) {
                 globalView->Head.view32.resX = resX;
                 globalView->Head.view32.resY = resY;
@@ -2637,13 +2640,14 @@ void RenderPropertiesDialog() {
             needsResolutionRefresh = true;
             InvalidateRgn(hWnd, NULL, true);
         }
+        ImGui::PopStyleColor(3);
     }
     
     // =========================================================================
     // LOOP PROPERTIES SECTION (View files only) - just adding colors
     // =========================================================================
     if (globalView && curLoop && (*curLoop)) {
-        if (CollapsingHeader("Loop Properties")) {
+        if (ImGui::CollapsingHeader("Loop Properties")) {
             
             static int loopMirror = 0, loopBase = 0;
             static int loopContinue = -1, loopStartCell = -1, loopEndCell = -1;
@@ -2671,23 +2675,26 @@ void RenderPropertiesDialog() {
 
             // Single column layout for loop properties
             bool mirror = (loopMirror != 0);
-            Checkbox("Mirror Loop", &mirror);
+            ImGui::Checkbox("Mirror Loop", &mirror);
             loopMirror = mirror ? 1 : 0;
             
-            InputInt("Base Loop", &loopBase);
+            ImGui::InputInt("Base Loop", &loopBase);
             
             if (!loopMirror) {
-                Separator();
-                TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Animation Settings:");  // Light blue header
-                InputInt("Continue Loop", &loopContinue);
-                InputInt("Start Cell", &loopStartCell);
-                InputInt("End Cell", &loopEndCell);
-                InputInt("Repeat Count", &loopRepeat);
-                InputInt("Step Size", &loopStepSize);
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Animation Settings:");  // Light blue header
+                ImGui::InputInt("Continue Loop", &loopContinue);
+                ImGui::InputInt("Start Cell", &loopStartCell);
+                ImGui::InputInt("End Cell", &loopEndCell);
+                ImGui::InputInt("Repeat Count", &loopRepeat);
+                ImGui::InputInt("Step Size", &loopStepSize);
             }
             
             // Apply loop properties button (now with green color)
-            if (ButtonColored("Apply Loop Properties", 0.2f, 0.7f, 0.2f, 1.0f)) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.84f, 0.24f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.56f, 0.16f, 1.0f));
+            if (ImGui::Button("Apply Loop Properties")) {
                 int selLoop = curLoopIndex;
                 globalView->loops[selLoop]->Head.flags = loopMirror;
                 globalView->loops[selLoop]->Head.altLoop = loopBase;
@@ -2710,6 +2717,7 @@ void RenderPropertiesDialog() {
                 datasaved = false;
                 needsLoopRefresh = true;
             }
+            ImGui::PopStyleColor(3);
         }
     }
     
@@ -2717,7 +2725,7 @@ void RenderPropertiesDialog() {
     // CELL PROPERTIES SECTION WITH AUTO-APPLY (keeping original logic)
     // =========================================================================
     if (curCell && (*curCell)) {
-        if (CollapsingHeader("Cell Properties")) {
+        if (ImGui::CollapsingHeader("Cell Properties")) {
             
             // Current values
             static int cellX = 0, cellY = 0, cellPriority = 0;
@@ -2756,20 +2764,20 @@ void RenderPropertiesDialog() {
             // Single column layout for cell properties
             if (globalView) {
                 if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
-                    TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Hot Spot:");  // Light blue header
+                    ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Hot Spot:");  // Light blue header
                     
-                    if (InputInt("X Hot", &cellX)) cellEditingStarted = true;
-                    if (InputInt("Y Hot", &cellY)) cellEditingStarted = true;
+                    if (ImGui::InputInt("X Hot", &cellX)) cellEditingStarted = true;
+                    if (ImGui::InputInt("Y Hot", &cellY)) cellEditingStarted = true;
                     
                 } else {
-                    TextDisabled("Cell properties not available for mirror loops");
+                    ImGui::TextDisabled("Cell properties not available for mirror loops");
                 }
             } else if (globalPicture) {
-                TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Position:");  // Light blue header
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Position:");  // Light blue header
                 
-                if (InputInt("X Position", &cellX)) cellEditingStarted = true;
-                if (InputInt("Y Position", &cellY)) cellEditingStarted = true;
-                if (InputInt("Priority", &cellPriority)) cellEditingStarted = true;
+                if (ImGui::InputInt("X Position", &cellX)) cellEditingStarted = true;
+                if (ImGui::InputInt("Y Position", &cellY)) cellEditingStarted = true;
+                if (ImGui::InputInt("Priority", &cellPriority)) cellEditingStarted = true;
             }
             
             // Auto-apply changes when values change
@@ -2804,43 +2812,52 @@ void RenderPropertiesDialog() {
             
             // Reset and Cancel buttons (only show if we have changes or are editing)
             if (cellEditingStarted) {
-                Separator();
+                ImGui::Separator();
                 
                 // Show changed indicator with colors
                 if (cellHasChanges) {
-                    TextColored(1.0f, 0.8f, 0.3f, 1.0f, "* Values have been modified *");  // Orange
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "* Values have been modified *");  // Orange
                 } else {
-                    TextColored(0.7f, 0.7f, 0.7f, 1.0f, "No changes");  // Gray
+                    ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No changes");  // Gray
                 }
                 
-                if (cellHasChanges && ButtonColored("Reset to Original", 0.8f, 0.3f, 0.3f, 1.0f)) {  // Red button
-                    cellX = originalCellX;
-                    cellY = originalCellY;
-                    cellPriority = originalCellPriority;
-                    
-                    // Apply the reset values
-                    if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
-                        CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
-                        bCell->xHot = cellX;
-                        bCell->yHot = cellY;
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                    } else if (globalPicture) {
-                        CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
-                        bCell->xpos = cellX;
-                        bCell->ypos = cellY;
-                        bCell->priority = cellPriority;
-                        ShowCell(curCellIndex);
+                if (cellHasChanges) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.36f, 0.36f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.24f, 0.24f, 1.0f));
+                    if (ImGui::Button("Reset to Original")) {  // Red button
+                        cellX = originalCellX;
+                        cellY = originalCellY;
+                        cellPriority = originalCellPriority;
+                        
+                        // Apply the reset values
+                        if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
+                            CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+                            bCell->xHot = cellX;
+                            bCell->yHot = cellY;
+                            ShowLoopCell(curLoopIndex, curCellIndex);
+                        } else if (globalPicture) {
+                            CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+                            bCell->xpos = cellX;
+                            bCell->ypos = cellY;
+                            bCell->priority = cellPriority;
+                            ShowCell(curCellIndex);
+                        }
+                        
+                        prevCellX = cellX;
+                        prevCellY = cellY;
+                        prevCellPriority = cellPriority;
+                        cellHasChanges = false;
+                        cellEditingStarted = false;
                     }
-                    
-                    prevCellX = cellX;
-                    prevCellY = cellY;
-                    prevCellPriority = cellPriority;
-                    cellHasChanges = false;
-                    cellEditingStarted = false;
+                    ImGui::PopStyleColor(3);
                 }
                 
-                SameLine();
-                if (ButtonColored("Done Editing", 0.2f, 0.7f, 0.2f, 1.0f)) {  // Green button
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.84f, 0.24f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.56f, 0.16f, 1.0f));
+                if (ImGui::Button("Done Editing")) {  // Green button
                     cellEditingStarted = false;
                     cellHasChanges = false;
                     // Keep current values as new originals
@@ -2848,6 +2865,7 @@ void RenderPropertiesDialog() {
                     originalCellY = cellY;
                     originalCellPriority = cellPriority;
                 }
+                ImGui::PopStyleColor(3);
             }
         }
     }
@@ -2884,20 +2902,20 @@ void RenderPropertiesDialog() {
                     globalPicture->CellsCount(), curCellIndex + 1);
         }
         FotoSCIhopStyles::InfoText(fileInfo);
-        Separator();
+        ImGui::Separator();
 
         // =====================================================================
         // QUICK OPERATIONS
         // =====================================================================
-        if (CollapsingHeader("Quick Operations", true))
+        if (ImGui::CollapsingHeader("Quick Operations", ImGuiTreeNodeFlags_DefaultOpen))
         {
             // Loop operations (V56 only)
             if (hasLoops)
             {
                 FotoSCIhopStyles::HeaderText("Loop Operations:");
 
-                BeginGroup();
-                if (Button("Add Loop", buttonWidth, 0))
+                ImGui::BeginGroup();
+                if (ImGui::Button("Add Loop", ImVec2(buttonWidth, 0)))
                 {
                     if (globalView->addLoop(curLoopIndex))
                     {
@@ -2910,12 +2928,12 @@ void RenderPropertiesDialog() {
                         FotoSCIhopStyles::ErrorText("Failed to add loop");
                     }
                 }
-                if (IsItemHovered())
+                if (ImGui::IsItemHovered())
                 {
-                    SetTooltip("Add a new loop after the current loop");
+                    ImGui::SetTooltip("Add a new loop after the current loop");
                 }
 
-                SameLine();
+                ImGui::SameLine();
                 if (globalView->Head.view32.loopCount > 1)
                 {
                     if (FotoSCIhopStyles::RemoveButton("Remove Loop"))
@@ -2936,31 +2954,31 @@ void RenderPropertiesDialog() {
                             FotoSCIhopStyles::ErrorText("Failed to remove loop");
                         }
                     }
-                    if (IsItemHovered())
+                    if (ImGui::IsItemHovered())
                     {
-                        SetTooltip("Remove the current loop");
+                        ImGui::SetTooltip("Remove the current loop");
                     }
                 }
                 else
                 {
-                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
-                    Button("Remove Loop", buttonWidth, 0);
-                    PopStyleVar();
-                    if (IsItemHovered())
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    ImGui::Button("Remove Loop", ImVec2(buttonWidth, 0));
+                    ImGui::PopStyleVar();
+                    if (ImGui::IsItemHovered())
                     {
-                        SetTooltip("Cannot remove the last loop");
+                        ImGui::SetTooltip("Cannot remove the last loop");
                     }
                 }
-                EndGroup();
+                ImGui::EndGroup();
 
-                Separator();
+                ImGui::Separator();
             }
 
             // Cell operations (both P56 and V56)
             FotoSCIhopStyles::HeaderText("Cell Operations:");
 
-            BeginGroup();
-            if (Button("Add Cell", buttonWidth, 0))
+            ImGui::BeginGroup();
+            if (ImGui::Button("Add Cell", ImVec2(buttonWidth, 0)))
             {
                 bool success = false;
                 if (globalView)
@@ -2985,12 +3003,12 @@ void RenderPropertiesDialog() {
                     FotoSCIhopStyles::ErrorText("Failed to add cell");
                 }
             }
-            if (IsItemHovered())
+            if (ImGui::IsItemHovered())
             {
-                SetTooltip("Add a new empty cell after the current cell");
+                ImGui::SetTooltip("Add a new empty cell after the current cell");
             }
 
-            SameLine();
+            ImGui::SameLine();
             bool canRemoveCell = false;
             if (globalView && curLoop && (*curLoop))
             {
@@ -3092,22 +3110,22 @@ void RenderPropertiesDialog() {
                         FotoSCIhopStyles::ErrorText("Failed to remove cell");
                     }
                 }
-                if (IsItemHovered())
+                if (ImGui::IsItemHovered())
                 {
-                    SetTooltip("Remove the current cell");
+                    ImGui::SetTooltip("Remove the current cell");
                 }
             }
             else
             {
-                PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.5f);
-                Button("Remove Cell", buttonWidth, 0);
-                PopStyleVar();
-                if (IsItemHovered())
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                ImGui::Button("Remove Cell", ImVec2(buttonWidth, 0));
+                ImGui::PopStyleVar();
+                if (ImGui::IsItemHovered())
                 {
-                    SetTooltip("Cannot remove the last cell");
+                    ImGui::SetTooltip("Cannot remove the last cell");
                 }
             }
-            EndGroup();
+            ImGui::EndGroup();
         }
         FotoSCIhopStyles::EndSection();
     }
@@ -3125,7 +3143,7 @@ void RenderPropertiesDialog() {
     }
     
     if (canShowLinkPoints) {
-        if (CollapsingHeader("Link Points")) {
+        if (ImGui::CollapsingHeader("Link Points")) {
             
             // Current link point data
             static int linkCount = 0;
@@ -3180,35 +3198,35 @@ void RenderPropertiesDialog() {
             
             // Link Count control
             int oldLinkCount = linkCount;
-            if (InputInt("Number of Link Points", &linkCount)) {
+            if (ImGui::InputInt("Number of Link Points", &linkCount)) {
                 linkEditingStarted = true;
             }
             if (linkCount < 0) linkCount = 0;
             if (linkCount > 10) linkCount = 10;
             
             if (linkCount > 0) {
-                Separator();
-                Text("Link Point Coordinates:");
+                ImGui::Separator();
+                ImGui::Text("Link Point Coordinates:");
                 
                 // Show link points in single column layout
                 for (int i = 0; i < linkCount; i++) {
                     char headerLabel[32];
                     sprintf(headerLabel, "Link Point %d", i + 1);
                     
-                    if (CollapsingHeader(headerLabel)) {
+                    if (ImGui::CollapsingHeader(headerLabel)) {
                         char label[32];
                         
                         sprintf(label, "X##%d", i);
-                        if (InputInt(label, &linkX[i])) linkEditingStarted = true;
+                        if (ImGui::InputInt(label, &linkX[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Y##%d", i);
-                        if (InputInt(label, &linkY[i])) linkEditingStarted = true;
+                        if (ImGui::InputInt(label, &linkY[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Priority##%d", i);
-                        if (InputInt(label, &linkPri[i])) linkEditingStarted = true;
+                        if (ImGui::InputInt(label, &linkPri[i])) linkEditingStarted = true;
                         
                         sprintf(label, "Type##%d", i);
-                        if (InputInt(label, &linkType[i])) linkEditingStarted = true;
+                        if (ImGui::InputInt(label, &linkType[i])) linkEditingStarted = true;
                     }
                 }
             }
@@ -3267,16 +3285,16 @@ void RenderPropertiesDialog() {
             
             // Reset and Cancel buttons (only show if we have changes or are editing)
             if (linkEditingStarted) {
-                Separator();
+                ImGui::Separator();
                 
                 // Show changed indicator here to prevent shifting
                 if (linkHasChanges) {
-                    PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.8f);
-                    Text("* Link points have been modified *");
-                    PopStyleVar();
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.8f);
+                    ImGui::Text("* Link points have been modified *");
+                    ImGui::PopStyleVar();
                 }
                 
-                if (linkHasChanges && Button("Reset Link Points")) {
+                if (linkHasChanges && ImGui::Button("Reset Link Points")) {
                     linkCount = originalLinkCount;
                     for (int i = 0; i < 10; i++) {
                         linkX[i] = originalLinkX[i];
@@ -3311,8 +3329,8 @@ void RenderPropertiesDialog() {
                     linkEditingStarted = false;
                 }
                 
-                SameLine();
-                if (Button("Done with Link Points")) {
+                ImGui::SameLine();
+                if (ImGui::Button("Done with Link Points")) {
                     linkEditingStarted = false;
                     linkHasChanges = false;
                     // Keep current values as new originals
@@ -3328,20 +3346,20 @@ void RenderPropertiesDialog() {
         }
     } else {
         // Show grayed out section when link points aren't available
-        PushStyleVar(IMGUI_STYLE_VAR_ALPHA, 0.6f);
-        if (CollapsingHeader("Link Points (Not Available)")) {
-            Text("Link points are only available for:");
-            Text("- View files (.v56)");
-            Text("- Non-mirrored loops");
-            Text("- When a loop and cell are selected");
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.6f);
+        if (ImGui::CollapsingHeader("Link Points (Not Available)")) {
+            ImGui::Text("Link points are only available for:");
+            ImGui::Text("- View files (.v56)");
+            ImGui::Text("- Non-mirrored loops");
+            ImGui::Text("- When a loop and cell are selected");
         }
-        PopStyleVar();
+        ImGui::PopStyleVar();
     }
 
     // =========================================================================
     // REFERENCE IMAGE SECTION WITH AUTO-APPLY
     // =========================================================================
-    if (CollapsingHeader("Reference Image")) {
+    if (ImGui::CollapsingHeader("Reference Image")) {
         
         // Current reference image data
         static float refScaleX = 100.0f, refScaleY = 100.0f;
@@ -3392,66 +3410,66 @@ void RenderPropertiesDialog() {
         }
 
         // Scale Settings
-        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Scale Settings:");  // Light blue header
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Scale Settings:");  // Light blue header
         
         // Limit scale input to 3 digits (like original dialog)
-        PushItemWidth(120);
-        if (InputFloat("Scale X (%)", &refScaleX, 0.0f, 0.0f, 1)) refEditingStarted = true;
+        ImGui::PushItemWidth(120);
+        if (ImGui::InputFloat("Scale X (%)", &refScaleX, 0.0f, 0.0f, "%.1f")) refEditingStarted = true;
         if (refScaleX < 0) refScaleX = 0;
         if (refScaleX > 999) refScaleX = 999;
         
-        if (InputFloat("Scale Y (%)", &refScaleY, 0.0f, 0.0f, 1)) refEditingStarted = true;
+        if (ImGui::InputFloat("Scale Y (%)", &refScaleY, 0.0f, 0.0f, "%.1f")) refEditingStarted = true;
         if (refScaleY < 0) refScaleY = 0;
         if (refScaleY > 999) refScaleY = 999;
-        PopItemWidth();
+        ImGui::PopItemWidth();
         
-        Separator();
+        ImGui::Separator();
         
         // Bitmap File
-        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Reference Bitmap:");  // Light blue header
-        if (InputText("Bitmap File", refBitmapName, _MAX_PATH)) refEditingStarted = true;
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Reference Bitmap:");  // Light blue header
+        if (ImGui::InputText("Bitmap File", refBitmapName, _MAX_PATH)) refEditingStarted = true;
         
-        Separator();
+        ImGui::Separator();
         
         // Hot Spot Settings
-        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Hot Spot:");  // Light blue header
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Hot Spot:");  // Light blue header
         
-        PushItemWidth(120);
+        ImGui::PushItemWidth(120);
         // Limit hot spot values to 4 digits (like original dialog)
-        if (InputInt("X Hot", &refXHot)) refEditingStarted = true;
+        if (ImGui::InputInt("X Hot", &refXHot)) refEditingStarted = true;
         if (refXHot < -9999) refXHot = -9999;
         if (refXHot > 9999) refXHot = 9999;
         
-        if (InputInt("Y Hot", &refYHot)) refEditingStarted = true;
+        if (ImGui::InputInt("Y Hot", &refYHot)) refEditingStarted = true;
         if (refYHot < -9999) refYHot = -9999;
         if (refYHot > 9999) refYHot = 9999;
-        PopItemWidth();
+        ImGui::PopItemWidth();
         
-        Separator();
+        ImGui::Separator();
         
         // Link Point Settings
-        TextColored(0.7f, 0.9f, 1.0f, 1.0f, "Link Point:");  // Light blue header
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Link Point:");  // Light blue header
         
-        PushItemWidth(120);
+        ImGui::PushItemWidth(120);
         // Limit link point to 2 digits (like original dialog)
-        if (InputInt("Link Point Index", &refLinkPoint)) refEditingStarted = true;
+        if (ImGui::InputInt("Link Point Index", &refLinkPoint)) refEditingStarted = true;
         if (refLinkPoint < 0) refLinkPoint = 0;
         if (refLinkPoint > 99) refLinkPoint = 99;
         
         // Limit link point coordinates to 4 digits (like original dialog)
-        if (InputInt("Link Point X", &refLinkPointX)) refEditingStarted = true;
+        if (ImGui::InputInt("Link Point X", &refLinkPointX)) refEditingStarted = true;
         if (refLinkPointX < -9999) refLinkPointX = -9999;
         if (refLinkPointX > 9999) refLinkPointX = 9999;
         
-        if (InputInt("Link Point Y", &refLinkPointY)) refEditingStarted = true;
+        if (ImGui::InputInt("Link Point Y", &refLinkPointY)) refEditingStarted = true;
         if (refLinkPointY < -9999) refLinkPointY = -9999;
         if (refLinkPointY > 9999) refLinkPointY = 9999;
-        PopItemWidth();
+        ImGui::PopItemWidth();
         
-        Separator();
+        ImGui::Separator();
         
         // Priority Setting
-        if (Checkbox("Priority", &refPriority)) refEditingStarted = true;
+        if (ImGui::Checkbox("Priority", &refPriority)) refEditingStarted = true;
         
         // Auto-apply changes when values change
         if (refEditingStarted && (
@@ -3532,78 +3550,87 @@ void RenderPropertiesDialog() {
         
         // Reset and Cancel buttons (only show if we have changes or are editing)
         if (refEditingStarted) {
-            Separator();
+            ImGui::Separator();
             
             // Show changed indicator with colors
             if (refHasChanges) {
-                TextColored(1.0f, 0.8f, 0.3f, 1.0f, "* Reference image settings have been modified *");  // Orange
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "* Reference image settings have been modified *");  // Orange
             } else {
-                TextColored(0.7f, 0.7f, 0.7f, 1.0f, "No changes");  // Gray
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "No changes");  // Gray
             }
             
-            if (refHasChanges && ButtonColored("Reset to Original", 0.8f, 0.3f, 0.3f, 1.0f)) {  // Red button
-                refScaleX = originalRefScaleX;
-                refScaleY = originalRefScaleY;
-                strncpy(refBitmapName, originalRefBitmapName, _MAX_PATH - 1);
-                refBitmapName[_MAX_PATH - 1] = '\0';
-                refXHot = originalRefXHot;
-                refYHot = originalRefYHot;
-                refLinkPoint = originalRefLinkPoint;
-                refLinkPointX = originalRefLinkPointX;
-                refLinkPointY = originalRefLinkPointY;
-                refPriority = originalRefPriority;
-                
-                // Apply the reset values
-                gReferenceScaleX = refScaleX;
-                gReferenceScaleY = refScaleY;
-                strncpy(gReferenceBM, refBitmapName, _MAX_PATH - 1);
-                gReferenceBM[_MAX_PATH - 1] = '\0';
-                gReferenceXHot = refXHot;
-                gReferenceYHot = refYHot;
-                gReferenceLinkPoint = refLinkPoint;
-                gReferenceLinkPointX = refLinkPointX;
-                gReferenceLinkPointY = refLinkPointY;
-                gReferencePriority = refPriority;
-                
-                // Write reset values to INI
-                char buffer[16];
-                WritePrivateProfileStringA("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
-                sprintf(buffer, "%d", gReferenceXHot);
-                WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
-                sprintf(buffer, "%d", gReferenceYHot);
-                WritePrivateProfileStringA("reference", "referenceYHot", buffer, gConfigIni);
-                sprintf(buffer, "%f", gReferenceScaleX);
-                WritePrivateProfileStringA("reference", "referenceScaleX", buffer, gConfigIni);
-                sprintf(buffer, "%f", gReferenceScaleY);
-                WritePrivateProfileStringA("reference", "referenceScaleY", buffer, gConfigIni);
-                sprintf(buffer, "%d", gReferenceLinkPoint);
-                WritePrivateProfileStringA("reference", "referenceLinkPoint", buffer, gConfigIni);	
-                sprintf(buffer, "%d", gReferenceLinkPointX);
-                WritePrivateProfileStringA("reference", "referenceLinkPointX", buffer, gConfigIni);
-                sprintf(buffer, "%d", gReferenceLinkPointY);
-                WritePrivateProfileStringA("reference", "referenceLinkPointY", buffer, gConfigIni);
-                sprintf(buffer, "%d", gReferencePriority);
-                WritePrivateProfileStringA("reference", "referencePriority", buffer, gConfigIni);
-                
-                InvalidateRgn(hWnd, NULL, true);
-                
-                // Update tracking
-                prevRefScaleX = refScaleX;
-                prevRefScaleY = refScaleY;
-                strncpy(prevRefBitmapName, refBitmapName, _MAX_PATH - 1);
-                prevRefBitmapName[_MAX_PATH - 1] = '\0';
-                prevRefXHot = refXHot;
-                prevRefYHot = refYHot;
-                prevRefLinkPoint = refLinkPoint;
-                prevRefLinkPointX = refLinkPointX;
-                prevRefLinkPointY = refLinkPointY;
-                prevRefPriority = refPriority;
-                refHasChanges = false;
-                refEditingStarted = false;
+            if (refHasChanges) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.36f, 0.36f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.24f, 0.24f, 1.0f));
+                if (ImGui::Button("Reset to Original")) {  // Red button
+                    refScaleX = originalRefScaleX;
+                    refScaleY = originalRefScaleY;
+                    strncpy(refBitmapName, originalRefBitmapName, _MAX_PATH - 1);
+                    refBitmapName[_MAX_PATH - 1] = '\0';
+                    refXHot = originalRefXHot;
+                    refYHot = originalRefYHot;
+                    refLinkPoint = originalRefLinkPoint;
+                    refLinkPointX = originalRefLinkPointX;
+                    refLinkPointY = originalRefLinkPointY;
+                    refPriority = originalRefPriority;
+                    
+                    // Apply the reset values
+                    gReferenceScaleX = refScaleX;
+                    gReferenceScaleY = refScaleY;
+                    strncpy(gReferenceBM, refBitmapName, _MAX_PATH - 1);
+                    gReferenceBM[_MAX_PATH - 1] = '\0';
+                    gReferenceXHot = refXHot;
+                    gReferenceYHot = refYHot;
+                    gReferenceLinkPoint = refLinkPoint;
+                    gReferenceLinkPointX = refLinkPointX;
+                    gReferenceLinkPointY = refLinkPointY;
+                    gReferencePriority = refPriority;
+                    
+                    // Write reset values to INI
+                    char buffer[16];
+                    WritePrivateProfileStringA("reference", "referenceBM", (LPCSTR)gReferenceBM, gConfigIni);
+                    sprintf(buffer, "%d", gReferenceXHot);
+                    WritePrivateProfileStringA("reference", "referenceXHot", buffer, gConfigIni);
+                    sprintf(buffer, "%d", gReferenceYHot);
+                    WritePrivateProfileStringA("reference", "referenceYHot", buffer, gConfigIni);
+                    sprintf(buffer, "%f", gReferenceScaleX);
+                    WritePrivateProfileStringA("reference", "referenceScaleX", buffer, gConfigIni);
+                    sprintf(buffer, "%f", gReferenceScaleY);
+                    WritePrivateProfileStringA("reference", "referenceScaleY", buffer, gConfigIni);
+                    sprintf(buffer, "%d", gReferenceLinkPoint);
+                    WritePrivateProfileStringA("reference", "referenceLinkPoint", buffer, gConfigIni);	
+                    sprintf(buffer, "%d", gReferenceLinkPointX);
+                    WritePrivateProfileStringA("reference", "referenceLinkPointX", buffer, gConfigIni);
+                    sprintf(buffer, "%d", gReferenceLinkPointY);
+                    WritePrivateProfileStringA("reference", "referenceLinkPointY", buffer, gConfigIni);
+                    sprintf(buffer, "%d", gReferencePriority);
+                    WritePrivateProfileStringA("reference", "referencePriority", buffer, gConfigIni);
+                    
+                    InvalidateRgn(hWnd, NULL, true);
+                    
+                    // Update tracking
+                    prevRefScaleX = refScaleX;
+                    prevRefScaleY = refScaleY;
+                    strncpy(prevRefBitmapName, refBitmapName, _MAX_PATH - 1);
+                    prevRefBitmapName[_MAX_PATH - 1] = '\0';
+                    prevRefXHot = refXHot;
+                    prevRefYHot = refYHot;
+                    prevRefLinkPoint = refLinkPoint;
+                    prevRefLinkPointX = refLinkPointX;
+                    prevRefLinkPointY = refLinkPointY;
+                    prevRefPriority = refPriority;
+                    refHasChanges = false;
+                    refEditingStarted = false;
+                }
+                ImGui::PopStyleColor(3);
             }
             
-            SameLine();
-            if (ButtonColored("Done Editing", 0.2f, 0.7f, 0.2f, 1.0f)) {  // Green button
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.84f, 0.24f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.56f, 0.16f, 1.0f));
+            if (ImGui::Button("Done Editing")) {  // Green button
                 refEditingStarted = false;
                 refHasChanges = false;
                 // Keep current values as new originals
@@ -3618,6 +3645,7 @@ void RenderPropertiesDialog() {
                 originalRefLinkPointY = refLinkPointY;
                 originalRefPriority = refPriority;
             }
+            ImGui::PopStyleColor(3);
         }
     }
     
@@ -3625,11 +3653,15 @@ void RenderPropertiesDialog() {
     // MAIN BUTTONS
     // =========================================================================
     
-    Separator();
+    ImGui::Separator();
     
-    if (ButtonColored("Close", 0.6f, 0.6f, 0.8f, 1.0f)) {  // Light purple button
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.6f, 0.8f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.72f, 0.72f, 0.96f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.48f, 0.48f, 0.64f, 1.0f));
+    if (ImGui::Button("Close")) {  // Light purple button
         ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PROPERTIES);
     }
+    ImGui::PopStyleColor(3);
 
     EndDialog();
 }
