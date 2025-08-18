@@ -48,6 +48,7 @@ public:
     
     // Generate SCI table output
     std::string GenerateSCITableEntry(const std::string& comment) const;
+    bool ImportFromSCITableEntry(const std::string& sciLine);
     
     // UI State
     bool IsPreviewEnabled() const { return m_previewEnabled; }
@@ -57,13 +58,26 @@ public:
     const std::vector<ColorRemapEntry>& GetCurrentRemaps() const { return m_currentRemaps; }
     Palette* GetSourcePalette() const { return m_sourcePalette; }
     
-    // UI helpers
+    // UI helpers - NOW WITH PREVIEW UPDATES
     int GetSelectedFromColor() const { return m_selectedFromColor; }
     int GetSelectedToColor() const { return m_selectedToColor; }
-    void SetSelectedFromColor(int color) { m_selectedFromColor = color; }
-    void SetSelectedToColor(int color) { m_selectedToColor = color; }
+    void SetSelectedFromColor(int color) { 
+        m_selectedFromColor = color; 
+        UpdatePreviewRemap();
+    }
+    void SetSelectedToColor(int color) { 
+        m_selectedToColor = color; 
+        UpdatePreviewRemap();
+    }
     
     bool IsActive() const { return m_isActive; }
+    
+    // NEW: Get original palette colors for GUI display
+    bool GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const;
+    
+    // NEW: Preview functionality
+    void UpdatePreviewRemap();
+    void ClearPreviewRemap();
     
 private:
     // Internal state
@@ -78,6 +92,11 @@ private:
     std::vector<ColorRemapEntry> m_currentRemaps;
     int m_selectedFromColor;
     int m_selectedToColor;
+    
+    // NEW: Preview state
+    bool m_hasPreviewRemap;
+    int m_previewFromColor;
+    int m_previewToColor;
     
     // Helper functions
     void ApplyRemapsToMainPalette();

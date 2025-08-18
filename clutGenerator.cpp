@@ -2,6 +2,7 @@
 #include "ClutGenerator.h"
 #include <sstream>
 #include <iomanip>
+#include <sstream>
 
 // Forward declarations from FotoSCIhop
 extern HWND hWnd;  // For InvalidateRgn calls
@@ -16,6 +17,9 @@ ClutGenerator::ClutGenerator()
     , m_sourcePalette(nullptr)
     , m_selectedFromColor(0)
     , m_selectedToColor(0)
+    , m_hasPreviewRemap(false)
+    , m_previewFromColor(0)
+    , m_previewToColor(0)
 {
 }
 
@@ -36,6 +40,7 @@ bool ClutGenerator::Initialize(Palette* sourcePalette) {
     m_isActive = true;
     m_currentRemaps.clear();
     m_previewEnabled = true;
+    m_hasPreviewRemap = false;
     
     return true;
 }
@@ -50,6 +55,7 @@ void ClutGenerator::Shutdown() {
     m_isActive = false;
     m_previewEnabled = false;
     m_backupPalette.hasValidData = false;
+    m_hasPreviewRemap = false;
     m_currentRemaps.clear();
 }
 
@@ -72,6 +78,9 @@ void ClutGenerator::RestoreOriginalPalette() {
         RestorePaletteEntry(i);
     }
     
+    // Clear preview state
+    m_hasPreviewRemap = false;
+    
     // Force cached image data to refresh with restored palette
     ForceImageRefresh();
 }
@@ -82,6 +91,14 @@ void ClutGenerator::ApplyCurrentRemaps() {
     }
     
     ApplyRemapsToMainPalette();
+    
+    // If we have a preview remap, apply it on top
+    if (m_hasPreviewRemap) {
+        if (ValidateColorIndex(m_selectedFromColor) && ValidateColorIndex(m_selectedToColor)) {
+            PalEntry sourceEntry = m_backupPalette.entries[m_selectedToColor];
+            m_sourcePalette->SetPalEntry(sourceEntry, m_selectedFromColor);
+        }
+    }
     
     // Force cached image data to refresh with new palette
     ForceImageRefresh();
@@ -113,12 +130,16 @@ void ClutGenerator::ApplyRemapsToMainPalette() {
 
 void ClutGenerator::ClearAllRemaps() {
     m_currentRemaps.clear();
+    m_hasPreviewRemap = false;
     // Restore to original state
     RestoreOriginalPalette();
 }
 
 void ClutGenerator::AddRemap(int fromColor, int toColor) {
     if (!ValidateColorIndex(fromColor) || !ValidateColorIndex(toColor)) return;
+    
+    // Clear any preview remap first
+    ClearPreviewRemap();
     
     // Remove existing remap for this fromColor
     RemoveRemap(fromColor);
@@ -182,37 +203,117 @@ void ClutGenerator::SetPreviewEnabled(bool enabled) {
     }
 }
 
+// NEW: Get original palette entry for GUI display
+bool ClutGenerator::GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const {
+    if (!ValidateColorIndex(colorIndex) || !m_backupPalette.hasValidData) {
+        return false;
+    }
+    
+    entry = m_backupPalette.entries[colorIndex];
+    return true;
+}
+
+// NEW: Update preview remap
+void ClutGenerator::UpdatePreviewRemap() {
+    if (!m_isActive || !m_previewEnabled || !m_sourcePalette || !m_backupPalette.hasValidData) {
+        return;
+    }
+    
+    // Store preview state
+    m_hasPreviewRemap = true;
+    m_previewFromColor = m_selectedFromColor;
+    m_previewToColor = m_selectedToColor;
+    
+    // Apply all current remaps plus the preview remap
+    ApplyCurrentRemaps();
+}
+
+// NEW: Clear preview remap
+void ClutGenerator::ClearPreviewRemap() {
+    if (m_hasPreviewRemap) {
+        m_hasPreviewRemap = false;
+        // Reapply only the actual remaps (removes preview)
+        ApplyCurrentRemaps();
+    }
+}
+
 std::string ClutGenerator::GenerateSCITableEntry(const std::string& comment) const {
     std::ostringstream ss;
     
-    if (!comment.empty()) {
-        ss << "\t;; " << comment << "\n";
-    }
-    
+    // Start with a tab to match COLORTBL.SC formatting
     ss << "\t";
     
-    int entryCount = 0;
+    int pairCount = 0;
     
-    // Output only active remaps, limited to 12 (SCI engine limitation)
-    for (size_t i = 0; i < m_currentRemaps.size(); i++) {
+    // Output only active remaps, limited to 12 pairs (SCI engine limitation)
+    for (size_t i = 0; i < m_currentRemaps.size() && pairCount < 12; i++) {
         const ColorRemapEntry& remap = m_currentRemaps[i];
-        if (!remap.active || entryCount >= 12) continue;
+        if (!remap.active) continue;
         
-        if (entryCount > 0) ss << "  ";
+        if (pairCount > 0) ss << "  ";
+        
+        // Format as "fromColor toColor" with proper spacing
         ss << std::setw(3) << remap.fromColor << " " << std::setw(3) << remap.toColor;
-        entryCount++;
+        pairCount++;
     }
     
-    // Pad with -1 values to fill the standard 12 pairs
-    while (entryCount < 12) {
-        if (entryCount > 0) ss << "  ";
+    // Pad with -1 -1 pairs to fill the standard 12 pairs (24 numbers total)
+    while (pairCount < 12) {
+        if (pairCount > 0) ss << "  ";
         ss << " -1  -1";
-        entryCount++;
+        pairCount++;
     }
     
+    // Add comment in SCI format
     ss << " ;; " << (comment.empty() ? "Generated remap" : comment);
     
     return ss.str();
+}
+
+bool ClutGenerator::ImportFromSCITableEntry(const std::string& sciLine) {
+    if (!m_isActive || sciLine.empty()) return false;
+    
+    // Find the first semicolon and truncate there
+    std::string cleanLine = sciLine;
+    size_t semicolonPos = cleanLine.find(';');
+    if (semicolonPos != std::string::npos) {
+        cleanLine = cleanLine.substr(0, semicolonPos);
+    }
+    
+    // Parse numbers from the line
+    std::vector<int> numbers;
+    std::istringstream iss(cleanLine);
+    int num;
+    
+    while (iss >> num) {
+        numbers.push_back(num);
+    }
+    
+    // Process pairs of numbers
+    int importedCount = 0;
+    for (size_t i = 0; i < numbers.size() - 1; i += 2) {
+        int fromColor = numbers[i];
+        int toColor = numbers[i + 1];
+        
+        // Skip -1 -1 pairs (empty slots)
+        if (fromColor == -1 || toColor == -1) continue;
+        
+        // Validate color indices
+        if (!ValidateColorIndex(fromColor) || !ValidateColorIndex(toColor)) continue;
+        
+        // Add the remap (this will automatically remove any existing remap for fromColor)
+        RemoveRemap(fromColor); // Clear existing first
+        m_currentRemaps.push_back(ColorRemapEntry(fromColor, toColor));
+        importedCount++;
+    }
+    
+    // Apply the imported remaps
+    if (importedCount > 0) {
+        ApplyCurrentRemaps();
+        return true;
+    }
+    
+    return false;
 }
 
 // Helper functions
