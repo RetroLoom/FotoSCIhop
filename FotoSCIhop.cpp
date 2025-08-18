@@ -2543,9 +2543,39 @@ void RenderPropertiesDialog() {
     float buttonWidth = availableWidth * 0.22f; // 22% for each button
 
     // =========================================================================
-    // FILE INFO SECTION (just adding colors)
+    // SCROLLABLE CONTENT AREA
     // =========================================================================
-    if (ImGui::CollapsingHeader("File Information", ImGuiTreeNodeFlags_DefaultOpen)) {
+    
+    // Reserve space for the close button at the bottom
+    float reservedHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().WindowPadding.y;
+    float contentHeight = ImGui::GetContentRegionAvail().y - reservedHeight;
+    
+    // Create scrollable child window for all content
+    // This allows the dialog content to scroll when sections are expanded beyond window height
+    if (ImGui::BeginChild("PropertiesContent", ImVec2(0, contentHeight), false, ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+        
+        // Auto-scroll functionality - track which sections were just opened
+        // When a section is newly opened, automatically scroll to make it visible
+        static bool wasFileInfoOpen = false;
+        static bool wasResolutionOpen = false;
+        static bool wasLoopPropsOpen = false;
+        static bool wasCellPropsOpen = false;
+        static bool wasAddRemoveOpen = false;
+        static bool wasLinkPointsOpen = false;
+        static bool wasRefImageOpen = false;
+
+        // =========================================================================
+        // FILE INFO SECTION (just adding colors)
+        // =========================================================================
+            bool fileInfoOpen = ImGui::CollapsingHeader("File Information", ImGuiTreeNodeFlags_DefaultOpen);
+        
+        // Auto-scroll when section is newly opened
+        if (fileInfoOpen && !wasFileInfoOpen) {
+            ImGui::SetScrollHereY(0.0f); // Scroll so this section is at the top
+        }
+        wasFileInfoOpen = fileInfoOpen;
+        
+        if (fileInfoOpen) {
         char textBuffer[256];
         
         if (globalView) {
@@ -3649,8 +3679,11 @@ void RenderPropertiesDialog() {
         }
     }
     
+    } // End scrollable content area
+    ImGui::EndChild();
+    
     // =========================================================================
-    // MAIN BUTTONS
+    // MAIN BUTTONS (Fixed at bottom, outside scroll area)
     // =========================================================================
     
     ImGui::Separator();
