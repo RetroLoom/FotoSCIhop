@@ -176,6 +176,8 @@ namespace ImGuiDialogs {
     // Button styling helpers
     bool ButtonColored(const char* label, ImGuiColor color);
     bool ButtonColored(const char* label, float r, float g, float b, float a = 1.0f);
+    bool ButtonColored(const char* label, float r, float g, float b, float a, float width, float height);
+    bool ButtonColored(const char* label, ImGuiColor color, float width, float height);
     
     // =========================================================================
     // INPUT WIDGETS - All unchanged

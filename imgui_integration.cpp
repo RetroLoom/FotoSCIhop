@@ -841,7 +841,18 @@ namespace ImGuiDialogs {
     bool ButtonColored(const char* label, float r, float g, float b, float a) {
         return ButtonColored(label, ImGuiColor(r, g, b, a));
     }
-    
+
+    bool ButtonColored(const char *label, float r, float g, float b, float a, float width, float height) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r, g, b, a));
+        bool result = ImGui::Button(label, ImVec2(width, height));
+        ImGui::PopStyleColor();
+        return result;
+    }
+
+    bool ButtonColored(const char *label, ImGuiColor color, float width, float height){
+        return ButtonColored(label, color.r, color.g, color.b, color.a, width, height);
+    }
+
     // INPUT WIDGETS
     bool InputInt(const char* label, int* value, int step, int step_fast) {
         return ImGui::InputInt(label, value, step, step_fast);
