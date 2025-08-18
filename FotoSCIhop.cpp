@@ -15,6 +15,7 @@
 #include "ClutGenerator.h"
 #define MAX_LOADSTRING 100
 #include "imgui_integration.h"
+#include "imgui.h"
 #include "fotoscihop_styles.h"
 
 #include <set> 
@@ -3650,7 +3651,7 @@ void RenderAboutDialog() {
     }
 
     // Calculate responsive widths
-    float availableWidth = GetContentRegionAvailWidth();
+    float availableWidth = ImGui::GetContentRegionAvail().x;
     
     // =========================================================================
     // APPLICATION INFO SECTION
@@ -3658,37 +3659,47 @@ void RenderAboutDialog() {
     
     // Center the main title
     const char* appTitle = "FotoSCIhop";
-    float titleWidth = CalcItemWidth() * 0.6f; // Estimate title width
-    CenterNextItem(titleWidth);
+    float titleWidth = ImGui::CalcItemWidth() * 0.6f; // Estimate title width
+    
+    // Center alignment helper
+    float windowWidth = ImGui::GetWindowSize().x;
+    float center = (windowWidth - titleWidth) * 0.5f;
+    if (center > 0) {
+        ImGui::SetCursorPosX(center);
+    }
     
     // Large title with styling
-    PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 0, 10);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 10));
     FotoSCIhopStyles::HeaderText(appTitle);
-    PopStyleVar();
+    ImGui::PopStyleVar();
     
-    Spacing();
+    ImGui::Spacing();
     
-    // Subtitle
-    CenterNextItem(availableWidth * 0.8f);
-    Text("Sierra SCI1.1/SCI32 Games Image Editor");
+    // Subtitle - center alignment
+    float subtitleWidth = availableWidth * 0.8f;
+    center = (windowWidth - subtitleWidth) * 0.5f;
+    if (center > 0) {
+        ImGui::SetCursorPosX(center);
+    }
+    ImGui::Text("Sierra SCI1.1/SCI32 Games Image Editor");
     
-    Spacing();
-    Separator();
-    Spacing();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
     
     // =========================================================================
     // VERSION AND BUILD INFO
     // =========================================================================
     
-    if (CollapsingHeader("Version Information", true)) {
-        Text("Version: 2.0 (ImGui Edition)");
-        Text("Build Date: " __DATE__ " " __TIME__);
-        Text("Platform: Windows");
+    if (ImGui::CollapsingHeader("Version Information", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Version: 2.0 (ImGui Edition)");
+        ImGui::Text("Build Date: " __DATE__ " " __TIME__);
+        ImGui::Text("Platform: Windows");
         
         #ifdef _WIN64
-        Text("Architecture: x64");
+        ImGui::Text("Architecture: x64");
         #else
-        Text("Architecture: x86");
+        ImGui::Text("Architecture: x86");
         #endif
         
         #ifdef _DEBUG
@@ -3702,21 +3713,21 @@ void RenderAboutDialog() {
     // COPYRIGHT AND AUTHORS
     // =========================================================================
     
-    if (CollapsingHeader("Copyright & Credits", true)) {
+    if (ImGui::CollapsingHeader("Copyright & Credits", ImGuiTreeNodeFlags_DefaultOpen)) {
         FotoSCIhopStyles::HeaderText("Original Authors:");
-        Text("- Enrico Rolfi 'Endroz' (2004-2021)");
-        Text("- Daniel Arnold 'Dhel' (2022-2025)");
+        ImGui::Text("- Enrico Rolfi 'Endroz' (2004-2021)");
+        ImGui::Text("- Daniel Arnold 'Dhel' (2022-2025)");
         
-        Spacing();
+        ImGui::Spacing();
         FotoSCIhopStyles::HeaderText("ImGui Migration:");
-        Text("- Enhanced with modern ImGui interface");
+        ImGui::Text("- Enhanced with modern ImGui interface");
         
-        Spacing();
+        ImGui::Spacing();
         FotoSCIhopStyles::HeaderText("Copyright:");
-        Text("Copyright (C) Enrico Rolfi 'Endroz', 2004-2021");
-        Text("Copyright (C) Daniel Arnold 'Dhel', 2022-2025");
+        ImGui::Text("Copyright (C) Enrico Rolfi 'Endroz', 2004-2021");
+        ImGui::Text("Copyright (C) Daniel Arnold 'Dhel', 2022-2025");
         
-        Spacing();
+        ImGui::Spacing();
         FotoSCIhopStyles::InfoText("Part of the TraduSCI package");
     }
     
@@ -3724,33 +3735,33 @@ void RenderAboutDialog() {
     // DESCRIPTION
     // =========================================================================
     
-    if (CollapsingHeader("About This Tool")) {
-        TextWrapped("FotoSCIhop is a specialized tool for modifying .P56 and .V56 image files from Sierra SCI games. "
-                   "It supports both SCI1.1 and SCI32 formats, allowing game modders and translators to edit "
-                   "graphics, animations, and color palettes used in classic adventure games.");
+    if (ImGui::CollapsingHeader("About This Tool")) {
+        ImGui::TextWrapped("FotoSCIhop is a specialized tool for modifying .P56 and .V56 image files from Sierra SCI games. "
+                          "It supports both SCI1.1 and SCI32 formats, allowing game modders and translators to edit "
+                          "graphics, animations, and color palettes used in classic adventure games.");
         
-        Spacing();
+        ImGui::Spacing();
         
         FotoSCIhopStyles::HeaderText("Supported File Types:");
-        BulletText(".P56 files - Picture resources (SCI1.1 and SCI32)");
-        BulletText(".V56 files - View/Animation resources");
+        ImGui::BulletText(".P56 files - Picture resources (SCI1.1 and SCI32)");
+        ImGui::BulletText(".V56 files - View/Animation resources");
         
-        Spacing();
+        ImGui::Spacing();
         
         FotoSCIhopStyles::HeaderText("Key Features:");
-        BulletText("Import/Export BMP images");
-        BulletText("Edit color palettes");
-        BulletText("Modify animation loops and cells");
-        BulletText("Adjust link points and hot spots");
-        BulletText("Priority bar visualization");
-        BulletText("Reference image overlay support");
+        ImGui::BulletText("Import/Export BMP images");
+        ImGui::BulletText("Edit color palettes");
+        ImGui::BulletText("Modify animation loops and cells");
+        ImGui::BulletText("Adjust link points and hot spots");
+        ImGui::BulletText("Priority bar visualization");
+        ImGui::BulletText("Reference image overlay support");
     }
     
     // =========================================================================
     // SYSTEM INFO (Optional)
     // =========================================================================
     
-    if (CollapsingHeader("System Information")) {
+    if (ImGui::CollapsingHeader("System Information")) {
         char systemInfo[256];
         
         // Get Windows version info
@@ -3763,7 +3774,7 @@ void RenderAboutDialog() {
         if (GetVersionEx(&osvi)) {
             sprintf(systemInfo, "OS: Windows %d.%d (Build %d)", 
                    osvi.dwMajorVersion, osvi.dwMinorVersion, osvi.dwBuildNumber);
-            Text(systemInfo);
+            ImGui::Text("%s", systemInfo);
         }
         #pragma warning(pop)
         
@@ -3772,16 +3783,16 @@ void RenderAboutDialog() {
         memInfo.dwLength = sizeof(MEMORYSTATUSEX);
         if (GlobalMemoryStatusEx(&memInfo)) {
             sprintf(systemInfo, "Total RAM: %.1f GB", (float)memInfo.ullTotalPhys / (1024.0f * 1024.0f * 1024.0f));
-            Text(systemInfo);
+            ImGui::Text("%s", systemInfo);
             
             sprintf(systemInfo, "Available RAM: %.1f GB", (float)memInfo.ullAvailPhys / (1024.0f * 1024.0f * 1024.0f));
-            Text(systemInfo);
+            ImGui::Text("%s", systemInfo);
         }
         
         // Current working directory
         char currentDir[MAX_PATH];
         if (GetCurrentDirectory(MAX_PATH, currentDir)) {
-            Text("Working Directory:");
+            ImGui::Text("Working Directory:");
             FotoSCIhopStyles::DisabledText(currentDir);
         }
     }
@@ -3790,16 +3801,16 @@ void RenderAboutDialog() {
     // THIRD PARTY ACKNOWLEDGMENTS
     // =========================================================================
     
-    if (CollapsingHeader("Third Party Libraries")) {
+    if (ImGui::CollapsingHeader("Third Party Libraries")) {
         FotoSCIhopStyles::HeaderText("This application uses:");
         
-        BulletText("Dear ImGui - Immediate Mode GUI");
+        ImGui::BulletText("Dear ImGui - Immediate Mode GUI");
         FotoSCIhopStyles::DisabledText("   https://github.com/ocornut/imgui");
         
-        BulletText("OpenGL - Graphics rendering");
-        BulletText("Windows GDI+ - Image processing");
+        ImGui::BulletText("OpenGL - Graphics rendering");
+        ImGui::BulletText("Windows GDI+ - Image processing");
         
-        Spacing();
+        ImGui::Spacing();
         FotoSCIhopStyles::InfoText("Special thanks to the Sierra game preservation community!");
     }
     
@@ -3807,12 +3818,15 @@ void RenderAboutDialog() {
     // MAIN BUTTONS
     // =========================================================================
     
-    Separator();
-    Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
     
     // Center the close button
     float buttonWidth = 120.0f;
-    CenterNextItem(buttonWidth);
+    center = (windowWidth - buttonWidth) * 0.5f;
+    if (center > 0) {
+        ImGui::SetCursorPosX(center);
+    }
     
     if (FotoSCIhopStyles::CloseButton("Close")) {
         ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_ABOUT);
