@@ -3630,12 +3630,6 @@ void RenderAboutDialog() {
     EndDialog();
 }
 
-
-
-// Forward declaration for file dialogs
-BOOL DoSaveFileDialog(HWND hwnd, const char* filter, const char* defaultExt, char* filename, size_t filenameSize);
-BOOL DoOpenFileDialog(HWND hwnd, const char* filter, char* filename, size_t filenameSize);
-
 void RenderClutGeneratorDialog() {
     using namespace ImGuiDialogs;
     using namespace FotoSCIhopStyles;
@@ -4311,35 +4305,6 @@ void RenderClutGeneratorDialog() {
     PopStyleVar();
     
     EndDialog();
-}
-// Helper functions for file dialogs
-BOOL DoSaveFileDialog(HWND hwnd, const char* filter, const char* defaultExt, char* filename, size_t filenameSize) {
-    OPENFILENAME ofn;
-    ZeroMemory(&ofn, sizeof(ofn));
-    
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrFile = filename;
-    ofn.nMaxFile = static_cast<DWORD>(filenameSize);
-    ofn.lpstrDefExt = defaultExt;
-    ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
-    
-    return GetSaveFileName(&ofn);
-}
-
-BOOL DoOpenFileDialog(HWND hwnd, const char* filter, char* filename, size_t filenameSize) {
-    OPENFILENAME ofn;
-    ZeroMemory(&ofn, sizeof(ofn));
-    
-    ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = hwnd;
-    ofn.lpstrFilter = filter;
-    ofn.lpstrFile = filename;
-    ofn.nMaxFile = static_cast<DWORD>(filenameSize);
-    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
-    
-    return GetOpenFileName(&ofn);
 }
 
 #pragma warning(pop)  // Restore warning level
