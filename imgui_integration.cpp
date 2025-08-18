@@ -70,7 +70,7 @@ namespace ImGuiDialogs {
             return;
 
         // Small delay to ensure proper initialization
-        Sleep(1);
+        Sleep(10);
 
         g_engine.dialogs[type].isOpen = true;
         if (g_engine.hwnd)
