@@ -4017,7 +4017,7 @@ void RenderClutGeneratorDialog() {
     static bool shouldClose = false;
     static bool magicWandWasEnabled = false;
     
-    // Enhanced state for better editing
+    // Enhanced state for better editing - keeping original complexity but organizing better
     static int selectedRemapIndex = -1;  // Which remap is currently selected
     static int hoveredRemapIndex = -1;   // Which remap is being hovered
     static bool editingMode = false;     // Are we editing a selected remap?
@@ -4025,7 +4025,7 @@ void RenderClutGeneratorDialog() {
     static bool editingFromColor = true; // true = editing FROM, false = editing TO
     
     bool open = true;
-    SetNextWindowSize(1100, 750);
+    SetNextWindowSize(1200, 800); // Slightly larger for better spacing
     
     if (!BeginDialog("CLUT Generator - Live Preview", &open)) {
         EndDialog();
@@ -4082,31 +4082,31 @@ void RenderClutGeneratorDialog() {
     float availableWidth = ImGui::GetContentRegionAvail().x;
     
     // =========================================================================
-    // ENHANCED HEADER SECTION with Edit Mode Status
+    // HEADER SECTION - Cleaner but still comprehensive
     // =========================================================================
     
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.1f, 0.15f, 0.8f));
     
-    if (ImGui::BeginChild("HeaderSection", ImVec2(0, 110), true)) {
+    if (ImGui::BeginChild("HeaderSection", ImVec2(0, 90), true)) {
         
+        // Row 1: Main controls
         ImGui::BeginGroup();
         {
-            // Main controls row
             bool remapActive = g_clutGenerator->IsPreviewEnabled();
-            if (ImGui::Checkbox("Activate Live Preview", &remapActive)) {
+            if (ImGui::Checkbox("Live Preview", &remapActive)) {
                 g_clutGenerator->SetPreviewEnabled(remapActive);
             }
             
             ImGui::SameLine();
             if (remapActive) {
-                SuccessText("● LIVE");
+                SuccessText("* ACTIVE");
             } else {
-                DisabledText("○ OFF");
+                DisabledText("- OFF");
             }
             
             ImGui::SameLine(); 
-            ImGui::Dummy(ImVec2(20, 0));
+            ImGui::Dummy(ImVec2(30, 0));
             
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.8f, 1.0f));
@@ -4124,6 +4124,9 @@ void RenderClutGeneratorDialog() {
             InfoText(usageText);
             
             ImGui::SameLine();
+            ImGui::Dummy(ImVec2(20, 0));
+            
+            ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.48f, 0.24f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.32f, 0.16f, 1.0f));
@@ -4136,6 +4139,9 @@ void RenderClutGeneratorDialog() {
             ImGui::PopStyleColor(3);
             
             ImGui::SameLine();
+            ImGui::Dummy(ImVec2(20, 0));
+            
+            ImGui::SameLine();
             if (FotoSCIhopStyles::CloseButton("Close")) {
                 shouldClose = true;
             }
@@ -4144,22 +4150,13 @@ void RenderClutGeneratorDialog() {
         
         ImGui::Spacing();
         
-        // Enhanced status row with edit mode feedback
+        // Row 2: Status and mode indicators - more organized
         if (editingMode && selectedRemapIndex >= 0) {
-            WarningText("✏️ EDIT MODE:");
+            WarningText(">> EDIT MODE:");
             ImGui::SameLine();
             SuccessText(editModeStatus.c_str());
             ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.3f, 0.8f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.72f, 0.36f, 0.36f, 0.8f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.48f, 0.24f, 0.24f, 0.8f));
-            if (ImGui::Button("Cancel Edit")) {
-                editingMode = false;
-                selectedRemapIndex = -1;
-                editModeStatus = "";
-            }
-            ImGui::PopStyleColor(3);
-            ImGui::SameLine();
+            
             // Toggle between editing FROM and TO
             const char* editModeText = editingFromColor ? "[Editing FROM]" : "[Editing TO]";
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(editingFromColor ? 1.0f : 0.3f, editingFromColor ? 0.3f : 1.0f, 0.3f, 0.8f));
@@ -4170,10 +4167,21 @@ void RenderClutGeneratorDialog() {
                 editModeStatus = editingFromColor ? "Now editing FROM color" : "Now editing TO color";
             }
             ImGui::PopStyleColor(3);
-        } else {
-            WarningText("🪄 Magic Wand Active: Left-click = FROM, Right-click = TO");
+            
             ImGui::SameLine();
-            InfoText("• Click remap entries to edit them");
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.3f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.72f, 0.36f, 0.36f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.48f, 0.24f, 0.24f, 0.8f));
+            if (ImGui::Button("Exit Edit Mode")) {
+                editingMode = false;
+                selectedRemapIndex = -1;
+                editModeStatus = "";
+            }
+            ImGui::PopStyleColor(3);
+        } else {
+            WarningText("* Magic Wand Active: Left-click = FROM, Right-click = TO");
+            ImGui::SameLine();
+            InfoText("- Click remap entries to select and edit them");
         }
         
     }
@@ -4185,13 +4193,13 @@ void RenderClutGeneratorDialog() {
     ImGui::Spacing();
     
     // =========================================================================
-    // MAIN WORKSPACE
+    // MAIN WORKSPACE - Keep 3-column layout but improve organization
     // =========================================================================
     
-    if (ImGui::BeginChild("MainWorkspace", ImVec2(0, -280))) {
+    if (ImGui::BeginChild("MainWorkspace", ImVec2(0, -240))) {
         
         // =====================================================================
-        // LEFT COLUMN - Enhanced Color Selection
+        // LEFT COLUMN - Enhanced Color Selection (keep full functionality)
         // =====================================================================
         if (ImGui::BeginChild("LeftColumn", ImVec2(availableWidth * 0.32f, 0), true)) {
             
@@ -4201,12 +4209,12 @@ void RenderClutGeneratorDialog() {
             
             // Enhanced current selection display
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.1f, 0.2f, 0.9f));
-            if (ImGui::BeginChild("CurrentSelection", ImVec2(0, 180), true)) {
+            if (ImGui::BeginChild("CurrentSelection", ImVec2(0, 200), true)) {
                 
                 int fromColor = g_clutGenerator->GetSelectedFromColor();
                 int toColor = g_clutGenerator->GetSelectedToColor();
                 
-                // FROM color display with enhanced feedback
+                // FROM color display
                 ImGui::Text("FROM Color:");
                 PalEntry fromEntry;
                 if (g_clutGenerator->GetOriginalPaletteEntry(fromColor, fromEntry)) {
@@ -4216,9 +4224,7 @@ void RenderClutGeneratorDialog() {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(fromEntry.red / 255.0f * 1.2f, fromEntry.green / 255.0f * 1.2f, fromEntry.blue / 255.0f * 1.2f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(fromEntry.red / 255.0f * 0.8f, fromEntry.green / 255.0f * 0.8f, fromEntry.blue / 255.0f * 0.8f, 1.0f));
-                    if (ImGui::Button(fromLabel)) {
-                        // Could add click behavior here
-                    }
+                    ImGui::Button(fromLabel);
                     ImGui::PopStyleColor(3);
                     
                     ImGui::SameLine();
@@ -4239,9 +4245,7 @@ void RenderClutGeneratorDialog() {
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(toEntry.red / 255.0f * 1.2f, toEntry.green / 255.0f * 1.2f, toEntry.blue / 255.0f * 1.2f, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(toEntry.red / 255.0f * 0.8f, toEntry.green / 255.0f * 0.8f, toEntry.blue / 255.0f * 0.8f, 1.0f));
-                    if (ImGui::Button(toLabel)) {
-                        // Could add click behavior here
-                    }
+                    ImGui::Button(toLabel);
                     ImGui::PopStyleColor(3);
                     
                     ImGui::SameLine();
@@ -4254,7 +4258,7 @@ void RenderClutGeneratorDialog() {
                 ImGui::Separator();
                 ImGui::Spacing();
                 
-                // Enhanced edit mode status
+                // Edit mode status and navigation
                 if (editingMode && selectedRemapIndex >= 0) {
                     const std::vector<ColorRemapEntry>& remaps = g_clutGenerator->GetCurrentRemaps();
                     if (selectedRemapIndex < remaps.size()) {
@@ -4263,11 +4267,12 @@ void RenderClutGeneratorDialog() {
                         WarningText(editingText);
                         InfoText("Click palette colors to modify");
                         ImGui::Spacing();
-                        // Add navigation buttons
+                        
+                        // Navigation buttons
                         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.6f, 0.8f, 0.8f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.48f, 0.72f, 0.96f, 0.8f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.48f, 0.64f, 0.8f));
-                        if (ImGui::Button("← Previous Color")) {
+                        if (ImGui::Button("<< Previous Color")) {
                             if (editingFromColor) {
                                 int newFrom = (fromColor > 0) ? fromColor - 1 : 255;
                                 g_clutGenerator->SetSelectedFromColor(newFrom);
@@ -4277,11 +4282,12 @@ void RenderClutGeneratorDialog() {
                             }
                         }
                         ImGui::PopStyleColor(3);
+                        
                         ImGui::SameLine();
                         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f, 0.6f, 0.8f, 0.8f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.48f, 0.72f, 0.96f, 0.8f));
                         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.32f, 0.48f, 0.64f, 0.8f));
-                        if (ImGui::Button("Next Color →")) {
+                        if (ImGui::Button("Next Color >>")) {
                             if (editingFromColor) {
                                 int newFrom = (fromColor < 255) ? fromColor + 1 : 0;
                                 g_clutGenerator->SetSelectedFromColor(newFrom);
@@ -4300,12 +4306,12 @@ void RenderClutGeneratorDialog() {
             
             ImGui::Spacing();
             
-            // Enhanced action buttons
+            // Action buttons - keep original functionality
             if (!editingMode) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.96f, 0.24f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.64f, 0.16f, 1.0f));
-                if (ImGui::Button("Add New Remap")) {
+                if (ImGui::Button("Add New Remap", ImVec2(-1, 0))) {
                     int fromCol = g_clutGenerator->GetSelectedFromColor();
                     int toCol = g_clutGenerator->GetSelectedToColor();
                     if (fromCol != toCol) {
@@ -4317,11 +4323,10 @@ void RenderClutGeneratorDialog() {
                 }
                 ImGui::PopStyleColor(3);
                 
-                ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.2f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.48f, 0.24f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.32f, 0.16f, 1.0f));
-                if (ImGui::Button("Remove FROM")) {
+                if (ImGui::Button("Remove FROM Color", ImVec2(-1, 0))) {
                     int fromCol = g_clutGenerator->GetSelectedFromColor();
                     g_clutGenerator->RemoveRemap(fromCol);
                     selectedRemapIndex = -1;
@@ -4332,7 +4337,7 @@ void RenderClutGeneratorDialog() {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.96f, 0.24f, 1.0f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.64f, 0.16f, 1.0f));
-                if (ImGui::Button("Apply Changes")) {
+                if (ImGui::Button("Apply Changes", ImVec2(-1, 0))) {
                     // Apply the current FROM/TO to the selected remap
                     if (selectedRemapIndex >= 0) {
                         const std::vector<ColorRemapEntry>& remaps = g_clutGenerator->GetCurrentRemaps();
@@ -4347,11 +4352,10 @@ void RenderClutGeneratorDialog() {
                 }
                 ImGui::PopStyleColor(3);
                 
-                ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.3f, 0.8f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.72f, 0.36f, 0.36f, 0.8f));
                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.48f, 0.24f, 0.24f, 0.8f));
-                if (ImGui::Button("Cancel")) {
+                if (ImGui::Button("Cancel Edit", ImVec2(-1, 0))) {
                     editingMode = false;
                     selectedRemapIndex = -1;
                 }
@@ -4362,19 +4366,19 @@ void RenderClutGeneratorDialog() {
             ImGui::Separator();
             ImGui::Spacing();
             
-            // Enhanced usage instructions
+            // Usage instructions
             HeaderText("Quick Guide:");
             if (editingMode) {
-                InfoText("🔸 EDIT MODE ACTIVE");
-                InfoText("• Click palette colors to modify");
-                InfoText("• Use arrows to navigate colors");
-                InfoText("• Toggle FROM/TO button in header");
-                InfoText("• Apply or Cancel when done");
+                InfoText(">> EDIT MODE ACTIVE");
+                InfoText("- Click palette colors to modify");
+                InfoText("- Use arrows to navigate colors");
+                InfoText("- Toggle FROM/TO in header");
+                InfoText("- Apply or Cancel when done");
             } else {
-                InfoText("• Left-click image: FROM color");
-                InfoText("• Right-click image: TO color");
-                InfoText("• Click remap entries to edit");
-                InfoText("• Magic wand always active");
+                InfoText("- Left-click image: FROM color");
+                InfoText("- Right-click image: TO color");
+                InfoText("- Click remap entries to edit");
+                InfoText("- Magic wand always active");
             }
             
         }
@@ -4383,25 +4387,78 @@ void RenderClutGeneratorDialog() {
         ImGui::SameLine();
         
         // =====================================================================
-        // MIDDLE COLUMN - Enhanced Palette Grid
+        // MIDDLE COLUMN - Full Palette Grid (keep all original features)
         // =====================================================================
         if (ImGui::BeginChild("MiddleColumn", ImVec2(availableWidth * 0.36f, 0), true)) {
             
             HeaderText("Palette Grid");
             ImGui::Separator();
             
-            // Enhanced legend - use simple text with colors from the style system
+            // Legend - updated for border system
             const std::set<int>& usedColors = g_clutGenerator->GetUsedColorIndices();
             if (usedColors.size() > 0) {
-                SuccessText("● Used");
+                ImGui::Text("Legend:");
+                
+                // Draw legend items with custom border examples
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                
+                // Row 1
+                ImVec2 startPos = ImGui::GetCursorScreenPos();
+                
+                // Used in image (thin blue border)
+                ImVec2 usedMin = startPos;
+                ImVec2 usedMax = ImVec2(startPos.x + 12, startPos.y + 12);
+                drawList->AddRectFilled(usedMin, usedMax, IM_COL32(128, 128, 128, 255));
+                drawList->AddRect(usedMin, usedMax, IM_COL32(100, 150, 255, 255), 0.0f, 0, 1.0f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPos().x + 15, ImGui::GetCursorPos().y));
+                ImGui::Text("Used");
+                
                 ImGui::SameLine();
-                ErrorText("● FROM");
+                ImVec2 currentPos = ImGui::GetCursorScreenPos();
+                
+                // FROM color (thick red border)
+                ImVec2 fromMin = currentPos;
+                ImVec2 fromMax = ImVec2(currentPos.x + 12, currentPos.y + 12);
+                drawList->AddRectFilled(fromMin, fromMax, IM_COL32(128, 128, 128, 255));
+                drawList->AddRect(fromMin, fromMax, IM_COL32(255, 80, 80, 255), 0.0f, 0, 3.0f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPos().x + 15, ImGui::GetCursorPos().y));
+                ImGui::Text("FROM");
+                
                 ImGui::SameLine();
-                SuccessText("● TO");
+                currentPos = ImGui::GetCursorScreenPos();
+                
+                // TO color (thick green border)
+                ImVec2 toMin = currentPos;
+                ImVec2 toMax = ImVec2(currentPos.x + 12, currentPos.y + 12);
+                drawList->AddRectFilled(toMin, toMax, IM_COL32(128, 128, 128, 255));
+                drawList->AddRect(toMin, toMax, IM_COL32(80, 255, 80, 255), 0.0f, 0, 3.0f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPos().x + 15, ImGui::GetCursorPos().y));
+                ImGui::Text("TO");
+                
                 ImGui::SameLine();
-                WarningText("● Remap");
+                currentPos = ImGui::GetCursorScreenPos();
+                
+                // Remapped (medium yellow border)
+                ImVec2 remapMin = currentPos;
+                ImVec2 remapMax = ImVec2(currentPos.x + 12, currentPos.y + 12);
+                drawList->AddRectFilled(remapMin, remapMax, IM_COL32(128, 128, 128, 255));
+                drawList->AddRect(remapMin, remapMax, IM_COL32(255, 255, 80, 255), 0.0f, 0, 2.0f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPos().x + 15, ImGui::GetCursorPos().y));
+                ImGui::Text("Remap");
+                
                 ImGui::SameLine();
-                InfoText("● Selected");
+                currentPos = ImGui::GetCursorScreenPos();
+                
+                // Selected remap (thick magenta border)
+                ImVec2 selMin = currentPos;
+                ImVec2 selMax = ImVec2(currentPos.x + 12, currentPos.y + 12);
+                drawList->AddRectFilled(selMin, selMax, IM_COL32(128, 128, 128, 255));
+                drawList->AddRect(selMin, selMax, IM_COL32(255, 80, 255, 255), 0.0f, 0, 3.0f);
+                ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPos().x + 15, ImGui::GetCursorPos().y));
+                ImGui::Text("Selected");
+                
+                // End the line and add separator
+                ImGui::NewLine();
                 ImGui::Separator();
             }
             
@@ -4455,49 +4512,45 @@ void RenderClutGeneratorDialog() {
                                 float g = originalEntry.green / 255.0f;
                                 float b = originalEntry.blue / 255.0f;
                                 
-                                // Enhanced highlighting with priority system
-                                if (isSelectedRemapFrom) {
-                                    // Magenta highlight for selected remap FROM
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.3f, 1.0f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.5f, 1.0f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.1f, 1.0f, 1.0f));
-                                } else if (isSelectedRemapTo) {
-                                    // Cyan highlight for selected remap TO
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 1.0f, 1.0f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 1.0f, 1.0f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 1.0f, 1.0f, 1.0f));
-                                } else if (isFromColor) {
-                                    // Red background for current FROM
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.5f, 0.5f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.1f, 0.1f, 1.0f));
-                                } else if (isToColor) {
-                                    // Green background for current TO
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 1.0f, 0.5f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 1.0f, 0.1f, 1.0f));
-                                } else if (hasRemap) {
-                                    // Yellow background for remapped
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 1.0f, 0.3f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 1.0f, 0.5f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 1.0f, 0.1f, 1.0f));
-                                } else if (isUsedInImage) {
-                                    // Light blue for used in image
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r * 0.8f + 0.1f, g * 0.8f + 0.1f, b * 0.8f + 0.4f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r * 0.9f + 0.1f, g * 0.9f + 0.1f, b * 0.9f + 0.3f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(r * 0.7f + 0.2f, g * 0.7f + 0.2f, b * 0.7f + 0.5f, 1.0f));
-                                } else {
-                                    // Normal color
-                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r, g, b, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r * 1.2f, g * 1.2f, b * 1.2f, 1.0f));
-                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(r * 0.8f, g * 0.8f, b * 0.8f, 1.0f));
-                                }
+                                // Always use original color for button background
+                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r, g, b, 1.0f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(r * 1.2f, g * 1.2f, b * 1.2f, 1.0f));
+                                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(r * 0.8f, g * 0.8f, b * 0.8f, 1.0f));
+                                
+                                // Store button position for border drawing
+                                ImVec2 buttonPos = ImGui::GetCursorScreenPos();
                                 
                                 if (ImGui::Button(buttonId, ImVec2(BUTTON_SIZE, BUTTON_SIZE))) {
                                     // Handle clicks
                                 }
                                 
                                 ImGui::PopStyleColor(3);
+                                
+                                // Draw colored borders for different states (after button is drawn)
+                                ImDrawList* drawList = ImGui::GetWindowDrawList();
+                                ImVec2 buttonMin = buttonPos;
+                                ImVec2 buttonMax = ImVec2(buttonPos.x + BUTTON_SIZE, buttonPos.y + BUTTON_SIZE);
+                                
+                                // Priority system for border colors (highest priority wins)
+                                if (isSelectedRemapFrom) {
+                                    // Thick magenta border for selected remap FROM
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 80, 255, 255), 0.0f, 0, 3.0f);
+                                } else if (isSelectedRemapTo) {
+                                    // Thick cyan border for selected remap TO
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(80, 255, 255, 255), 0.0f, 0, 3.0f);
+                                } else if (isFromColor) {
+                                    // Thick red border for current FROM
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 80, 80, 255), 0.0f, 0, 3.0f);
+                                } else if (isToColor) {
+                                    // Thick green border for current TO
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(80, 255, 80, 255), 0.0f, 0, 3.0f);
+                                } else if (hasRemap) {
+                                    // Medium yellow border for remapped colors
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 255, 80, 200), 0.0f, 0, 2.0f);
+                                } else if (isUsedInImage) {
+                                    // Thin blue border for used in image
+                                    drawList->AddRect(buttonMin, buttonMax, IM_COL32(100, 150, 255, 150), 0.0f, 0, 1.0f);
+                                }
                                 
                                 // Enhanced click handling for edit mode
                                 if (ImGui::IsItemClicked(0)) { // Left click
@@ -4532,12 +4585,12 @@ void RenderClutGeneratorDialog() {
                                     char tooltipText[512];
                                     std::string roleText = "";
                                     
-                                    if (isSelectedRemapFrom) roleText += " [SELECTED FROM]";
-                                    if (isSelectedRemapTo) roleText += " [SELECTED TO]";
-                                    if (isFromColor) roleText += " [CURRENT FROM]";
-                                    if (isToColor) roleText += " [CURRENT TO]";
-                                    if (hasRemap) roleText += " [REMAPPED]";
-                                    if (isUsedInImage) roleText += " [USED IN IMAGE]";
+                                    if (isSelectedRemapFrom) roleText += " [SELECTED FROM - Magenta Border]";
+                                    if (isSelectedRemapTo) roleText += " [SELECTED TO - Cyan Border]";
+                                    if (isFromColor) roleText += " [CURRENT FROM - Red Border]";
+                                    if (isToColor) roleText += " [CURRENT TO - Green Border]";
+                                    if (hasRemap) roleText += " [REMAPPED - Yellow Border]";
+                                    if (isUsedInImage) roleText += " [USED IN IMAGE - Blue Border]";
                                     
                                     if (editingMode) {
                                         sprintf(tooltipText, 
@@ -4576,7 +4629,7 @@ void RenderClutGeneratorDialog() {
         ImGui::SameLine();
         
         // =====================================================================
-        // RIGHT COLUMN - Enhanced Remap Management
+        // RIGHT COLUMN - Full Remap Management (keep all features)
         // =====================================================================
         if (ImGui::BeginChild("RightColumn", ImVec2(0, 0), true)) {
             
@@ -4642,7 +4695,7 @@ void RenderClutGeneratorDialog() {
                         char remapChildId[32];
                         sprintf(remapChildId, "RemapEntry_%d", i);
                         
-                        if (ImGui::BeginChild(remapChildId, ImVec2(0, 40), true)) {
+                        if (ImGui::BeginChild(remapChildId, ImVec2(0, 45), true)) {
                             
                             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 2));
                             
@@ -4653,13 +4706,13 @@ void RenderClutGeneratorDialog() {
                             if (g_clutGenerator->GetOriginalPaletteEntry(remap.fromColor, fromEntry) &&
                                 g_clutGenerator->GetOriginalPaletteEntry(remap.toColor, toEntry)) {
                                 
-                                // FROM color - now just displays, doesn't handle selection
+                                // FROM color
                                 char fromId[32];
                                 sprintf(fromId, "##from%d", i);
                                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(fromEntry.red / 255.0f * 1.2f, fromEntry.green / 255.0f * 1.2f, fromEntry.blue / 255.0f * 1.2f, 1.0f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(fromEntry.red / 255.0f * 0.8f, fromEntry.green / 255.0f * 0.8f, fromEntry.blue / 255.0f * 0.8f, 1.0f));
-                                if (ImGui::Button(fromId)) {
+                                if (ImGui::Button(fromId, ImVec2(25, 25))) {
                                     // Enter edit mode for FROM color if already selected
                                     if (selectedRemapIndex == i && !editingMode) {
                                         editingMode = true;
@@ -4677,16 +4730,16 @@ void RenderClutGeneratorDialog() {
                                 ImGui::Text("%s", fromText);
                                 
                                 ImGui::SameLine();
-                                ImGui::Text("→");
+                                ImGui::Text("->");
                                 
                                 ImGui::SameLine();
-                                // TO color - now just displays, doesn't handle selection
+                                // TO color
                                 char toId[32];
                                 sprintf(toId, "##to%d", i);
                                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(toEntry.red / 255.0f * 1.2f, toEntry.green / 255.0f * 1.2f, toEntry.blue / 255.0f * 1.2f, 1.0f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(toEntry.red / 255.0f * 0.8f, toEntry.green / 255.0f * 0.8f, toEntry.blue / 255.0f * 0.8f, 1.0f));
-                                if (ImGui::Button(toId)) {
+                                if (ImGui::Button(toId, ImVec2(25, 25))) {
                                     // Enter edit mode for TO color if already selected
                                     if (selectedRemapIndex == i && !editingMode) {
                                         editingMode = true;
@@ -4713,7 +4766,7 @@ void RenderClutGeneratorDialog() {
                                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.8f, 0.2f, 0.7f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.96f, 0.24f, 0.7f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.64f, 0.16f, 0.7f));
-                                if (ImGui::Button(toggleId)) {
+                                if (ImGui::Button(toggleId, ImVec2(30, 25))) {
                                     g_clutGenerator->ToggleRemapActive(i);
                                 }
                                 ImGui::PopStyleColor(3);
@@ -4721,7 +4774,7 @@ void RenderClutGeneratorDialog() {
                                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.4f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.6f, 0.6f, 0.6f, 0.4f));
                                 ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.4f, 0.4f, 0.4f, 0.4f));
-                                if (ImGui::Button(toggleId)) {
+                                if (ImGui::Button(toggleId, ImVec2(30, 25))) {
                                     g_clutGenerator->ToggleRemapActive(i);
                                 }
                                 ImGui::PopStyleColor(3);
@@ -4735,7 +4788,7 @@ void RenderClutGeneratorDialog() {
                             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 0.7f));
                             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.24f, 0.24f, 0.7f));
                             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.16f, 0.16f, 0.7f));
-                            if (ImGui::Button(deleteId)) {
+                            if (ImGui::Button(deleteId, ImVec2(25, 25))) {
                                 g_clutGenerator->ClearRemap(i);
                                 if (selectedRemapIndex == i) {
                                     selectedRemapIndex = -1;
@@ -4749,16 +4802,11 @@ void RenderClutGeneratorDialog() {
                             ImGui::EndGroup();
                             ImGui::PopStyleVar();
                             
-                            // Track hover for palette highlighting
-                            if (ImGui::IsItemHovered()) {
-                                hoveredRemapIndex = i;
-                            }
-                            
                         }
                         ImGui::EndChild();
                         ImGui::PopStyleColor();
                         
-                        // ENTIRE ENTRY CLICK DETECTION - Make the whole remap entry selectable
+                        // ENTIRE ENTRY CLICK DETECTION
                         if (ImGui::IsItemClicked()) {
                             selectedRemapIndex = i;
                             g_clutGenerator->SetSelectedFromColor(remap.fromColor);
@@ -4769,7 +4817,7 @@ void RenderClutGeneratorDialog() {
                         // Track hover for palette highlighting
                         if (ImGui::IsItemHovered()) {
                             hoveredRemapIndex = i;
-                            ImGui::SetTooltip("Click anywhere to select • Click FROM/TO buttons to edit • Selected remap highlights in palette");
+                            ImGui::SetTooltip("Click to select - Click FROM/TO buttons to edit - Selected remap highlights in palette");
                         }
                         
                         if (i < static_cast<int>(remaps.size()) - 1) {
@@ -4788,7 +4836,7 @@ void RenderClutGeneratorDialog() {
     ImGui::EndChild();
 
     // =========================================================================
-    // BOTTOM SECTION - Import and Export (unchanged)
+    // BOTTOM SECTION - Import and Export (keep full functionality)
     // =========================================================================
     
     ImGui::Separator();
@@ -4871,7 +4919,7 @@ void RenderClutGeneratorDialog() {
                     ErrorText(importStatus.c_str());
                 }
             } else {
-                DisabledText("Example: 99 0 100 38 101 0 -1 -1 -1 -1 ... ;; black wolf");
+                DisabledText("Example: 99 0 100 38 101 0 -1 -1 -1 -1 ... ; black wolf");
             }
             
         }
