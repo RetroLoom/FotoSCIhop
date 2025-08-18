@@ -3935,20 +3935,25 @@ void RenderClutGeneratorDialog() {
     // Static variables for code generation and dialog state
     static std::string generatedCode = "";
     static bool showCode = false;
-    static bool shouldClose = false; // Flag to handle safe closing
+    static bool shouldClose = false;
+    static bool magicWandWasEnabled = false; // Track previous state
     
     bool open = true;
-    SetNextWindowSize(1000, 750); // Larger, more comfortable size
+    SetNextWindowSize(1100, 750); // Slightly shorter since we're removing clutter
     
     if (!BeginDialog("CLUT Generator - Live Preview", &open)) {
         EndDialog();
         return;
     }
     
-    // Handle close button - use flag for safe closing (preserve activate state)
+    // Handle close button - use flag for safe closing
     if (!open || shouldClose) {
-        // Don't change the activate state - let user control it manually
-        shouldClose = false; // Reset flag
+        shouldClose = false;
+        // AUTOMATICALLY DISABLE magic wand when dialog closes
+        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled()) {
+            g_clutGenerator->SetMagicWandEnabled(false);
+            magicWandWasEnabled = false;
+        }
         ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR);
         EndDialog();
         return;
@@ -3970,7 +3975,6 @@ void RenderClutGeneratorDialog() {
         
         if (currentPalette) {
             g_clutGenerator->Initialize(currentPalette);
-            // Don't auto-enable - let user control activation manually
         } else {
             ErrorText("No palette loaded! Please open a .v56 or .p56 file first.");
             Spacing();
@@ -3982,23 +3986,29 @@ void RenderClutGeneratorDialog() {
         }
     }
     
+    // AUTOMATICALLY ENABLE magic wand when dialog is open
+    if (!magicWandWasEnabled && g_clutGenerator) {
+        g_clutGenerator->SetMagicWandEnabled(true);
+        g_clutGenerator->AnalyzeImageColorUsage(); // Analyze on first open
+        magicWandWasEnabled = true;
+    }
+    
     float availableWidth = GetContentRegionAvailWidth();
     
     // =========================================================================
-    // HEADER SECTION - Compact and Clean
+    // COMPACT HEADER SECTION - Removed magic wand toggle, made more compact
     // =========================================================================
     
-    PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 12, 8);
+    PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 8, 6); // Smaller padding
     PushStyleColor(IMGUI_COL_CHILD_BG, 0.1f, 0.1f, 0.15f, 0.8f);
     
-    if (BeginChild("HeaderSection", 0, 80, true)) {
+    if (BeginChild("HeaderSection", 0, 90, true)) { // Much shorter header
         
-        // Left side - Activate toggle
         BeginGroup();
         {
-            HeaderText("Remap Control");
+            // Single row with all controls
             bool remapActive = g_clutGenerator->IsPreviewEnabled();
-            if (Checkbox("Activate", &remapActive)) {
+            if (Checkbox("Activate Live Preview", &remapActive)) {
                 g_clutGenerator->SetPreviewEnabled(remapActive);
             }
             if (IsItemHovered()) {
@@ -4007,36 +4017,46 @@ void RenderClutGeneratorDialog() {
             
             SameLine();
             if (remapActive) {
-                TextColored(0.3f, 1.0f, 0.3f, 1.0f, "● ON");
+                TextColored(0.3f, 1.0f, 0.3f, 1.0f, "● LIVE");
             } else {
                 TextColored(0.7f, 0.7f, 0.7f, 1.0f, "○ OFF");
             }
-        }
-        EndGroup();
-        
-        // Right side - Quick action buttons
-        SameLine();
-        RightAlignNextItem(200);
-        BeginGroup();
-        {
-            if (ButtonColored("Clear All", 0.8f, 0.4f, 0.2f, 1.0f)) {
-                g_clutGenerator->ClearAllRemaps();
-                g_clutGenerator->SetPreviewEnabled(false); // Turn off activation when clearing
+            
+            SameLine();
+            Dummy(20, 0); // Spacer
+            
+            SameLine();
+            if (ButtonColored("Analyze Image", 0.2f, 0.6f, 0.8f, 1.0f)) {
+                g_clutGenerator->AnalyzeImageColorUsage();
             }
             if (IsItemHovered()) {
-                SetTooltip("Remove all remaps and turn off activation");
+                SetTooltip("Scan current image to find which colors are used");
+            }
+            
+            SameLine();
+            // Show usage statistics
+            const std::set<int>& usedColors = g_clutGenerator->GetUsedColorIndices();
+            char usageText[64];
+            sprintf(usageText, "(%d colors found)", (int)usedColors.size());
+            InfoText(usageText);
+            
+            SameLine();
+            if (ButtonColored("Clear All", 0.8f, 0.4f, 0.2f, 1.0f)) {
+                g_clutGenerator->ClearAllRemaps();
+                g_clutGenerator->SetPreviewEnabled(false);
             }
             
             SameLine();
             if (CloseButton("Close")) {
-                // Set flag to close safely after all child windows are closed
                 shouldClose = true;
-            }
-            if (IsItemHovered()) {
-                SetTooltip("Close dialog (remaps and activation state preserved)");
             }
         }
         EndGroup();
+        
+        Spacing();
+        
+        // Magic wand status indicator (always active)
+        TextColored(1.0f, 0.8f, 0.2f, 1.0f, "🪄 Magic Wand Active: Left-click image = FROM, Right-click = TO");
         
     }
     EndChild();
@@ -4047,15 +4067,15 @@ void RenderClutGeneratorDialog() {
     Spacing();
     
     // =========================================================================
-    // MAIN WORKSPACE - Three Column Layout for Better Organization
+    // MAIN WORKSPACE - Adjusted column widths to fix clipping
     // =========================================================================
     
     if (BeginChild("MainWorkspace", 0, -280)) { // Leave space for bottom sections
         
         // =====================================================================
-        // LEFT COLUMN - Color Selection and Current Selection Display
+        // LEFT COLUMN - Color Selection (Slightly narrower)
         // =====================================================================
-        if (BeginChild("LeftColumn", availableWidth * 0.35f, 0, true)) {
+        if (BeginChild("LeftColumn", availableWidth * 0.32f, 0, true)) { // 32% instead of 35%
             
             HeaderText("Color Selection");
             Separator();
@@ -4063,7 +4083,7 @@ void RenderClutGeneratorDialog() {
             
             // Enhanced current selection display
             PushStyleColor(IMGUI_COL_CHILD_BG, 0.15f, 0.1f, 0.2f, 0.9f);
-            if (BeginChild("CurrentSelection", 0, 140, true)) {
+            if (BeginChild("CurrentSelection", 0, 130, true)) { // Slightly shorter
                 
                 int fromColor = g_clutGenerator->GetSelectedFromColor();
                 int toColor = g_clutGenerator->GetSelectedToColor();
@@ -4072,12 +4092,10 @@ void RenderClutGeneratorDialog() {
                 Text("FROM Color:");
                 PalEntry fromEntry;
                 if (g_clutGenerator->GetOriginalPaletteEntry(fromColor, fromEntry)) {
-                    ImGuiColor fromButtonColor(fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f);
                     char fromLabel[64];
                     sprintf(fromLabel, "  %d  ", fromColor);
                     
-                    // Large color button
-                    if (ButtonColored(fromLabel, fromButtonColor)) {
+                    if (ButtonColored(fromLabel, fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f)) {
                         // Could add click behavior here
                     }
                     
@@ -4093,12 +4111,10 @@ void RenderClutGeneratorDialog() {
                 Text("TO Color:");
                 PalEntry toEntry;
                 if (g_clutGenerator->GetOriginalPaletteEntry(toColor, toEntry)) {
-                    ImGuiColor toButtonColor(toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f);
                     char toLabel[64];
                     sprintf(toLabel, "  %d  ", toColor);
                     
-                    // Large color button
-                    if (ButtonColored(toLabel, toButtonColor)) {
+                    if (ButtonColored(toLabel, toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f)) {
                         // Could add click behavior here
                     }
                     
@@ -4139,14 +4155,12 @@ void RenderClutGeneratorDialog() {
             Separator();
             Spacing();
             
-            // Usage instructions
-            HeaderText("Quick Start:");
-            InfoText("• Left click: Select FROM color");
-            InfoText("• Right click: Select TO color");
-            InfoText("• Click 'Add Remap' to create mapping");
-            InfoText("• Check 'Activate' to see changes");
-            Spacing();
-            InfoText("Tip: Your remaps persist when closing!");
+            // Usage instructions (more compact)
+            HeaderText("Quick Guide:");
+            InfoText("• Magic wand is always active");
+            InfoText("• Left-click image: FROM color");
+            InfoText("• Right-click image: TO color");
+            InfoText("• Add remap to create mapping");
             
         }
         EndChild();
@@ -4154,64 +4168,97 @@ void RenderClutGeneratorDialog() {
         SameLine();
         
         // =====================================================================
-        // MIDDLE COLUMN - Palette Grid (Narrower)
+        // MIDDLE COLUMN - Palette Grid (Wider to prevent clipping)
         // =====================================================================
-        if (BeginChild("MiddleColumn", availableWidth * 0.32f, 0, true)) {
+        if (BeginChild("MiddleColumn", availableWidth * 0.36f, 0, true)) { // 36% instead of 32%
             
             HeaderText("Palette Grid");
             Separator();
+            
+            // Usage legend (more compact)
+            const std::set<int>& usedColors = g_clutGenerator->GetUsedColorIndices();
+            if (usedColors.size() > 0) {
+                TextColored(0.3f, 1.0f, 0.3f, 1.0f, "● Used");
+                SameLine();
+                TextColored(1.0f, 0.3f, 0.3f, 1.0f, "● FROM");
+                SameLine();
+                TextColored(0.3f, 1.0f, 0.3f, 1.0f, "● TO");
+                SameLine();
+                TextColored(1.0f, 1.0f, 0.3f, 1.0f, "● Remap");
+                Separator();
+            }
+            
             Spacing();
             
-            // Enhanced palette display with better organization
             if (g_clutGenerator && g_clutGenerator->IsActive()) {
                 
                 PushStyleColor(IMGUI_COL_CHILD_BG, 0.05f, 0.05f, 0.1f, 0.8f);
                 if (BeginChild("PaletteGrid", 0, 0, true)) {
                     
-                    // Display palette in 16x16 grid with better spacing
                     const int COLORS_PER_ROW = 16;
-                    const float CELL_SIZE = 20.0f; // Slightly larger for easier clicking
-                    const float SPACING = 2.0f;    // More spacing
+                    const float BUTTON_SIZE = 18.0f; // Fixed button size
+                    const float SPACING_VAL = 1.0f;  // Tight spacing
                     
                     for (int row = 0; row < 16; row++) {
                         for (int col = 0; col < 16; col++) {
                             int colorIndex = row * COLORS_PER_ROW + col;
                             
-                            // Get ORIGINAL color from backup palette for display
                             PalEntry originalEntry;
                             if (g_clutGenerator->GetOriginalPaletteEntry(colorIndex, originalEntry)) {
-                                
-                                // Create color button using ORIGINAL color
-                                ImGuiColor buttonColor(originalEntry.red / 255.0f, originalEntry.green / 255.0f, originalEntry.blue / 255.0f, 1.0f);
                                 
                                 char buttonId[16];
                                 sprintf(buttonId, "##%d", colorIndex);
                                 
-                                // Highlight selected colors with better visual indicators
+                                // Check states for highlighting
                                 int fromColor = g_clutGenerator->GetSelectedFromColor();
                                 int toColor = g_clutGenerator->GetSelectedToColor();
                                 bool isFromColor = (colorIndex == fromColor);
                                 bool isToColor = (colorIndex == toColor);
                                 bool hasRemap = g_clutGenerator->HasRemap(colorIndex);
+                                bool isUsedInImage = g_clutGenerator->IsColorUsedInImage(colorIndex);
                                 
-                                if (isFromColor || isToColor || hasRemap) {
-                                    PushStyleVar(IMGUI_STYLE_VAR_FRAME_ROUNDING, 4);
-                                    PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 2, 2);
-                                    
-                                    if (isFromColor) {
-                                        PushStyleColor(IMGUI_COL_FRAME_BG, 1.0f, 0.3f, 0.3f, 0.9f); // Bright red for FROM
-                                    } else if (isToColor) {
-                                        PushStyleColor(IMGUI_COL_FRAME_BG, 0.3f, 1.0f, 0.3f, 0.9f); // Bright green for TO
-                                    } else if (hasRemap) {
-                                        PushStyleColor(IMGUI_COL_FRAME_BG, 1.0f, 1.0f, 0.3f, 0.7f); // Yellow for remapped
-                                    }
+                                // Create the base button color
+                                float r = originalEntry.red / 255.0f;
+                                float g = originalEntry.green / 255.0f;
+                                float b = originalEntry.blue / 255.0f;
+                                
+                                // Simplified highlighting with background colors
+                                if (isFromColor) {
+                                    // Red background for FROM
+                                    PushStyleColor(IMGUI_COL_BUTTON, 1.0f, 0.3f, 0.3f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_HOVERED, 1.0f, 0.5f, 0.5f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_ACTIVE, 1.0f, 0.1f, 0.1f, 1.0f);
+                                } else if (isToColor) {
+                                    // Green background for TO
+                                    PushStyleColor(IMGUI_COL_BUTTON, 0.3f, 1.0f, 0.3f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_HOVERED, 0.5f, 1.0f, 0.5f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_ACTIVE, 0.1f, 1.0f, 0.1f, 1.0f);
+                                } else if (hasRemap) {
+                                    // Yellow background for remapped
+                                    PushStyleColor(IMGUI_COL_BUTTON, 1.0f, 1.0f, 0.3f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_HOVERED, 1.0f, 1.0f, 0.5f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_ACTIVE, 1.0f, 1.0f, 0.1f, 1.0f);
+                                } else if (isUsedInImage) {
+                                    // Light blue outline for used in image
+                                    PushStyleColor(IMGUI_COL_BUTTON, r * 0.8f + 0.1f, g * 0.8f + 0.1f, b * 0.8f + 0.4f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_HOVERED, r * 0.9f + 0.1f, g * 0.9f + 0.1f, b * 0.9f + 0.3f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_ACTIVE, r * 0.7f + 0.2f, g * 0.7f + 0.2f, b * 0.7f + 0.5f, 1.0f);
+                                } else {
+                                    // Normal color
+                                    PushStyleColor(IMGUI_COL_BUTTON, r, g, b, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_HOVERED, r * 1.2f, g * 1.2f, b * 1.2f, 1.0f);
+                                    PushStyleColor(IMGUI_COL_BUTTON_ACTIVE, r * 0.8f, g * 0.8f, b * 0.8f, 1.0f);
                                 }
                                 
-                                if (ButtonColored(buttonId, buttonColor)) {
+                                // Create button with fixed size
+                                if (Button(buttonId, BUTTON_SIZE, BUTTON_SIZE)) {
                                     // Handle clicks
                                 }
                                 
-                                // Check for clicks after button creation
+                                // Clean up style colors
+                                PopStyleColor(3);
+                                
+                                // Handle mouse clicks
                                 if (IsItemClicked(0)) { // Left click = from color
                                     g_clutGenerator->SetSelectedFromColor(colorIndex);
                                 }
@@ -4219,27 +4266,28 @@ void RenderClutGeneratorDialog() {
                                     g_clutGenerator->SetSelectedToColor(colorIndex);
                                 }
                                 
-                                if (isFromColor || isToColor || hasRemap) {
-                                    PopStyleColor();
-                                    PopStyleVar(2);
-                                }
-                                
-                                // Enhanced tooltip with more information
+                                // Tooltip
                                 if (IsItemHovered()) {
                                     char tooltipText[256];
-                                    const char* roleText = "";
-                                    if (isFromColor) roleText = " [FROM]";
-                                    else if (isToColor) roleText = " [TO]";
-                                    else if (hasRemap) roleText = " [REMAPPED]";
+                                    std::string roleText = "";
                                     
-                                    sprintf(tooltipText, "Color %d: RGB(%d, %d, %d)%s\n\nLeft Click: Set as FROM color\nRight Click: Set as TO color", 
-                                           colorIndex, originalEntry.red, originalEntry.green, originalEntry.blue, roleText);
+                                    if (isFromColor) roleText += " [FROM]";
+                                    if (isToColor) roleText += " [TO]";
+                                    if (hasRemap) roleText += " [REMAPPED]";
+                                    if (isUsedInImage) roleText += " [USED IN IMAGE]";
+                                    
+                                    sprintf(tooltipText, 
+                                        "Color %d: RGB(%d, %d, %d)%s\n"
+                                        "Left = FROM, Right = TO",
+                                        colorIndex, originalEntry.red, originalEntry.green, originalEntry.blue, 
+                                        roleText.c_str()
+                                    );
                                     SetTooltip(tooltipText);
                                 }
                                 
                                 // Layout: 16 colors per row
                                 if (col < 15) {
-                                    SameLine(0, SPACING);
+                                    SameLine(0, SPACING_VAL);
                                 }
                             }
                         }
@@ -4255,9 +4303,9 @@ void RenderClutGeneratorDialog() {
         SameLine();
         
         // =====================================================================
-        // RIGHT COLUMN - Remap Management (Wider)
+        // RIGHT COLUMN - Remap Management (Slightly narrower)
         // =====================================================================
-        if (BeginChild("RightColumn", 0, 0, true)) { // Takes remaining width (~33%)
+        if (BeginChild("RightColumn", 0, 0, true)) { // Takes remaining width (~32%)
             
             HeaderText("Active Remaps");
             Separator();
@@ -4271,7 +4319,7 @@ void RenderClutGeneratorDialog() {
                 if (remaps[i].active) activeRemaps++;
             }
             
-            sprintf(statusText, "%d Active Remaps (max 12 for SCI)", activeRemaps);
+            sprintf(statusText, "%d Active (max 12)", activeRemaps); // Shorter text
             if (activeRemaps > 12) {
                 TextColored(1.0f, 0.5f, 0.2f, 1.0f, statusText);
             } else if (activeRemaps > 0) {
@@ -4284,28 +4332,24 @@ void RenderClutGeneratorDialog() {
             
             if (remaps.empty()) {
                 PushStyleColor(IMGUI_COL_CHILD_BG, 0.15f, 0.1f, 0.1f, 0.3f);
-                if (BeginChild("EmptyState", 0, 150, true)) {
+                if (BeginChild("EmptyState", 0, 120, true)) { // Shorter empty state
                     Spacing();
-                    CenterNextItem(200);
-                    InfoText("No remaps defined yet");
+                    InfoText("No remaps yet");
                     Spacing();
-                    InfoText("To get started:");
-                    InfoText("1. Left-click a color to select FROM");
-                    InfoText("2. Right-click a color to select TO");
-                    InfoText("3. Click 'Add Remap' button");
-                    InfoText("4. Enable Live Preview to see results");
+                    InfoText("Click colors in image");
+                    InfoText("then 'Add Remap'");
                 }
                 EndChild();
                 PopStyleColor();
             } else {
-                // Enhanced remap table with better organization
+                // Enhanced remap table
                 PushStyleColor(IMGUI_COL_CHILD_BG, 0.08f, 0.12f, 0.08f, 0.8f);
                 if (BeginChild("RemapTable", 0, 0, true)) {
                     
                     for (int i = 0; i < static_cast<int>(remaps.size()); i++) {
                         const ColorRemapEntry& remap = remaps[i];
                         
-                        PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 8, 4);
+                        PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, 6, 3); // Tighter padding
                         
                         BeginGroup();
                         
@@ -4315,13 +4359,12 @@ void RenderClutGeneratorDialog() {
                             g_clutGenerator->GetOriginalPaletteEntry(remap.toColor, toEntry)) {
                             
                             // FROM color
-                            ImGuiColor fromColor(fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f);
                             char fromId[32];
                             sprintf(fromId, "##from%d", i);
-                            ButtonColored(fromId, fromColor);
+                            ButtonColored(fromId, fromEntry.red / 255.0f, fromEntry.green / 255.0f, fromEntry.blue / 255.0f, 1.0f);
                             
                             SameLine();
-                            char fromText[32];
+                            char fromText[16];
                             sprintf(fromText, "%d", remap.fromColor);
                             Text(fromText);
                             
@@ -4330,24 +4373,14 @@ void RenderClutGeneratorDialog() {
                             
                             SameLine();
                             // TO color
-                            ImGuiColor toColor(toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f);
                             char toId[32];
                             sprintf(toId, "##to%d", i);
-                            ButtonColored(toId, toColor);
+                            ButtonColored(toId, toEntry.red / 255.0f, toEntry.green / 255.0f, toEntry.blue / 255.0f, 1.0f);
                             
                             SameLine();
-                            char toText[32];
+                            char toText[16];
                             sprintf(toText, "%d", remap.toColor);
                             Text(toText);
-                        }
-                        
-                        SameLine();
-                        
-                        // Status and controls with better spacing
-                        if (remap.active) {
-                            TextColored(0.3f, 1.0f, 0.3f, 1.0f, "ACTIVE");
-                        } else {
-                            TextColored(0.7f, 0.7f, 0.7f, 1.0f, "disabled");
                         }
                         
                         SameLine();
@@ -4356,41 +4389,28 @@ void RenderClutGeneratorDialog() {
                         char toggleId[32];
                         sprintf(toggleId, "%s##T%d", remap.active ? "ON" : "OFF", i);
                         if (remap.active) {
-                            PushStyleColor(IMGUI_COL_BUTTON, 0.2f, 0.8f, 0.2f, 0.7f);
+                            if (ButtonColored(toggleId, 0.2f, 0.8f, 0.2f, 0.7f)) {
+                                g_clutGenerator->ToggleRemapActive(i);
+                            }
                         } else {
-                            PushStyleColor(IMGUI_COL_BUTTON, 0.5f, 0.5f, 0.5f, 0.4f);
-                        }
-                        
-                        if (SmallButton(toggleId)) {
-                            g_clutGenerator->ToggleRemapActive(i);
-                        }
-                        PopStyleColor();
-                        
-                        if (IsItemHovered()) {
-                            SetTooltip(remap.active ? "Click to disable" : "Click to enable");
+                            if (ButtonColored(toggleId, 0.5f, 0.5f, 0.5f, 0.4f)) {
+                                g_clutGenerator->ToggleRemapActive(i);
+                            }
                         }
                         
                         SameLine();
                         
                         // Delete button
                         char deleteId[32];
-                        sprintf(deleteId, "✕##%d", i);
-                        PushStyleColor(IMGUI_COL_BUTTON, 0.8f, 0.2f, 0.2f, 0.7f);
-                        if (SmallButton(deleteId)) {
+                        sprintf(deleteId, "X##%d", i);
+                        if (ButtonColored(deleteId, 0.8f, 0.2f, 0.2f, 0.7f)) {
                             g_clutGenerator->ClearRemap(i);
-                        }
-                        PopStyleColor();
-                        
-                        if (IsItemHovered()) {
-                            SetTooltip("Remove this remap");
                         }
                         
                         EndGroup();
                         PopStyleVar();
                         
                         if (i < static_cast<int>(remaps.size()) - 1) {
-                            Spacing();
-                            Separator();
                             Spacing();
                         }
                     }
@@ -4406,7 +4426,7 @@ void RenderClutGeneratorDialog() {
     EndChild();
 
     // =========================================================================
-    // BOTTOM SECTION - Import and Export in Tabs for Better Organization
+    // BOTTOM SECTION - Import and Export (Same as before)
     // =========================================================================
     
     Separator();
@@ -4432,7 +4452,6 @@ void RenderClutGeneratorDialog() {
             
             Spacing();
             
-            // Import controls
             static char importBuffer[1024] = "";
             static std::string importStatus = "";
             static bool showImportStatus = false;
@@ -4445,17 +4464,11 @@ void RenderClutGeneratorDialog() {
             }
             PopItemWidth();
             
-            if (IsItemHovered()) {
-                SetTooltip("Paste a COLORTBL.SC remap line here\nExample: 99 0 100 38 101 0 -1 -1 ... ;; comment");
-            }
-            
             SameLine();
             
             if (ButtonColored("Import", 0.6f, 0.2f, 0.8f, 1.0f)) {
                 if (strlen(importBuffer) > 0) {
-                    // Always clear existing remaps before importing
                     g_clutGenerator->ClearAllRemaps();
-                    
                     std::string importLine(importBuffer);
                     bool success = g_clutGenerator->ImportFromSCITableEntry(importLine);
                     
@@ -4464,7 +4477,7 @@ void RenderClutGeneratorDialog() {
                         char statusMsg[128];
                         sprintf(statusMsg, "Successfully imported %d remaps!", (int)newRemaps.size());
                         importStatus = statusMsg;
-                        importBuffer[0] = '\0'; // Clear input after successful import
+                        importBuffer[0] = '\0';
                     } else {
                         importStatus = "Failed to parse remap data. Check format.";
                     }
@@ -4484,12 +4497,9 @@ void RenderClutGeneratorDialog() {
             
             Spacing();
             
-            // Show import status
             if (showImportStatus && !importStatus.empty()) {
                 if (importStatus.find("Success") != std::string::npos) {
                     SuccessText(importStatus.c_str());
-                } else if (importStatus.find("cancelled") != std::string::npos) {
-                    InfoText(importStatus.c_str());
                 } else {
                     ErrorText(importStatus.c_str());
                 }
@@ -4515,7 +4525,6 @@ void RenderClutGeneratorDialog() {
                 if (remaps[i].active) activeRemaps++;
             }
             
-            // Generation controls
             if (ButtonColored("Generate Code", 0.2f, 0.6f, 0.8f, 1.0f)) {
                 if (activeRemaps > 0) {
                     generatedCode = g_clutGenerator->GenerateSCITableEntry("Generated by FotoSCIhop CLUT Generator");
@@ -4560,7 +4569,9 @@ void RenderClutGeneratorDialog() {
                 memcpy(codeBuffer, generatedCode.c_str(), len);
                 codeBuffer[len] = '\0';
                 
-                InputTextMultiline("##generated_code", codeBuffer, sizeof(codeBuffer), 0, 80);
+                PushItemWidth(-1);
+                InputText("##generated_code", codeBuffer, sizeof(codeBuffer));
+                PopItemWidth();
                 
                 PopStyleColor(2);
                 
