@@ -15,6 +15,7 @@
 #define MAX_LOADSTRING 100
 #include "imgui_integration.h"
 #include "fotoscihop_styles.h"
+#include "ClutGenerator.h"
 
 
 
@@ -1062,6 +1063,40 @@ static const COLORREF COLOR_CYAN = RGB(0, 255, 255);
 // DISPLAY - HELPER FUNCTIONS
 // =============================================================================
 
+void ForceImageRefresh() {
+    // Force cached image data to be regenerated with new palette
+    if (globalView && curCell && (*curCell)) {
+        // Clear cached view cell data
+        if ((*curCell)->bmImage) {
+            delete (*curCell)->bmImage;
+            (*curCell)->bmImage = nullptr;
+        }
+        if ((*curCell)->bmInfo) {
+            delete (*curCell)->bmInfo;
+            (*curCell)->bmInfo = nullptr;
+        }
+    }
+    
+    if (globalPicture) {
+        // Clear cached picture cell data
+        for (int i = 0; i < globalPicture->CellsCount(); i++) {
+            if (globalPicture->cells[i]) {
+                if (globalPicture->cells[i]->bmImage) {
+                    delete globalPicture->cells[i]->bmImage;
+                    globalPicture->cells[i]->bmImage = nullptr;
+                }
+                if (globalPicture->cells[i]->bmInfo) {
+                    delete globalPicture->cells[i]->bmInfo;
+                    globalPicture->cells[i]->bmInfo = nullptr;
+                }
+            }
+        }
+    }
+    
+    // Force window repaint
+    InvalidateRgn(hWnd, NULL, true);
+}
+
 // Fast integer scaling with bounds checking
 static int ScaleCoordinate(int value, int magnifyFactor) {
     if (magnifyFactor <= 0) return value; // Safety check
@@ -1970,6 +2005,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     // Set up dialog callbacks
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PROPERTIES, "Properties", &RenderPropertiesDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_ABOUT, "About FotoSCIhop", &RenderAboutDialog);
+    ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR, "CLUT Generator", &RenderClutGeneratorDialog);
 
     // Set up a timer for ImGui rendering (30 FPS - sufficient for dialogs)
     SetTimer(hWnd, 1, 33, NULL);
@@ -2007,6 +2043,13 @@ void exit_proc(HWND hwnd)
 
     FotoSCIhopStyles::Shutdown();
     ImGuiDialogs::Shutdown();
+
+    // Clean up CLUT generator
+    if (g_clutGenerator) {
+        g_clutGenerator->Shutdown();
+        delete g_clutGenerator;
+        g_clutGenerator = nullptr;
+    }
     
     DestroyWindow(hwnd);
 }
@@ -2084,6 +2127,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
         case ID_ESPORTABMP:
             ExportBitmapUnified(hWnd, NULL);
+            break;
+
+        case IDM_CLUTGEN:
+            if ((globalView && globalView->palSCI) || (globalPicture && globalPicture->palSCI))
+            {
+                ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR);
+            }
+            else
+            {
+                MessageBox(hWnd, "Please load a .v56 or .p56 file before using the CLUT Generator.",
+                           "No File Loaded", MB_OK | MB_ICONINFORMATION);
+            }
             break;
 
         case IDM_PROPERTIES:
@@ -3571,6 +3626,365 @@ void RenderAboutDialog() {
     }
     
     EndDialog();
+}
+
+
+
+// Forward declaration for file dialogs
+BOOL DoSaveFileDialog(HWND hwnd, const char* filter, const char* defaultExt, char* filename, size_t filenameSize);
+BOOL DoOpenFileDialog(HWND hwnd, const char* filter, char* filename, size_t filenameSize);
+
+void RenderClutGeneratorDialog() {
+    using namespace ImGuiDialogs;
+    using namespace FotoSCIhopStyles;
+    
+    // Ensure theme is applied
+    FotoSCIhopStyles::RefreshTheme();
+    
+    bool open = true;
+    if (!BeginDialog("CLUT Generator - Live Preview", &open)) {
+        EndDialog();
+        return;
+    }
+    
+    // If user clicked the X button, ALWAYS restore original palette and close
+    if (!open) {
+        if (g_clutGenerator && g_clutGenerator->IsActive()) {
+            g_clutGenerator->RestoreOriginalPalette();
+            g_clutGenerator->Shutdown();
+        }
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR);
+        EndDialog();
+        return;
+    }
+    
+    // Initialize CLUT generator if needed
+    if (!g_clutGenerator) {
+        g_clutGenerator = new ClutGenerator();
+    }
+    
+    if (!g_clutGenerator->IsActive()) {
+        // Try to initialize with current main image palette
+        Palette* currentPalette = nullptr;
+        if (globalView && globalView->palSCI) {
+            currentPalette = globalView->palSCI;
+        } else if (globalPicture && globalPicture->palSCI) {
+            currentPalette = globalPicture->palSCI;
+        }
+        
+        if (currentPalette) {
+            g_clutGenerator->Initialize(currentPalette);
+        } else {
+            ErrorText("No palette loaded! Please open a .v56 or .p56 file first.");
+            if (CloseButton("Close")) {
+                ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR);
+            }
+            EndDialog();
+            return;
+        }
+    }
+    
+    float availableWidth = GetContentRegionAvailWidth();
+    
+    // =========================================================================
+    // HEADER CONTROLS
+    // =========================================================================
+    
+    // Preview toggle
+    bool previewEnabled = g_clutGenerator->IsPreviewEnabled();
+    if (Checkbox("Live Preview", &previewEnabled)) {
+        g_clutGenerator->SetPreviewEnabled(previewEnabled);
+    }
+    if (IsItemHovered()) {
+        SetTooltip("Toggle real-time preview in main window");
+    }
+    
+    SameLine();
+    if (Button("Clear All")) {
+        g_clutGenerator->ClearAllRemaps();
+    }
+    if (IsItemHovered()) {
+        SetTooltip("Remove all remaps and restore original colors");
+    }
+    
+    SameLine();
+    if (CloseButton("Restore & Close")) {
+        g_clutGenerator->RestoreOriginalPalette();
+        g_clutGenerator->Shutdown();
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR);
+        EndDialog();
+        return;
+    }
+    
+    // Show live preview status
+    if (previewEnabled) {
+        SameLine();
+        TextColored(0.3f, 1.0f, 0.3f, 1.0f, "LIVE PREVIEW ACTIVE");
+    }
+    
+    Separator();
+    
+    // =========================================================================
+    // MAIN CONTENT - TWO COLUMN LAYOUT
+    // =========================================================================
+    
+    if (BeginChild("MainContent", 0, -80)) { // Leave space for bottom controls
+        
+        // Left column - Palette display and color selection
+        if (BeginChild("LeftColumn", availableWidth * 0.55f, 0, true)) {
+            
+            HeaderText("Color Selection");
+            
+            // Current selection display
+            int fromColor = g_clutGenerator->GetSelectedFromColor();
+            int toColor = g_clutGenerator->GetSelectedToColor();
+            
+            char fromText[64], toText[64];
+            sprintf(fromText, "From Color: %d", fromColor);
+            sprintf(toText, "To Color: %d", toColor);
+            
+            TextColored(1.0f, 0.6f, 0.6f, 1.0f, fromText);
+            SameLine();
+            TextColored(0.6f, 1.0f, 0.6f, 1.0f, toText);
+            
+            InfoText("Left click: Select FROM color");
+            InfoText("Right click: Select TO color");
+            InfoText("Selections stay the same after adding remaps");
+            
+            if (Button("Add Remap")) {
+                if (fromColor != toColor) {
+                    g_clutGenerator->AddRemap(fromColor, toColor);
+                }
+            }
+            if (IsItemHovered()) {
+                SetTooltip("Add remap from selected FROM color to TO color");
+            }
+            
+            SameLine();
+            if (Button("Remove FROM")) {
+                g_clutGenerator->RemoveRemap(fromColor);
+            }
+            if (IsItemHovered()) {
+                SetTooltip("Remove any existing remap for the FROM color");
+            }
+            
+            Separator();
+            
+            // Palette display
+            HeaderText("Palette (Click to Select)");
+            
+            Palette* sourcePalette = g_clutGenerator->GetSourcePalette();
+            if (sourcePalette) {
+                
+                // Display palette in 16x16 grid
+                const int COLORS_PER_ROW = 16;
+                const float CELL_SIZE = 20.0f;
+                const float SPACING = 2.0f;
+                
+                for (int row = 0; row < 16; row++) {
+                    for (int col = 0; col < 16; col++) {
+                        int colorIndex = row * COLORS_PER_ROW + col;
+                        
+                        PalEntry* entry = sourcePalette->GetPalEntry(colorIndex);
+                        if (!entry) continue;
+                        
+                        // Create color button
+                        ImGuiColor buttonColor(entry->red / 255.0f, entry->green / 255.0f, entry->blue / 255.0f, 1.0f);
+                        
+                        char buttonId[16];
+                        sprintf(buttonId, "##%d", colorIndex);
+                        
+                        // Highlight selected colors
+                        bool isFromColor = (colorIndex == fromColor);
+                        bool isToColor = (colorIndex == toColor);
+                        bool hasRemap = g_clutGenerator->HasRemap(colorIndex);
+                        
+                        if (isFromColor || isToColor || hasRemap) {
+                            PushStyleVar(IMGUI_STYLE_VAR_FRAME_ROUNDING, 2);
+                            if (isFromColor) {
+                                PushStyleColor(IMGUI_COL_FRAME_BG, 1.0f, 0.2f, 0.2f, 0.8f); // Red border for from
+                            } else if (isToColor) {
+                                PushStyleColor(IMGUI_COL_FRAME_BG, 0.2f, 1.0f, 0.2f, 0.8f); // Green border for to
+                            } else if (hasRemap) {
+                                PushStyleColor(IMGUI_COL_FRAME_BG, 1.0f, 1.0f, 0.2f, 0.6f); // Yellow border for remapped
+                            }
+                        }
+                        
+                        if (ButtonColored(buttonId, buttonColor)) {
+                            // Handle clicks after button creation
+                        }
+                        
+                        // Check for clicks after button creation
+                        if (IsItemClicked(0)) { // Left click = from color
+                            g_clutGenerator->SetSelectedFromColor(colorIndex);
+                        }
+                        if (IsItemClicked(1)) { // Right click = to color
+                            g_clutGenerator->SetSelectedToColor(colorIndex);
+                        }
+                        
+                        if (isFromColor || isToColor || hasRemap) {
+                            PopStyleColor();
+                            PopStyleVar();
+                        }
+                        
+                        // Tooltip with color info
+                        if (IsItemHovered()) {
+                            char tooltipText[256];
+                            sprintf(tooltipText, "Color %d: RGB(%d, %d, %d)\nLeft: FROM, Right: TO", 
+                                   colorIndex, entry->red, entry->green, entry->blue);
+                            SetTooltip(tooltipText);
+                        }
+                        
+                        // Layout: 16 colors per row
+                        if (col < 15) {
+                            SameLine(0, SPACING);
+                        }
+                    }
+                }
+            }
+            
+        }
+        EndChild();
+        
+        SameLine();
+        
+        // Right column - Remap table
+        if (BeginChild("RightColumn", 0, 0, true)) {
+            
+            HeaderText("Current Remaps");
+            
+            const std::vector<ColorRemapEntry>& remaps = g_clutGenerator->GetCurrentRemaps();
+            
+            if (remaps.empty()) {
+                InfoText("No remaps defined");
+                InfoText("Select colors and click 'Add Remap'");
+            } else {
+                // Simple table layout
+                for (int i = 0; i < static_cast<int>(remaps.size()); i++) {
+                    const ColorRemapEntry& remap = remaps[i];
+                    
+                    // Create formatted text
+                    char remapText[64];
+                    sprintf(remapText, "%d -> %d", remap.fromColor, remap.toColor);
+                    
+                    // Color the text based on active state
+                    if (remap.active) {
+                        Text(remapText);
+                    } else {
+                        TextDisabled(remapText);
+                    }
+                    
+                    SameLine();
+                    
+                    // Toggle button
+                    char toggleId[32];
+                    sprintf(toggleId, "%s##T%d", remap.active ? "✓" : "○", i);
+                    if (SmallButton(toggleId)) {
+                        g_clutGenerator->ToggleRemapActive(i);
+                    }
+                    if (IsItemHovered()) {
+                        SetTooltip(remap.active ? "Click to disable" : "Click to enable");
+                    }
+                    
+                    SameLine();
+                    
+                    // Delete button
+                    char deleteId[32];
+                    sprintf(deleteId, "X##%d", i);
+                    if (SmallButton(deleteId)) {
+                        g_clutGenerator->ClearRemap(i);
+                    }
+                    if (IsItemHovered()) {
+                        SetTooltip("Remove this remap");
+                    }
+                }
+            }
+            
+        }
+        EndChild();
+        
+    }
+    EndChild();
+    
+    // =========================================================================
+    // BOTTOM CONTROLS - SCI Table Generation
+    // =========================================================================
+    
+    Separator();
+    
+    HeaderText("COLORTBL.SC Export");
+    
+    static char statusMessage[256] = "";
+    static bool showSuccess = false;
+    
+    if (Button("Copy SCI Table to Clipboard")) {
+        std::string sciTable = g_clutGenerator->GenerateSCITableEntry("Generated by CLUT Generator");
+        
+        // Copy to clipboard
+        if (OpenClipboard(hWnd)) {
+            EmptyClipboard();
+            
+            HGLOBAL hClipboardData = GlobalAlloc(GMEM_DDESHARE, (SIZE_T)(sciTable.length() + 1));
+            if (hClipboardData) {
+                char* pchData = (char*)GlobalLock(hClipboardData);
+                if (pchData) {
+                    strcpy(pchData, sciTable.c_str());
+                    GlobalUnlock(hClipboardData);
+                    SetClipboardData(CF_TEXT, hClipboardData);
+                    sprintf(statusMessage, "SCI table copied to clipboard! Paste into COLORTBL.SC");
+                    showSuccess = true;
+                }
+            }
+            CloseClipboard();
+        }
+    }
+    if (IsItemHovered()) {
+        SetTooltip("Generate COLORTBL.SC compatible table entry and copy to clipboard");
+    }
+    
+    // Show status message
+    if (showSuccess && strlen(statusMessage) > 0) {
+        SuccessText(statusMessage);
+    }
+    
+    // Help text
+    Separator();
+    InfoText("Simple Workflow:");
+    Text("1. Left-click FROM color, right-click TO color, click 'Add Remap'");
+    Text("2. See changes in main window (may need to navigate cell/loop if not immediate)");
+    Text("3. Copy SCI Table and paste into your COLORTBL.SC file");
+    Text("4. Original palette is restored when dialog closes");
+    
+    EndDialog();
+}
+// Helper functions for file dialogs
+BOOL DoSaveFileDialog(HWND hwnd, const char* filter, const char* defaultExt, char* filename, size_t filenameSize) {
+    OPENFILENAME ofn;
+    ZeroMemory(&ofn, sizeof(ofn));
+    
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = static_cast<DWORD>(filenameSize);
+    ofn.lpstrDefExt = defaultExt;
+    ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+    
+    return GetSaveFileName(&ofn);
+}
+
+BOOL DoOpenFileDialog(HWND hwnd, const char* filter, char* filename, size_t filenameSize) {
+    OPENFILENAME ofn;
+    ZeroMemory(&ofn, sizeof(ofn));
+    
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = hwnd;
+    ofn.lpstrFilter = filter;
+    ofn.lpstrFile = filename;
+    ofn.nMaxFile = static_cast<DWORD>(filenameSize);
+    ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+    
+    return GetOpenFileName(&ofn);
 }
 
 #pragma warning(pop)  // Restore warning level

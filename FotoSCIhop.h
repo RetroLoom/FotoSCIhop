@@ -116,5 +116,7 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
 
 void RenderPropertiesDialog();
 void RenderAboutDialog();
+void RenderClutGeneratorDialog();
+void ForceImageRefresh();
 
 #endif // FOTOSCIHOP_H

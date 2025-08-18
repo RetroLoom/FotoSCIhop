@@ -63,7 +63,8 @@ BEGIN
         MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI
         MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI
         MENUITEM SEPARATOR
-        MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES, GRAYED
+        MENUITEM "Clut Generator",              IDM_CLUTGEN
+        MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES
         POPUP "Magnification"
         BEGIN
             MENUITEM "Normal\tCtrl+1",              ID_INGRANDIMENTO_NORMALE, CHECKED

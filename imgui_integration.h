@@ -52,6 +52,7 @@ namespace ImGuiDialogs {
     enum DialogType {
         DIALOG_PROPERTIES = 0,
         DIALOG_ABOUT = 1,
+        DIALOG_CLUT_GENERATOR = 2,
         DIALOG_COUNT
     };
     

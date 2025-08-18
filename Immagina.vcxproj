@@ -160,6 +160,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="clutGenerator.cpp" />
     <ClCompile Include="FotoSCIhop.cpp" />
     <ClCompile Include="fotoscihop_styles.cpp" />
     <ClCompile Include="imgui\backends\imgui_impl_opengl3.cpp">
@@ -218,6 +219,7 @@
     <ClCompile Include="v56files.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="clutGenerator.h" />
     <ClInclude Include="FotoSCIhop.h" />
     <ClInclude Include="fotoscihop_styles.h" />
     <ClInclude Include="globals.h" />
