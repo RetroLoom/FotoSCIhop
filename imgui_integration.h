@@ -46,7 +46,7 @@ struct ImGuiColor {
 namespace ImGuiDialogs {
     
     // =========================================================================
-    // NEW: ORGANIZED DIALOG MANAGEMENT - Added on top of existing system
+    // ORGANIZED DIALOG MANAGEMENT
     // =========================================================================
     
     enum DialogType {
@@ -63,7 +63,7 @@ namespace ImGuiDialogs {
     bool IsDialogOpen(DialogType type);
     
     // =========================================================================
-    // EXISTING: All your current functions stay exactly the same
+    // All your current functions stay exactly the same
     // =========================================================================
     
     // Initialize/cleanup the ImGui system
@@ -80,7 +80,7 @@ namespace ImGuiDialogs {
     void Render();
     
     // =========================================================================
-    // EXISTING: STYLE AND THEMING - All unchanged
+    // STYLE AND THEMING - All unchanged
     // =========================================================================
     
     // Predefined themes
@@ -110,7 +110,7 @@ namespace ImGuiDialogs {
     void SetGrabRounding(float rounding);
     
     // =========================================================================
-    // EXISTING: BASIC LAYOUT AND WIDGETS - All unchanged
+    // BASIC LAYOUT AND WIDGETS - All unchanged
     // =========================================================================
     
     // Dialog management (backward compatible)
@@ -138,7 +138,7 @@ namespace ImGuiDialogs {
     void RightAlignNextItem(float itemWidth);
     
     // =========================================================================
-    // EXISTING: TEXT AND LABELS - All unchanged
+    // TEXT AND LABELS - All unchanged
     // =========================================================================
     
     // Basic text (backward compatible)
@@ -160,7 +160,7 @@ namespace ImGuiDialogs {
     void TreePop();
     
     // =========================================================================
-    // EXISTING: BUTTONS AND INTERACTABLES - All unchanged
+    // BUTTONS AND INTERACTABLES - All unchanged
     // =========================================================================
     
     // Basic buttons (backward compatible)
@@ -178,7 +178,7 @@ namespace ImGuiDialogs {
     bool ButtonColored(const char* label, float r, float g, float b, float a = 1.0f);
     
     // =========================================================================
-    // EXISTING: INPUT WIDGETS - All unchanged
+    // INPUT WIDGETS - All unchanged
     // =========================================================================
     
     // Basic inputs (backward compatible)
@@ -207,7 +207,7 @@ namespace ImGuiDialogs {
     bool ColorPicker4(const char* label, float col[4]);
     
     // =========================================================================
-    // EXISTING: SELECTION WIDGETS - All unchanged
+    // SELECTION WIDGETS - All unchanged
     // =========================================================================
     
     // Combo boxes
@@ -229,7 +229,7 @@ namespace ImGuiDialogs {
     bool RadioButton(const char* label, int* v, int v_button);
     
     // =========================================================================
-    // EXISTING: TOOLTIPS AND POPUPS - All unchanged
+    // TOOLTIPS AND POPUPS - All unchanged
     // =========================================================================
     
     // Tooltips
@@ -246,7 +246,7 @@ namespace ImGuiDialogs {
     void CloseCurrentPopup();
     
     // =========================================================================
-    // EXISTING: TABLES - All unchanged
+    // TABLES - All unchanged
     // =========================================================================
     
     bool BeginTable(const char* str_id, int column_count);
@@ -257,7 +257,7 @@ namespace ImGuiDialogs {
     void TableHeadersRow();
     
     // =========================================================================
-    // EXISTING: UTILITY FUNCTIONS - All unchanged
+    // UTILITY FUNCTIONS - All unchanged
     // =========================================================================
     
     // Window management
@@ -299,7 +299,7 @@ namespace ImGuiDialogs {
     float CalcItemWidth();
     
     // =========================================================================
-    // EXISTING: DRAWING AND GRAPHICS - All unchanged
+    // DRAWING AND GRAPHICS - All unchanged
     // =========================================================================
     
     // Custom drawing
@@ -311,7 +311,7 @@ namespace ImGuiDialogs {
     void DrawText(float x, float y, ImGuiColor color, const char* text);
     
     // =========================================================================
-    // EXISTING: CONVENIENCE FUNCTIONS - All unchanged
+    // CONVENIENCE FUNCTIONS - All unchanged
     // =========================================================================
     
     // Property editing helpers

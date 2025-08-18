@@ -21,6 +21,12 @@
 #include "p56files.h"
 #include "v56files.h"
 #include "english.h"
+#include <set>
+
+// ============================================================================
+// FORWARD DECLARATIONS
+// ============================================================================
+class ClutGenerator;
 
 // ============================================================================
 // CONSTANTS
@@ -30,73 +36,85 @@
 // ============================================================================
 // COMMAND LINE AND CONFIGURATION
 // ============================================================================
-char *argv[MAX_ARG];
-char propstr[10240] = "";
-char gAppPath[MAX_PATH];
+extern char *argv[MAX_ARG];
+extern char propstr[10240];
+extern char gAppPath[MAX_PATH];
 
 // Configuration file and settings
-char gConfigIni[_MAX_PATH];
-int gAppResX = 700;
-int gAppResY = 500;
-int zScale = 100;
-int gPosCells = 0;
-int gCliMode = 0;
-int gBaseMagnify = 100;
-int gCliEnabled = 0;
+extern char gConfigIni[_MAX_PATH];
+extern int gAppResX;
+extern int gAppResY;
+extern int zScale;
+extern int gPosCells;
+extern int gCliMode;
+extern int gBaseMagnify;
+extern int gCliEnabled;
 
 // ============================================================================
 // REFERENCE IMAGE SETTINGS
 // ============================================================================
-HWND hReferenceDialog;
-float gReferenceScaleX = 100;
-float gReferenceScaleY = 100;
-char gReferenceBM[_MAX_PATH] = "reference.bmp";
-int gReferenceXHot = 0;
-int gReferenceYHot = 0;
-int gReferenceLinkPoint = 0;
-int gReferenceLinkPointX = 0;
-int gReferenceLinkPointY = 0;
-int gReferencePriority = 0;
-int gReferenceTransparentIndex = 255;
+extern HWND hReferenceDialog;
+extern float gReferenceScaleX;
+extern float gReferenceScaleY;
+extern char gReferenceBM[_MAX_PATH];
+extern int gReferenceXHot;
+extern int gReferenceYHot;
+extern int gReferenceLinkPoint;
+extern int gReferenceLinkPointX;
+extern int gReferenceLinkPointY;
+extern int gReferencePriority;
+extern int gReferenceTransparentIndex;
 
 // ============================================================================
 // GLOBAL APPLICATION STATE
 // ============================================================================
 
 // Main data objects
-P56file32 *globalPicture = NULL;
-V56file *globalView = NULL;
-bool isPicture = true;
+extern P56file32 *globalPicture;
+extern V56file *globalView;
+extern bool isPicture;
 
 // Current selection state
-Cell **curCell = 0;
-Loop **curLoop = 0;
-int curCellIndex = 0;
-int curLoopIndex = 0;
+extern Cell **curCell;
+extern Loop **curLoop;
+extern int curCellIndex;
+extern int curLoopIndex;
 
 // Application state flags
-bool datasaved = true;
-bool showpbars = false;
+extern bool datasaved;
+extern bool showpbars;
+
+// ============================================================================
+// MAGIC WAND AND CLUT GENERATOR STATE
+// ============================================================================
+
+// Global state for magic wand tool
+extern bool g_magicWandEnabled;
+extern std::set<int> g_usedColorIndices;
+
+// Global CLUT generator instance
+extern ClutGenerator* g_clutGenerator;
 
 // ============================================================================
 // DISPLAY AND UI STATE
 // ============================================================================
 
 // Display settings
-int MagnifyFactor = gBaseMagnify;
-int picX = 0;
-int picY = 30;
-int tableX = 0;
+extern int MagnifyFactor;
+extern int picX;
+extern int picY;
+extern int tableX;
 
 // UI elements and drawing
-RECT rc;
-HWND hWndTopBar;
-HFONT hfDefault;
-RGBQUAD skipColor;
+extern RECT rc;
+extern HWND hWndTopBar;
+extern HFONT hfDefault;
+extern RGBQUAD skipColor;
+extern HWND hWnd;
 
 // Image import settings
-int colorLimit = 255;
-int tolerance = 50;
+extern int colorLimit;
+extern int tolerance;
 
 // ============================================================================
 // FUNCTION DECLARATIONS
@@ -107,6 +125,9 @@ void ParseAppPath(void);
 // CLI and palette functions
 BOOL CLIPaletteImport(char *palette);
 int cliExport(char *name);
+
+// Magic wand and color sampling functions
+bool SampleColorAtScreenPosition(int screenX, int screenY, int& colorIndex);
 
 // Dialog procedure
 BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,

@@ -12,10 +12,12 @@
  
 #include "stdafx.h"
 #include "FotoSCIhop.h"
+#include "ClutGenerator.h"
 #define MAX_LOADSTRING 100
 #include "imgui_integration.h"
 #include "fotoscihop_styles.h"
-#include "ClutGenerator.h"
+
+#include <set> 
 
 
 
@@ -34,6 +36,85 @@ ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
+
+// ============================================================================
+// COMMAND LINE AND CONFIGURATION
+// ============================================================================
+char *argv[MAX_ARG];
+char propstr[10240] = "";
+char gAppPath[MAX_PATH];
+
+// Configuration file and settings
+char gConfigIni[_MAX_PATH];
+int gAppResX = 700;
+int gAppResY = 500;
+int zScale = 100;
+int gPosCells = 0;
+int gCliMode = 0;
+int gBaseMagnify = 100;
+int gCliEnabled = 0;
+
+// ============================================================================
+// REFERENCE IMAGE SETTINGS
+// ============================================================================
+HWND hReferenceDialog;
+float gReferenceScaleX = 100;
+float gReferenceScaleY = 100;
+char gReferenceBM[_MAX_PATH] = "reference.bmp";
+int gReferenceXHot = 0;
+int gReferenceYHot = 0;
+int gReferenceLinkPoint = 0;
+int gReferenceLinkPointX = 0;
+int gReferenceLinkPointY = 0;
+int gReferencePriority = 0;
+int gReferenceTransparentIndex = 255;
+
+// ============================================================================
+// GLOBAL APPLICATION STATE
+// ============================================================================
+
+// Main data objects
+P56file32 *globalPicture = NULL;
+V56file *globalView = NULL;
+bool isPicture = true;
+
+// Current selection state
+Cell **curCell = 0;
+Loop **curLoop = 0;
+int curCellIndex = 0;
+int curLoopIndex = 0;
+
+// Application state flags
+bool datasaved = true;
+bool showpbars = false;
+
+// ============================================================================
+// MAGIC WAND AND CLUT GENERATOR STATE
+// ============================================================================
+
+// Global state for magic wand tool
+bool g_magicWandEnabled = false;
+std::set<int> g_usedColorIndices;
+
+// ============================================================================
+// DISPLAY AND UI STATE
+// ============================================================================
+
+// Display settings
+int MagnifyFactor = gBaseMagnify;
+int picX = 0;
+int picY = 30;
+int tableX = 0;
+
+// UI elements and drawing
+RECT rc;
+HWND hWndTopBar;
+HFONT hfDefault;
+RGBQUAD skipColor;
+
+// Image import settings
+int colorLimit = 255;
+int tolerance = 50;
 
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 {
@@ -2305,15 +2386,125 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
 
+    case WM_LBUTTONDOWN:
+    {
+        // Check if magic wand is enabled first
+        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled()) {
+            int colorIndex;
+            int clientX = LOWORD(lParam);
+            int clientY = HIWORD(lParam);
+            
+            if (SampleColorAtScreenPosition(clientX, clientY, colorIndex)) {
+                g_clutGenerator->SetSelectedFromColor(colorIndex);
+                
+                // Show feedback to user
+                char message[256];
+                sprintf(message, "FotoSCIhop - Magic Wand: Selected color %d as FROM color", colorIndex);
+                SetWindowText(hWnd, message);
+                
+                // Restore normal title after 3 seconds
+                SetTimer(hWnd, 2, 3000, NULL);
+                
+                // Optional: Also show in console for debugging
+                #ifdef _DEBUG
+                char debugMsg[128];
+                sprintf(debugMsg, "[DEBUG] Magic Wand FROM: Color %d at (%d,%d)\n", colorIndex, clientX, clientY);
+                OutputDebugStringA(debugMsg);
+                #endif
+            } else {
+                // Click was outside image area
+                SetWindowText(hWnd, "FotoSCIhop - Magic Wand: Click inside the image area");
+                SetTimer(hWnd, 2, 2000, NULL);
+            }
+            return 0; // Consume the message
+        }
+        // If magic wand not enabled, let default processing handle it
+        break;
+    }
+
+    case WM_RBUTTONDOWN:
+    {
+        // Check if magic wand is enabled first
+        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled()) {
+            int colorIndex;
+            int clientX = LOWORD(lParam);
+            int clientY = HIWORD(lParam);
+            
+            if (SampleColorAtScreenPosition(clientX, clientY, colorIndex)) {
+                g_clutGenerator->SetSelectedToColor(colorIndex);
+                
+                // Show feedback to user
+                char message[256];
+                sprintf(message, "FotoSCIhop - Magic Wand: Selected color %d as TO color", colorIndex);
+                SetWindowText(hWnd, message);
+                
+                // Restore normal title after 3 seconds
+                SetTimer(hWnd, 2, 3000, NULL);
+                
+                // Optional: Also show in console for debugging
+                #ifdef _DEBUG
+                char debugMsg[128];
+                sprintf(debugMsg, "[DEBUG] Magic Wand TO: Color %d at (%d,%d)\n", colorIndex, clientX, clientY);
+                OutputDebugStringA(debugMsg);
+                #endif
+            } else {
+                // Click was outside image area
+                SetWindowText(hWnd, "FotoSCIhop - Magic Wand: Click inside the image area");
+                SetTimer(hWnd, 2, 2000, NULL);
+            }
+            return 0; // Consume the message
+        }
+        // If magic wand not enabled, let default processing handle it
+        break;
+    }
+
+
     case WM_TIMER:
-    if (wParam == 1) { // Our ImGui timer
-        if (ImGuiDialogs::IsAnyDialogOpen())
-        {
+    if (wParam == 1) { // ImGui timer
+        if (ImGuiDialogs::IsAnyDialogOpen()) {
             ImGuiDialogs::Render();
         }
     }
-    break;
+    else if (wParam == 2) { // Title restore timer
+        KillTimer(hWnd, 2);
         
+        // Restore normal window title
+        char wname[MAX_PATH + 15] = "FotoSCIhop";
+        if (strlen(szFileName) > 0) {
+            strcat(wname, " - ");
+            
+            // Extract just the filename from the full path
+            char* filename = strrchr(szFileName, '\\');
+            if (filename) {
+                strcat(wname, filename + 1); // Skip the backslash
+            } else {
+                strcat(wname, szFileName);
+            }
+        }
+        SetWindowText(hWnd, wname);
+    }
+    break;
+
+    case WM_SETCURSOR:
+    {
+        // Only change cursor when magic wand is enabled and mouse is over client area
+        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled()) {
+            POINT pt;
+            GetCursorPos(&pt);
+            ScreenToClient(hWnd, &pt);
+            
+            // Check if cursor is over the image display area
+            RECT clientRect;
+            GetClientRect(hWnd, &clientRect);
+            
+            if (pt.x >= 0 && pt.x < clientRect.right && pt.y >= 0 && pt.y < clientRect.bottom) {
+                SetCursor(LoadCursor(NULL, IDC_CROSS));
+                return TRUE;
+            }
+        }
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+
     case WM_CLOSE:
         if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
             exit_proc(hWnd);
@@ -3628,6 +3819,110 @@ void RenderAboutDialog() {
     }
     
     EndDialog();
+}
+
+bool SampleColorAtScreenPosition(int clientX, int clientY, int& colorIndex) {
+    if (!g_clutGenerator || !g_clutGenerator->IsActive()) return false;
+    
+    // Use the same display origin calculation as the original display code
+    int displayOriginX = UI_LEFT_MARGIN + picX + tableX;
+    int displayOriginY = UI_TOP_MARGIN + picY;
+    
+    // Calculate relative position within the display area
+    int relativeX = clientX - displayOriginX;
+    int relativeY = clientY - displayOriginY;
+    
+    // Account for magnification factor (same as original display code)
+    if (MagnifyFactor > 0) {
+        relativeX = (relativeX * 100) / MagnifyFactor;
+        relativeY = (relativeY * 100) / MagnifyFactor;
+    }
+    
+    if (globalView && curCell && (*curCell)) {
+        // For view files - sample from current view cell
+        if (!(*curCell)->bmImage || !(*curCell)->bmInfo) {
+            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+        }
+        
+        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+            CelHeaderView* header = (CelHeaderView*)&(*curCell)->Head;
+            
+            // Adjust for hot spot offset (same as DisplayCurrentView function)
+            int imageX = relativeX - header->xHot;
+            int imageY = relativeY - header->yHot;
+            
+            int width = (*curCell)->bmInfo->bmiHeader.biWidth;
+            int height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+            
+            // Check bounds
+            if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                // Calculate pixel index (accounting for row padding)
+                int rowWidth = ((width + 3) & ~3); // Round up to multiple of 4
+                int pixelIndex = imageY * rowWidth + imageX;
+                colorIndex = (*curCell)->bmImage[pixelIndex];
+                return true;
+            }
+        }
+    }
+    else if (globalPicture && curCellIndex >= 0 && curCellIndex < globalPicture->CellsCount()) {
+        // For picture files - we need to handle both single cell and all cells display
+        if (curCellIndex == 0) {
+            // When displaying all cells, we need to check each cell
+            for (int i = 0; i < globalPicture->CellsCount(); i++) {
+                Cell* cell = globalPicture->cells[i];
+                if (!cell) continue;
+                
+                if (!cell->bmImage || !cell->bmInfo) {
+                    cell->GetImage(&cell->bmInfo, &cell->bmImage);
+                }
+                
+                if (cell->bmImage && cell->bmInfo) {
+                    CelHeaderPic* header = (CelHeaderPic*)&cell->Head;
+                    
+                    // Check if click is within this cell's bounds
+                    int imageX = relativeX - header->xpos;
+                    int imageY = relativeY - header->ypos;
+                    
+                    int width = cell->bmInfo->bmiHeader.biWidth;
+                    int height = abs(cell->bmInfo->bmiHeader.biHeight);
+                    
+                    if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                        int rowWidth = ((width + 3) & ~3);
+                        int pixelIndex = imageY * rowWidth + imageX;
+                        colorIndex = cell->bmImage[pixelIndex];
+                        return true;
+                    }
+                }
+            }
+        } else {
+            // When displaying specific cell
+            Cell* cell = globalPicture->cells[curCellIndex];
+            if (cell) {
+                if (!cell->bmImage || !cell->bmInfo) {
+                    cell->GetImage(&cell->bmInfo, &cell->bmImage);
+                }
+                
+                if (cell->bmImage && cell->bmInfo) {
+                    CelHeaderPic* header = (CelHeaderPic*)&cell->Head;
+                    
+                    int imageX = relativeX - header->xpos;
+                    int imageY = relativeY - header->ypos;
+                    
+                    int width = cell->bmInfo->bmiHeader.biWidth;
+                    int height = abs(cell->bmInfo->bmiHeader.biHeight);
+                    
+                    if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                        int rowWidth = ((width + 3) & ~3);
+                        int pixelIndex = imageY * rowWidth + imageX;
+                        colorIndex = cell->bmImage[pixelIndex];
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    
+    return false;
 }
 
 void RenderClutGeneratorDialog() {

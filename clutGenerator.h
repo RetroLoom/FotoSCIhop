@@ -1,8 +1,11 @@
-#pragma once
+#ifndef CLUT_GENERATOR_H
+#define CLUT_GENERATOR_H
+
 #include "stdafx.h"
 #include "palette.h"
 #include <vector>
 #include <string>
+#include <set>
 
 // Simple color remap entry
 struct ColorRemapEntry {
@@ -54,11 +57,18 @@ public:
     bool IsPreviewEnabled() const { return m_previewEnabled; }
     void SetPreviewEnabled(bool enabled);
     
+    // Magic wand and usage analysis
+    void SetMagicWandEnabled(bool enabled) { m_magicWandEnabled = enabled; }
+    bool IsMagicWandEnabled() const { return m_magicWandEnabled; }
+    void AnalyzeImageColorUsage();
+    const std::set<int>& GetUsedColorIndices() const { return m_usedColorIndices; }
+    bool IsColorUsedInImage(int colorIndex) const;
+    
     // Getters for UI
     const std::vector<ColorRemapEntry>& GetCurrentRemaps() const { return m_currentRemaps; }
     Palette* GetSourcePalette() const { return m_sourcePalette; }
     
-    // UI helpers - NOW WITH PREVIEW UPDATES
+    // UI helpers - WITH PREVIEW UPDATES
     int GetSelectedFromColor() const { return m_selectedFromColor; }
     int GetSelectedToColor() const { return m_selectedToColor; }
     void SetSelectedFromColor(int color) { 
@@ -72,10 +82,10 @@ public:
     
     bool IsActive() const { return m_isActive; }
     
-    // NEW: Get original palette colors for GUI display
+    // Get original palette colors for GUI display
     bool GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const;
     
-    // NEW: Preview functionality
+    // Preview functionality
     void UpdatePreviewRemap();
     void ClearPreviewRemap();
     
@@ -83,6 +93,7 @@ private:
     // Internal state
     bool m_isActive;
     bool m_previewEnabled;
+    bool m_magicWandEnabled;
     
     // Palette management
     Palette* m_sourcePalette;          // Reference to main image palette
@@ -93,10 +104,13 @@ private:
     int m_selectedFromColor;
     int m_selectedToColor;
     
-    // NEW: Preview state
+    // Preview state
     bool m_hasPreviewRemap;
     int m_previewFromColor;
     int m_previewToColor;
+    
+    // Color usage analysis
+    std::set<int> m_usedColorIndices;
     
     // Helper functions
     void ApplyRemapsToMainPalette();
@@ -104,7 +118,10 @@ private:
     void CopyPaletteEntry(const PalEntry* source, PalEntry* dest) const;
     void BackupPaletteEntry(int colorIndex);
     void RestorePaletteEntry(int colorIndex);
+    void AnalyzeCellImageUsage(unsigned char* imageData, int width, int height);
 };
 
 // Global instance
 extern ClutGenerator* g_clutGenerator;
+
+#endif // CLUT_GENERATOR_H

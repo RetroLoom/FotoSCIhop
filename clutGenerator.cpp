@@ -1,12 +1,8 @@
 #include "stdafx.h"
 #include "ClutGenerator.h"
+#include "FotoSCIhop.h"
 #include <sstream>
 #include <iomanip>
-#include <sstream>
-
-// Forward declarations from FotoSCIhop
-extern HWND hWnd;  // For InvalidateRgn calls
-extern void ForceImageRefresh();  // Function to force cached image refresh
 
 // Global instance
 ClutGenerator* g_clutGenerator = nullptr;
@@ -14,6 +10,7 @@ ClutGenerator* g_clutGenerator = nullptr;
 ClutGenerator::ClutGenerator() 
     : m_isActive(false)
     , m_previewEnabled(true)
+    , m_magicWandEnabled(false)
     , m_sourcePalette(nullptr)
     , m_selectedFromColor(0)
     , m_selectedToColor(0)
@@ -41,6 +38,7 @@ bool ClutGenerator::Initialize(Palette* sourcePalette) {
     m_currentRemaps.clear();
     m_previewEnabled = true;
     m_hasPreviewRemap = false;
+    m_usedColorIndices.clear();
     
     return true;
 }
@@ -54,9 +52,11 @@ void ClutGenerator::Shutdown() {
     m_sourcePalette = nullptr;
     m_isActive = false;
     m_previewEnabled = false;
+    m_magicWandEnabled = false;
     m_backupPalette.hasValidData = false;
     m_hasPreviewRemap = false;
     m_currentRemaps.clear();
+    m_usedColorIndices.clear();
 }
 
 void ClutGenerator::BackupOriginalPalette() {
@@ -203,7 +203,7 @@ void ClutGenerator::SetPreviewEnabled(bool enabled) {
     }
 }
 
-// NEW: Get original palette entry for GUI display
+// Get original palette entry for GUI display
 bool ClutGenerator::GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const {
     if (!ValidateColorIndex(colorIndex) || !m_backupPalette.hasValidData) {
         return false;
@@ -213,7 +213,7 @@ bool ClutGenerator::GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) con
     return true;
 }
 
-// NEW: Update preview remap
+// Update preview remap
 void ClutGenerator::UpdatePreviewRemap() {
     if (!m_isActive || !m_previewEnabled || !m_sourcePalette || !m_backupPalette.hasValidData) {
         return;
@@ -228,13 +228,66 @@ void ClutGenerator::UpdatePreviewRemap() {
     ApplyCurrentRemaps();
 }
 
-// NEW: Clear preview remap
+// Clear preview remap
 void ClutGenerator::ClearPreviewRemap() {
     if (m_hasPreviewRemap) {
         m_hasPreviewRemap = false;
         // Reapply only the actual remaps (removes preview)
         ApplyCurrentRemaps();
     }
+}
+
+void ClutGenerator::AnalyzeImageColorUsage() {
+    m_usedColorIndices.clear();
+    
+    if (!m_isActive) return;
+    
+    if (globalView && curCell && (*curCell)) {
+        // Analyze current view cell
+        if (!(*curCell)->bmImage || !(*curCell)->bmInfo) {
+            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+        }
+        
+        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+            int width = (*curCell)->bmInfo->bmiHeader.biWidth;
+            int height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+            AnalyzeCellImageUsage((*curCell)->bmImage, width, height);
+        }
+    }
+    else if (globalPicture && curCellIndex >= 0 && curCellIndex < globalPicture->CellsCount()) {
+        // Analyze current picture cell
+        Cell* cell = globalPicture->cells[curCellIndex];
+        if (cell) {
+            if (!cell->bmImage || !cell->bmInfo) {
+                cell->GetImage(&cell->bmInfo, &cell->bmImage);
+            }
+            
+            if (cell->bmImage && cell->bmInfo) {
+                int width = cell->bmInfo->bmiHeader.biWidth;
+                int height = abs(cell->bmInfo->bmiHeader.biHeight);
+                AnalyzeCellImageUsage(cell->bmImage, width, height);
+            }
+        }
+    }
+}
+
+void ClutGenerator::AnalyzeCellImageUsage(unsigned char* imageData, int width, int height) {
+    if (!imageData || width <= 0 || height <= 0) return;
+    
+    // Calculate row width (may include padding)
+    int rowWidth = ((width + 3) & ~3); // Round up to multiple of 4 for alignment
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int pixelIndex = y * rowWidth + x;
+            unsigned char colorIndex = imageData[pixelIndex];
+            m_usedColorIndices.insert(colorIndex);
+        }
+    }
+}
+
+bool ClutGenerator::IsColorUsedInImage(int colorIndex) const {
+    return m_usedColorIndices.find(colorIndex) != m_usedColorIndices.end();
 }
 
 std::string ClutGenerator::GenerateSCITableEntry(const std::string& comment) const {
