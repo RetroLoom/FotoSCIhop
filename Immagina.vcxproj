@@ -213,6 +213,16 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="imgui_integration.cpp" />
+    <ClCompile Include="librealmpal.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">CompileAsC</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">CompileAsC</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsC</CompileAs>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsC</CompileAs>
+    </ClCompile>
     <ClCompile Include="p56files.cpp" />
     <ClCompile Include="palette.cpp" />
     <ClCompile Include="scicell.cpp" />
@@ -232,12 +242,14 @@
     <ClInclude Include="globals.h" />
     <ClInclude Include="imgui_integration.h" />
     <ClInclude Include="language.h" />
+    <ClInclude Include="librealmpal.h" />
     <ClInclude Include="list.h" />
     <ClInclude Include="p56files.h" />
     <ClInclude Include="palette.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="scicell.h" />
     <ClInclude Include="sciloop.h" />
+    <ClInclude Include="stb_image.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="v56files.h" />
   </ItemGroup>
