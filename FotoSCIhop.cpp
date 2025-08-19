@@ -267,7 +267,7 @@ void ShowCell(unsigned char newcell)
 	}
 }
 
-BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
+BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 {
    OPENFILENAME ofn;
    
@@ -295,7 +295,7 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 
 	  strcpy(szNextFileName, szFileName);
       
-	  if (!stricmp((ext==NULL?szFileName+ofn.nFileExtension:ext), "v56"))
+	  if (!_stricmp((ext==NULL?szFileName+ofn.nFileExtension:ext), "v56"))
 		isPicture=false;
 	  else   //default is .p56 when extension in unknown
 		isPicture=true; 
@@ -324,7 +324,7 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 				delete newPicture;
 				newPicture = 0;
 
-				char *emsg;
+				const char *emsg;
 				switch (result)
 				{
 					case ID_CANTOPENFILE:
@@ -367,7 +367,7 @@ BOOL DoFileOpen(HWND hwnd, char *filename, char *ext)
 				delete newView;
 				newView = 0;
 
-				char *emsg=0;
+				const char *emsg = nullptr;
 				switch (result)
 				{
 					case ID_CANTOPENFILE:
@@ -580,7 +580,7 @@ BOOL DoNextFile(HWND hwnd)
 		
 
 
-		if (!stricmp(szNextFileName, fpath))
+		if (!_stricmp(szNextFileName, fpath))
 			passed = true;
 		
 
@@ -597,7 +597,7 @@ BOOL DoNextFile(HWND hwnd)
                     
 					return TRUE;
 				}
-				if (!stricmp(FindFileData.cFileName, fname))
+				if (!_stricmp(FindFileData.cFileName, fname))
 					passed = true;
 			}
 			retvalue = (FindNextFile(hFind, &FindFileData) != 0);
@@ -1828,7 +1828,7 @@ void LoadConfig ()
 #pragma warning(push)
 #pragma warning(disable: 4996)  // Disable deprecation warnings for legacy functions
 
-typedef BOOL (WINAPI*Func)(HWND, char*, unsigned char, char*, char*);
+typedef BOOL (WINAPI*Func)(HWND, const char*, unsigned char, const char*, char*);
 Func ExtractFromVolume;
 
 void ParseAppPath(void)
