@@ -796,91 +796,74 @@ double realmpal_color_distance_perceptual(RGB8 c1, RGB8 c2) {
     return sqrt(0.2126*dr*dr + 0.7152*dg*dg + 0.0722*db*db);
 }
 
-static int best_index_linear_cached(uint8_t r, uint8_t g, uint8_t b, const RGB8 *pal) {
+static int best_index_linear_cached(uint8_t r, uint8_t g, uint8_t b,
+                                    const RGB8 *pal, int skip_index) {
     init_color_cache();
-    
+
     uint32_t packed = pack_rgb(r, g, b);
     uint32_t hash = packed % CACHE_SIZE;
-    
-    // Check cache first
-    if (color_cache[hash].valid && color_cache[hash].color == packed) {
+
+    // Use cache only when NOT skipping any index
+    if (skip_index < 0 && color_cache[hash].valid && color_cache[hash].color == packed) {
         return color_cache[hash].best_index;
     }
-    
-    // Compute if not in cache
+
     int best = 0;
     int bestd = INT_MAX;
     for (int i = 0; i < 256; i++) {
+        if (skip_index >= 0 && i == skip_index) continue;  // <<-- SKIP HERE
         int dr = (int)r - pal[i].r;
         int dg = (int)g - pal[i].g;
         int db = (int)b - pal[i].b;
         int d = dr*dr + dg*dg + db*db;
-        if (d < bestd) {
-            bestd = d;
-            best = i;
-        }
+        if (d < bestd) { bestd = d; best = i; }
     }
-    
-    // Cache the result
-    color_cache[hash].color = packed;
-    color_cache[hash].best_index = (uint8_t)best;
-    color_cache[hash].valid = true;
-    
+
+    // Don’t cache results that depend on skip_index
+    if (skip_index < 0) {
+        color_cache[hash].color = packed;
+        color_cache[hash].best_index = (uint8_t)best;
+        color_cache[hash].valid = true;
+    }
     return best;
 }
 
-static int best_index_perceptual_optimized(uint8_t r, uint8_t g, uint8_t b, const RGB8 *pal) {
+static int best_index_perceptual_optimized(uint8_t r, uint8_t g, uint8_t b,
+                                           const RGB8 *pal, int skip_index) {
     init_perceptual_lut();
     init_color_cache();
-    
+
     uint32_t packed = pack_rgb(r, g, b);
-    uint32_t hash = (packed + 1) % CACHE_SIZE; // Offset hash to avoid collision with linear cache
-    
-    // Check cache first
-    if (color_cache[hash].valid && color_cache[hash].color == packed) {
+    uint32_t hash = (packed + 1) % CACHE_SIZE;
+
+    // Use cache only when NOT skipping any index
+    if (skip_index < 0 && color_cache[hash].valid && color_cache[hash].color == packed) {
         return color_cache[hash].best_index;
     }
-    
+
     double R = perceptual_lut[r];
     double G = perceptual_lut[g];
     double B = perceptual_lut[b];
-    
+
     int best = 0;
     double bestd = 1e99;
-    
     for (int i = 0; i < 256; i++) {
+        if (skip_index >= 0 && i == skip_index) continue;  // <<-- SKIP HERE
         double pr = perceptual_lut[pal[i].r];
         double pg = perceptual_lut[pal[i].g];
         double pb = perceptual_lut[pal[i].b];
-        double dr = R - pr;
-        double dg = G - pg;
-        double db = B - pb;
+        double dr = R - pr, dg = G - pg, db = B - pb;
         double d = 0.2126*dr*dr + 0.7152*dg*dg + 0.0722*db*db;
-        if (d < bestd) {
-            bestd = d;
-            best = i;
-        }
+        if (d < bestd) { bestd = d; best = i; }
     }
-    
-    // Cache the result
-    color_cache[hash].color = packed;
-    color_cache[hash].best_index = (uint8_t)best;
-    color_cache[hash].valid = true;
-    
-    return best;
-}
 
-int realmpal_find_closest_color(uint8_t r, uint8_t g, uint8_t b, const RGB8 *palette, bool use_perceptual) {
-    if (!palette) {
-        set_error("Invalid palette in realmpal_find_closest_color");
-        return 0;
+    // Don’t cache results that depend on skip_index
+    if (skip_index < 0) {
+        color_cache[hash].color = packed;
+        color_cache[hash].best_index = (uint8_t)best;
+        color_cache[hash].valid = true;
     }
-    
-    if (use_perceptual) {
-        return best_index_perceptual_optimized(r, g, b, palette);
-    } else {
-        return best_index_linear_cached(r, g, b, palette);
-    }
+    return best;
 }
 
 // ----------------------------- Dithering Implementation -----------------------------
@@ -899,7 +882,7 @@ void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* p
             if (transparency_index >= 0 && s[x].a < alpha_threshold) {
                 d[x] = (uint8_t)transparency_index;
             } else {
-                d[x] = (uint8_t)best_index_linear_cached(s[x].r, s[x].g, s[x].b, palette);
+                d[x] = (uint8_t)best_index_linear_cached(s[x].r, s[x].g, s[x].b, palette, transparency_index);
             }
         }
     }
@@ -960,7 +943,7 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
                 G = realmpal_clamp_double(G, 0.0, 255.0);
                 B = realmpal_clamp_double(B, 0.0, 255.0);
 
-                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette);
+                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, transparency_index);
                 d[x] = (uint8_t)idx;
 
                 double dr = R - palette[idx].r;
@@ -997,7 +980,7 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
                 G = realmpal_clamp_double(G, 0.0, 255.0);
                 B = realmpal_clamp_double(B, 0.0, 255.0);
 
-                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette);
+                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, transparency_index);
                 d[x] = (uint8_t)idx;
 
                 double dr = R - palette[idx].r;
@@ -1070,7 +1053,7 @@ void realmpal_map_ordered_dither(const RGBA8* src, int w, int h, const RGB8* pal
             int g = realmpal_clamp_int((int)(s[x].g + factor), 0, 255);
             int b = realmpal_clamp_int((int)(s[x].b + factor), 0, 255);
             
-            d[x] = (uint8_t)best_index_linear_cached((uint8_t)r, (uint8_t)g, (uint8_t)b, palette);
+            d[x] = (uint8_t)best_index_linear_cached((uint8_t)r, (uint8_t)g, (uint8_t)b, palette, transparency_index);
         }
     }
     clear_error_internal();
@@ -1090,7 +1073,7 @@ void realmpal_map_perceptual(const RGBA8* src, int w, int h, const RGB8* palette
             if (transparency_index >= 0 && s[x].a < alpha_threshold) {
                 d[x] = (uint8_t)transparency_index;
             } else {
-                d[x] = (uint8_t)best_index_perceptual_optimized(s[x].r, s[x].g, s[x].b, palette);
+                d[x] = (uint8_t)best_index_perceptual_optimized(s[x].r, s[x].g, s[x].b, palette, transparency_index);
             }
         }
     }
