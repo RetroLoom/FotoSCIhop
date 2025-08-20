@@ -5096,8 +5096,6 @@ void RenderClutGeneratorDialog() {
     EndDialog();
 }
 
-
-
 void RenderRealmpalDialog() {
     using namespace ImGuiDialogs;
     using namespace FotoSCIhopStyles;
@@ -5112,23 +5110,34 @@ void RenderRealmpalDialog() {
     static bool showStatus = false;
     static bool isConverting = false;
     
+    // Preset system
+    static int selectedPreset = 0; // 0 = Custom, 1 = Auto, 2 = Hybrid, 3 = Palette, 4 = P56 Neutral
+    static const char* presetNames[] = { 
+        "Custom Configuration", 
+        "Auto Mode", 
+        "Hybrid Mode", 
+        "Palette Mode", 
+        "P56 Neutral Mode" 
+    };
+    static bool presetApplied = false;
+    
     // Initialize config on first run
     if (!configInitialized) {
         realmpal_config_init(&config);
         // Set better defaults for SCI game graphics
         config.num_colors = 256;
-        config.dither = REALMPAL_DITHER_FS_SERP;  // Serpentine gives better quality
-        config.fs_strength = 0.8;                 // Slightly reduced for pixel art
-        config.transparency_index = 255;          // Common SCI transparent index
+        config.dither = REALMPAL_DITHER_FS_SERP;
+        config.fs_strength = 0.8;
+        config.transparency_index = 255;
         config.alpha_threshold = 128;
         config.ordered_matrix_size = 4;
         configInitialized = true;
     }
     
     bool open = true;
-    SetNextWindowSize(950, 720);
+    SetNextWindowSize(1000, 760);
     
-    if (!BeginDialog("Advanced Image Import with Realmpal", &open)) {
+    if (!BeginDialog("Realmpal Import Tool - Preset-Based Conversion", &open)) {
         EndDialog();
         return;
     }
@@ -5143,139 +5152,115 @@ void RenderRealmpalDialog() {
     float availableWidth = ImGui::GetContentRegionAvail().x;
     
     // =========================================================================
-    // HEADER SECTION - Enhanced Styling
+    // PRESET SELECTION HEADER - Most Prominent
     // =========================================================================
     
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.12f, 0.18f, 0.95f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 10));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.15f, 0.25f, 0.95f));
     
-    if (ImGui::BeginChild("HeaderSection", ImVec2(0, 110), true)) {
+    if (ImGui::BeginChild("PresetHeader", ImVec2(0, 140), true)) {
         
-        // Main title with better styling
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8, 12));
-        
+        // Title
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.95f, 1.0f, 1.0f));
-        ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize("Advanced Image Import with Realmpal").x) * 0.5f);
-        ImGui::Text("Advanced Image Import with Realmpal");
+        ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize("CONVERSION PRESETS").x) * 0.5f);
+        HeaderText("CONVERSION PRESETS");
         ImGui::PopStyleColor();
         
         ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
         
-        // Check if we have a current cell to import to
-        bool canImport = (curCell && (*curCell)) && !g_realmpalInputFile.empty();
-        
-        // Status and main controls with better layout
-        ImGui::Columns(2, "HeaderColumns", false);
-        ImGui::SetColumnWidth(0, availableWidth * 0.7f);
-        
-        // Left column - action buttons
-        ImGui::BeginGroup();
-        {
-            if (isConverting) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
-                ImGui::Text("🔄 CONVERTING AND IMPORTING...");
-                ImGui::PopStyleColor();
-                
-                ImGui::SameLine();
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.4f, 0.4f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.2f, 0.2f, 0.8f));
-                if (ImGui::Button("Cancel", ImVec2(80, 32))) {
-                    isConverting = false;
-                    conversionStatus = "Conversion cancelled by user";
-                    showStatus = true;
-                }
-                ImGui::PopStyleColor(3);
-            } else {
-                // Main import button with enhanced styling
-                if (canImport) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.7f, 0.15f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
-                } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.6f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.35f, 0.35f, 0.6f));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.25f, 0.25f, 0.25f, 0.6f));
-                }
-                
-                if (ImGui::Button(">> Convert & Import to Current Cell", ImVec2(280, 40)) && canImport) {
-                    isConverting = true;
-                    
-                    // Create temporary BMP file
-                    char tempPath[MAX_PATH];
-                    GetTempPath(MAX_PATH, tempPath);
-                    char tempFile[MAX_PATH];
-                    sprintf(tempFile, "%s\\realmpal_temp_%d.bmp", tempPath, GetTickCount());
-                    
-                    // Setup config for conversion
-                    config.input_file = g_realmpalInputFile.c_str();
-                    config.output_file = tempFile;
-                    config.palette_file = g_realmpalPaletteFile.empty() ? nullptr : g_realmpalPaletteFile.c_str();
-                    config.extra_palette_file = g_realmpalExtraFile.empty() ? nullptr : g_realmpalExtraFile.c_str();
-                    
-                    // Perform conversion
-                    int result = realmpal_convert_image(&config);
-                    isConverting = false;
-                    
-                    if (result == REALMPAL_SUCCESS) {
-                        // Import the converted BMP into current cell
-                        BOOL importResult = ImportBMPToCurrentCell(tempFile, TRUE);
-                        
-                        if (importResult) {
-                            // Also import the palette from the converted BMP to the global palette
-                            Palette* globalPal = isPicture ? globalPicture->palSCI : globalView->palSCI;
-                            if (globalPal && ImportPaletteFromBMP(tempFile, globalPal)) {
-                                conversionStatus = "SUCCESS: Image and palette converted and imported successfully!";
-                                ForceImageRefresh();
-                            } else {
-                                conversionStatus = "WARNING: Image imported successfully, palette import failed";
-                            }
-                            datasaved = false;
-                            InvalidateRect(hWnd, NULL, TRUE);
-                        } else {
-                            conversionStatus = "ERROR: Conversion succeeded but import failed";
-                        }
-                        
-                        DeleteFile(tempFile);
-                    } else {
-                        DeleteFile(tempFile);
-                        
-                        const char* error_msg = realmpal_get_last_error();
-                        char errorBuf[512];
-                        sprintf(errorBuf, "ERROR: Conversion failed: %s", error_msg ? error_msg : "Unknown error");
-                        conversionStatus = errorBuf;
-                    }
-                    showStatus = true;
-                }
-                ImGui::PopStyleColor(3);
-            }
+        // Preset selection with enhanced styling
+        ImGui::Text("Select Conversion Mode:");
+        ImGui::PushItemWidth(400);
+        int prevPreset = selectedPreset;
+        if (ImGui::Combo("##preset_combo", &selectedPreset, presetNames, 5)) {
+            presetApplied = false; // Mark that we need to apply the new preset
         }
-        ImGui::EndGroup();
+        ImGui::PopItemWidth();
         
-        // Right column - close button
-        ImGui::NextColumn();
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetColumnWidth() - 90);
+        ImGui::SameLine();
+        
+        // Apply preset button
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.8f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.7f, 0.9f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.5f, 0.7f, 1.0f));
+        if (ImGui::Button("Apply Preset", ImVec2(120, 0)) || (!presetApplied && selectedPreset != prevPreset)) {
+            // Apply the selected preset
+            switch (selectedPreset) {
+                case 1: // Auto Mode
+                    config.mode = REALMPAL_MODE_AUTO;
+                    config.num_colors = 256;
+                    config.index_offset = 0;
+                    config.dither = REALMPAL_DITHER_FS_SERP;
+                    config.extra_palette_file = nullptr;
+                    config.extra_offset = -1;
+                    config.extra_colors = -1;
+                    break;
+                    
+                case 2: // Hybrid Mode
+                    config.mode = REALMPAL_MODE_AUTO;
+                    config.num_colors = 108;
+                    config.index_offset = 128;
+                    config.dither = REALMPAL_DITHER_FS_SERP;
+                    config.extra_offset = 0;
+                    config.extra_colors = 128;
+                    // extra_palette_file needs to be set by user
+                    break;
+                    
+                case 3: // Palette Mode
+                    config.mode = REALMPAL_MODE_PALETTE;
+                    config.num_colors = 256;
+                    config.index_offset = 0;
+                    config.dither = REALMPAL_DITHER_FS_SERP;
+                    config.extra_palette_file = nullptr;
+                    config.extra_offset = -1;
+                    config.extra_colors = -1;
+                    break;
+                    
+                case 4: // P56 Neutral Mode
+                    config.mode = REALMPAL_MODE_PALETTE;
+                    config.num_colors = 128;
+                    config.index_offset = 0;
+                    config.dither = REALMPAL_DITHER_FS_SERP;
+                    config.extra_palette_file = nullptr;
+                    config.extra_offset = -1;
+                    config.extra_colors = -1;
+                    break;
+                    
+                default: // Custom - don't change anything
+                    break;
+            }
+            presetApplied = true;
+        }
+        ImGui::PopStyleColor(3);
+        
+        ImGui::SameLine();
+        
+        // Close button
         if (FotoSCIhopStyles::CloseButton("Close")) {
             ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_REALMPAL);
         }
         
-        ImGui::Columns(1);
-        
-        // Status display with better styling
-        if (showStatus && !conversionStatus.empty()) {
-            ImGui::Separator();
-            ImGui::Spacing();
-            ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize(conversionStatus.c_str()).x) * 0.5f);
-            if (conversionStatus.find("SUCCESS") != std::string::npos) {
-                SuccessText(conversionStatus.c_str());
-            } else if (conversionStatus.find("WARNING") != std::string::npos) {
-                WarningText(conversionStatus.c_str());
-            } else {
-                ErrorText(conversionStatus.c_str());
-            }
+        // Preset description
+        ImGui::Spacing();
+        switch (selectedPreset) {
+            case 1:
+                InfoText("Auto: Standard quantization to 256 colors, no palette injection");
+                break;
+            case 2:
+                WarningText("Hybrid: 108 auto colors (128-235) + 128 base palette colors (0-127)");
+                break;
+            case 3:
+                InfoText("Palette: Direct application of existing palette, no quantization");
+                break;
+            case 4:
+                InfoText("P56 Neutral: Palette mode with 128 colors from index 0");
+                break;
+            default:
+                DisabledText("Custom: Manual configuration of all parameters");
+                break;
         }
-        
-        ImGui::PopStyleVar(); // ItemSpacing
         
     }
     ImGui::EndChild();
@@ -5283,7 +5268,7 @@ void RenderRealmpalDialog() {
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
     
-    // Current cell info with enhanced styling
+    // Current cell info
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.08f, 0.15f, 0.8f));
     if (ImGui::BeginChild("CellInfo", ImVec2(0, 35), true)) {
         if (curCell && (*curCell)) {
@@ -5298,7 +5283,7 @@ void RenderRealmpalDialog() {
             ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize(cellInfo).x) * 0.5f);
             InfoText(cellInfo);
         } else {
-            ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize("WARNING: No cell selected - please select a cell first").x) * 0.5f);
+            ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize("WARNING: No cell selected").x) * 0.5f);
             WarningText("WARNING: No cell selected - please select a cell first");
         }
     }
@@ -5308,13 +5293,13 @@ void RenderRealmpalDialog() {
     ImGui::Spacing();
     
     // =========================================================================
-    // MAIN CONTENT AREA - Enhanced with Better Organization
+    // MAIN CONTENT AREA
     // =========================================================================
     
-    if (ImGui::BeginChild("MainContent", ImVec2(0, -60))) {
+    if (ImGui::BeginChild("MainContent", ImVec2(0, -100))) {
         
         // =====================================================================
-        // INPUT FILE SECTION - Enhanced Styling
+        // INPUT FILE SECTION
         // =====================================================================
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.4f, 0.6f, 0.8f));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.25f, 0.45f, 0.65f, 0.9f));
@@ -5322,13 +5307,9 @@ void RenderRealmpalDialog() {
         if (ImGui::CollapsingHeader(">> Input File Selection", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::PopStyleColor(2);
             
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.8f));
-            
             HeaderText("Source Image File:");
             ImGui::Spacing();
             
-            // File selection with better styling
             ImGui::PushItemWidth(availableWidth * 0.75f);
             static char inputDisplay[MAX_PATH] = "No file selected";
             if (!g_realmpalInputFile.empty()) {
@@ -5343,7 +5324,9 @@ void RenderRealmpalDialog() {
                 strcpy(inputDisplay, "No file selected");
             }
             
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.8f));
             ImGui::InputText("##input_display", inputDisplay, MAX_PATH, ImGuiInputTextFlags_ReadOnly);
+            ImGui::PopStyleColor();
             ImGui::PopItemWidth();
             
             ImGui::SameLine();
@@ -5359,9 +5342,6 @@ void RenderRealmpalDialog() {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.8f, 0.9f, 1.0f));
             ImGui::Text("Supported formats: PNG, BMP, JPEG");
             ImGui::PopStyleColor();
-            
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar();
         } else {
             ImGui::PopStyleColor(2);
         }
@@ -5369,293 +5349,56 @@ void RenderRealmpalDialog() {
         ImGui::Spacing();
         
         // =====================================================================
-        // PALETTE GENERATION SECTION - Enhanced with Better Logic
+        // PALETTE INJECTION SECTION - NOW PROMINENT
         // =====================================================================
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.6f, 0.3f, 0.4f, 0.8f));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.65f, 0.35f, 0.45f, 0.9f));
         
-        if (ImGui::CollapsingHeader(">> Palette Generation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader(">> Palette Injection & Extra Colors", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::PopStyleColor(2);
             
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
-            
-            // Mode selection with better styling
-            HeaderText("Palette Source:");
+            // Base/Main palette file
+            HeaderText("Base Palette File:");
+            InfoText("Required for Palette and Hybrid modes, optional for Auto mode");
             ImGui::Spacing();
             
-            int modeIndex = (config.mode == REALMPAL_MODE_AUTO) ? 0 : 1;
-            const char* modeItems[] = { "AUTO: Automatic Quantization", "EXTERNAL: External Palette File" };
-            
-            ImGui::PushItemWidth(250);
-            if (ImGui::Combo("##palette_mode", &modeIndex, modeItems, 2)) {
-                config.mode = (modeIndex == 0) ? REALMPAL_MODE_AUTO : REALMPAL_MODE_PALETTE;
-            }
-            ImGui::PopItemWidth();
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            if (config.mode == REALMPAL_MODE_AUTO) {
-                // Auto quantization settings
-                HeaderText("Quantization Settings:");
-                ImGui::Spacing();
-                
-                ImGui::Columns(2, "QuantSettings", false);
-                ImGui::SetColumnWidth(0, 200);
-                
-                // Left column - numeric settings
-                ImGui::PushItemWidth(120);
-                ImGui::Text("Colors to Generate:");
-                ImGui::InputInt("##colors", &config.num_colors);
-                config.num_colors = realmpal_clamp_int(config.num_colors, 1, 256);
-                
-                ImGui::Text("Starting Index:");
-                ImGui::InputInt("##start_index", &config.index_offset);
-                config.index_offset = realmpal_clamp_int(config.index_offset, 0, 255);
-                ImGui::PopItemWidth();
-                
-                // Right column - algorithm selection
-                ImGui::NextColumn();
-                ImGui::Text("Quantization Algorithm:");
-                int quantIndex = (config.quantizer == REALMPAL_QUANT_WU) ? 0 : 1;
-                const char* quantItems[] = { "Wu's Algorithm (Best Quality)", "Median-Cut (Faster)" };
-                ImGui::PushItemWidth(200);
-                if (ImGui::Combo("##quantizer", &quantIndex, quantItems, 2)) {
-                    config.quantizer = (quantIndex == 0) ? REALMPAL_QUANT_WU : REALMPAL_QUANT_MEDIAN;
-                }
-                ImGui::PopItemWidth();
-                
-                ImGui::Columns(1);
-                
-            } else {
-                // External palette settings
-                HeaderText("External Palette File:");
-                ImGui::Spacing();
-                
-                ImGui::PushItemWidth(availableWidth * 0.75f);
-                static char paletteDisplay[MAX_PATH] = "No palette selected";
-                if (!g_realmpalPaletteFile.empty()) {
-                    const char* fileName = strrchr(g_realmpalPaletteFile.c_str(), '\\');
-                    if (fileName) {
-                        strncpy(paletteDisplay, fileName + 1, MAX_PATH - 1);
-                    } else {
-                        strncpy(paletteDisplay, g_realmpalPaletteFile.c_str(), MAX_PATH - 1);
-                    }
-                    paletteDisplay[MAX_PATH - 1] = '\0';
+            ImGui::PushItemWidth(availableWidth * 0.75f);
+            static char paletteDisplay[MAX_PATH] = "No palette selected";
+            if (!g_realmpalPaletteFile.empty()) {
+                const char* fileName = strrchr(g_realmpalPaletteFile.c_str(), '\\');
+                if (fileName) {
+                    strncpy(paletteDisplay, fileName + 1, MAX_PATH - 1);
                 } else {
-                    strcpy(paletteDisplay, "No palette selected");
+                    strncpy(paletteDisplay, g_realmpalPaletteFile.c_str(), MAX_PATH - 1);
                 }
-                
-                ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.8f));
-                ImGui::InputText("##palette_display", paletteDisplay, MAX_PATH, ImGuiInputTextFlags_ReadOnly);
-                ImGui::PopStyleColor();
-                ImGui::PopItemWidth();
-                
-                ImGui::SameLine();
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.4f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.65f, 0.35f, 0.45f, 0.9f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.55f, 0.25f, 0.35f, 0.9f));
-                if (ImGui::Button("Browse##pal", ImVec2(100, 0))) {
-                    g_requestPaletteDialog = true;
-                }
-                ImGui::PopStyleColor(3);
-                
-                ImGui::Spacing();
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.8f, 0.9f, 1.0f));
-                ImGui::Text("Supports BMP, PCX, and PNG palette files");
-                ImGui::PopStyleColor();
-            }
-            
-            ImGui::PopStyleVar();
-        } else {
-            ImGui::PopStyleColor(2);
-        }
-        
-        ImGui::Spacing();
-        
-        // =====================================================================
-        // DITHERING SECTION - Available for ALL modes (FIXED!)
-        // =====================================================================
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.6f, 0.3f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.45f, 0.65f, 0.35f, 0.9f));
-        
-        if (ImGui::CollapsingHeader(">> Dithering & Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::PopStyleColor(2);
-            
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
-            
-            HeaderText("Dithering Algorithm:");
-            InfoText("Dithering is applied when mapping to ANY palette (auto-generated or external)");
-            ImGui::Spacing();
-            
-            int ditherIndex = (int)config.dither;
-            const char* ditherItems[] = { 
-                "NONE: Nearest Neighbor", 
-                "FS: Floyd-Steinberg", 
-                "SERP: Floyd-Steinberg Serpentine", 
-                "ORDER: Ordered (Bayer Matrix)",
-                "PERC: Perceptual Weighting"
-            };
-            
-            ImGui::PushItemWidth(300);
-            if (ImGui::Combo("##dither_mode", &ditherIndex, ditherItems, 5)) {
-                config.dither = (RealmpalDitherMode)ditherIndex;
-            }
-            ImGui::PopItemWidth();
-            
-            ImGui::Spacing();
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            // Dithering parameters with enhanced styling
-            if (config.dither == REALMPAL_DITHER_FS || config.dither == REALMPAL_DITHER_FS_SERP) {
-                HeaderText("Floyd-Steinberg Settings:");
-                ImGui::Spacing();
-                
-                ImGui::Text("Dithering Strength:");
-                ImGui::PushItemWidth(200);
-                float tempStrength = (float)config.fs_strength;
-                if (ImGui::SliderFloat("##fs_strength", &tempStrength, 0.0f, 2.0f, "%.2f")) {
-                    config.fs_strength = (double)tempStrength;
-                }
-                ImGui::PopItemWidth();
-                ImGui::SameLine();
-                InfoText("Higher values = more dithering");
-            }
-            
-            if (config.dither == REALMPAL_DITHER_ORDERED) {
-                HeaderText("Ordered Dithering Settings:");
-                ImGui::Spacing();
-                
-                ImGui::Text("Matrix Size:");
-                ImGui::PushItemWidth(120);
-                ImGui::InputInt("##matrix_size", &config.ordered_matrix_size);
-                if (config.ordered_matrix_size != 2 && config.ordered_matrix_size != 4 && config.ordered_matrix_size != 8) {
-                    config.ordered_matrix_size = 4;
-                }
-                ImGui::PopItemWidth();
-                ImGui::SameLine();
-                InfoText("Valid sizes: 2, 4, or 8 (larger = finer pattern)");
-            }
-            
-            ImGui::PopStyleVar();
-        } else {
-            ImGui::PopStyleColor(2);
-        }
-        
-        ImGui::Spacing();
-        
-        // =====================================================================
-        // TRANSPARENCY SECTION - Enhanced Layout
-        // =====================================================================
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.5f, 0.3f, 0.6f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.55f, 0.35f, 0.65f, 0.9f));
-        
-        if (ImGui::CollapsingHeader(">> Transparency & Background")) {
-            ImGui::PopStyleColor(2);
-            
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
-            
-            // Transparency index settings
-            HeaderText("Transparency Settings:");
-            ImGui::Spacing();
-            
-            ImGui::Columns(2, "TransparencySettings", false);
-            ImGui::SetColumnWidth(0, 200);
-            
-            // Left column - numeric settings
-            ImGui::Text("Transparent Index:");
-            ImGui::PushItemWidth(100);
-            ImGui::InputInt("##trans_index", &config.transparency_index);
-            config.transparency_index = realmpal_clamp_int(config.transparency_index, -1, 255);
-            
-            if (config.transparency_index >= 0) {
-                ImGui::Text("Alpha Threshold:");
-                ImGui::InputInt("##alpha_thresh", &config.alpha_threshold);
-                config.alpha_threshold = realmpal_clamp_int(config.alpha_threshold, 0, 255);
-            }
-            ImGui::PopItemWidth();
-            
-            // Right column - explanations
-            ImGui::NextColumn();
-            if (config.transparency_index >= 0) {
-                InfoText("Index for transparent pixels");
-                InfoText("Alpha < threshold = transparent");
+                paletteDisplay[MAX_PATH - 1] = '\0';
             } else {
-                InfoText("-1 disables transparency");
+                strcpy(paletteDisplay, "No palette selected");
             }
             
-            ImGui::Columns(1);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.8f));
+            ImGui::InputText("##palette_display", paletteDisplay, MAX_PATH, ImGuiInputTextFlags_ReadOnly);
+            ImGui::PopStyleColor();
+            ImGui::PopItemWidth();
+            
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.3f, 0.4f, 0.8f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.65f, 0.35f, 0.45f, 0.9f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.55f, 0.25f, 0.35f, 0.9f));
+            if (ImGui::Button("Browse##pal", ImVec2(100, 0))) {
+                g_requestPaletteDialog = true;
+            }
+            ImGui::PopStyleColor(3);
+            
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
             
-            // Background color settings
-            HeaderText("Background Processing:");
-            ImGui::Spacing();
-            
-            static float bgColor[3] = { 
-                config.matte_color.r / 255.0f, 
-                config.matte_color.g / 255.0f, 
-                config.matte_color.b / 255.0f 
-            };
-            
-            ImGui::Text("Matte Color (for transparent pixels):");
-            if (ImGui::ColorEdit3("##matte_color", bgColor)) {
-                config.matte_color.r = (uint8_t)(bgColor[0] * 255);
-                config.matte_color.g = (uint8_t)(bgColor[1] * 255);
-                config.matte_color.b = (uint8_t)(bgColor[2] * 255);
-            }
-            
-            ImGui::Spacing();
-            
-            // Alpha color assignment
-            ImGui::Checkbox("Override Transparency Index Color", &config.use_alpha_color);
-            if (config.use_alpha_color) {
-                static float alphaColor[3] = { 
-                    config.alpha_color.r / 255.0f, 
-                    config.alpha_color.g / 255.0f, 
-                    config.alpha_color.b / 255.0f 
-                };
-                
-                ImGui::Text("Color for transparency index:");
-                if (ImGui::ColorEdit3("##alpha_color", alphaColor)) {
-                    config.alpha_color.r = (uint8_t)(alphaColor[0] * 255);
-                    config.alpha_color.g = (uint8_t)(alphaColor[1] * 255);
-                    config.alpha_color.b = (uint8_t)(alphaColor[2] * 255);
-                }
-                InfoText("Sets specific color in final palette");
-            }
-            
-            ImGui::Spacing();
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.8f, 0.9f, 1.0f));
-            ImGui::TextWrapped("NOTE: Matte color replaces transparent pixels during processing. Alpha color sets the final palette entry for the transparency index.");
-            ImGui::PopStyleColor();
-            
-            ImGui::PopStyleVar();
-        } else {
-            ImGui::PopStyleColor(2);
-        }
-        
-        ImGui::Spacing();
-        
-        // =====================================================================
-        // ADVANCED OPTIONS SECTION - Enhanced
-        // =====================================================================
-        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.6f, 0.5f, 0.2f, 0.8f));
-        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.65f, 0.55f, 0.25f, 0.9f));
-        
-        if (ImGui::CollapsingHeader(">> Advanced Options")) {
-            ImGui::PopStyleColor(2);
-            
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
-            
+            // Extra palette injection settings
             HeaderText("Extra Palette Injection:");
-            InfoText("Inject colors from another image into specific palette positions");
+            InfoText("Inject additional colors from another file (used in Hybrid mode)");
             ImGui::Spacing();
             
-            // Extra palette file
             ImGui::PushItemWidth(availableWidth * 0.75f);
             static char extraDisplay[MAX_PATH] = "No extra palette selected";
             if (!g_realmpalExtraFile.empty()) {
@@ -5684,27 +5427,185 @@ void RenderRealmpalDialog() {
             }
             ImGui::PopStyleColor(3);
             
-            if (!g_realmpalExtraFile.empty()) {
-                ImGui::Spacing();
-                
-                ImGui::Columns(2, "ExtraSettings", false);
-                ImGui::SetColumnWidth(0, 200);
-                
-                ImGui::Text("Injection Start Index:");
-                ImGui::PushItemWidth(100);
-                ImGui::InputInt("##extra_offset", &config.extra_offset);
-                config.extra_offset = realmpal_clamp_int(config.extra_offset, 0, 255);
-                
-                ImGui::NextColumn();
-                ImGui::Text("Number of Colors:");
-                ImGui::InputInt("##extra_count", &config.extra_colors);
-                config.extra_colors = realmpal_clamp_int(config.extra_colors, 0, 256);
-                ImGui::PopItemWidth();
-                
-                ImGui::Columns(1);
+            // Injection parameters
+            ImGui::Spacing();
+            ImGui::Columns(3, "InjectionParams", false);
+            ImGui::SetColumnWidth(0, 150);
+            ImGui::SetColumnWidth(1, 150);
+            
+            ImGui::Text("Injection Offset:");
+            ImGui::PushItemWidth(100);
+            ImGui::InputInt("##extra_offset", &config.extra_offset);
+            config.extra_offset = realmpal_clamp_int(config.extra_offset, -1, 255);
+            
+            ImGui::NextColumn();
+            ImGui::Text("Color Count:");
+            ImGui::InputInt("##extra_count", &config.extra_colors);
+            config.extra_colors = realmpal_clamp_int(config.extra_colors, -1, 256);
+            
+            ImGui::NextColumn();
+            char injectionDesc[64] = "Disabled";
+            if (config.extra_offset >= 0 && config.extra_colors > 0) {
+                sprintf(injectionDesc, "Indices %d-%d", config.extra_offset, 
+                       config.extra_offset + config.extra_colors - 1);
+            }
+            ImGui::Text("Range: %s", injectionDesc);
+            ImGui::PopItemWidth();
+            
+            ImGui::Columns(1);
+            
+            // Quick injection presets
+            ImGui::Spacing();
+            ImGui::Text("Quick Injection Presets:");
+            
+            if (ImGui::Button("Hybrid (0-127)", ImVec2(120, 0))) {
+                config.extra_offset = 0;
+                config.extra_colors = 128;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("High Range (128-255)", ImVec2(140, 0))) {
+                config.extra_offset = 128;
+                config.extra_colors = 128;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Disable", ImVec2(80, 0))) {
+                config.extra_offset = -1;
+                config.extra_colors = -1;
             }
             
-            ImGui::PopStyleVar();
+        } else {
+            ImGui::PopStyleColor(2);
+        }
+        
+        ImGui::Spacing();
+        
+        // =====================================================================
+        // QUANTIZATION SECTION - Simplified
+        // =====================================================================
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.4f, 0.6f, 0.3f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.45f, 0.65f, 0.35f, 0.9f));
+        
+        if (ImGui::CollapsingHeader(">> Quantization & Dithering")) {
+            ImGui::PopStyleColor(2);
+            
+            ImGui::Columns(3, "QuantSettings", false);
+            ImGui::SetColumnWidth(0, 200);
+            ImGui::SetColumnWidth(1, 150);
+            
+            // Mode selection
+            HeaderText("Mode:");
+            int modeIndex = (config.mode == REALMPAL_MODE_AUTO) ? 0 : 1;
+            const char* modeItems[] = { "AUTO: Quantize", "PALETTE: Use Existing" };
+            ImGui::PushItemWidth(180);
+            if (ImGui::Combo("##mode", &modeIndex, modeItems, 2)) {
+                config.mode = (modeIndex == 0) ? REALMPAL_MODE_AUTO : REALMPAL_MODE_PALETTE;
+                selectedPreset = 0; // Switch to custom when manually changed
+            }
+            ImGui::PopItemWidth();
+            
+            // Color count
+            ImGui::NextColumn();
+            HeaderText("Colors:");
+            ImGui::PushItemWidth(120);
+            int tempColors = config.num_colors;
+            if (ImGui::InputInt("##colors", &tempColors)) {
+                config.num_colors = realmpal_clamp_int(tempColors, 1, 256);
+                selectedPreset = 0;
+            }
+            
+            // Starting index
+            ImGui::NextColumn();
+            HeaderText("Start Index:");
+            int tempOffset = config.index_offset;
+            if (ImGui::InputInt("##start_index", &tempOffset)) {
+                config.index_offset = realmpal_clamp_int(tempOffset, 0, 255);
+                selectedPreset = 0;
+            }
+            ImGui::PopItemWidth();
+            
+            ImGui::Columns(1);
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            
+            // Dithering
+            HeaderText("Dithering:");
+            ImGui::Spacing();
+            
+            int ditherIndex = (int)config.dither;
+            const char* ditherItems[] = { 
+                "NONE: Nearest Neighbor", 
+                "FS: Floyd-Steinberg", 
+                "SERP: FS Serpentine", 
+                "ORDER: Ordered Dithering",
+                "PERC: Perceptual"
+            };
+            
+            ImGui::PushItemWidth(280);
+            if (ImGui::Combo("##dither_mode", &ditherIndex, ditherItems, 5)) {
+                config.dither = (RealmpalDitherMode)ditherIndex;
+                selectedPreset = 0;
+            }
+            ImGui::PopItemWidth();
+            
+            // Dithering strength for Floyd-Steinberg
+            if (config.dither == REALMPAL_DITHER_FS || config.dither == REALMPAL_DITHER_FS_SERP) {
+                ImGui::SameLine();
+                ImGui::Text("Strength:");
+                ImGui::SameLine();
+                ImGui::PushItemWidth(100);
+                float tempStrength = (float)config.fs_strength;
+                if (ImGui::SliderFloat("##fs_strength", &tempStrength, 0.0f, 2.0f, "%.2f")) {
+                    config.fs_strength = (double)tempStrength;
+                    selectedPreset = 0;
+                }
+                ImGui::PopItemWidth();
+            }
+            
+        } else {
+            ImGui::PopStyleColor(2);
+        }
+        
+        ImGui::Spacing();
+        
+        // =====================================================================
+        // TRANSPARENCY SECTION - Collapsed by default
+        // =====================================================================
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.5f, 0.3f, 0.6f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.55f, 0.35f, 0.65f, 0.9f));
+        
+        if (ImGui::CollapsingHeader(">> Transparency & Background")) {
+            ImGui::PopStyleColor(2);
+            
+            ImGui::Columns(2, "TransparencySettings", false);
+            ImGui::SetColumnWidth(0, 200);
+            
+            ImGui::Text("Transparent Index:");
+            ImGui::PushItemWidth(100);
+            if (ImGui::InputInt("##trans_index", &config.transparency_index)) {
+                config.transparency_index = realmpal_clamp_int(config.transparency_index, -1, 255);
+                selectedPreset = 0;
+            }
+            
+            if (config.transparency_index >= 0) {
+                ImGui::Text("Alpha Threshold:");
+                if (ImGui::InputInt("##alpha_thresh", &config.alpha_threshold)) {
+                    config.alpha_threshold = realmpal_clamp_int(config.alpha_threshold, 0, 255);
+                    selectedPreset = 0;
+                }
+            }
+            ImGui::PopItemWidth();
+            
+            ImGui::NextColumn();
+            if (config.transparency_index >= 0) {
+                InfoText("Index for transparent pixels");
+                InfoText("Alpha < threshold = transparent");
+            } else {
+                InfoText("-1 disables transparency");
+            }
+            
+            ImGui::Columns(1);
+            
         } else {
             ImGui::PopStyleColor(2);
         }
@@ -5713,52 +5614,146 @@ void RenderRealmpalDialog() {
     ImGui::EndChild();
     
     // =========================================================================
-    // BOTTOM STATUS SECTION - Enhanced Styling
+    // BOTTOM SECTION - Convert Button and Status
     // =========================================================================
     
     ImGui::Separator();
     ImGui::Spacing();
     
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.05f, 0.08f, 0.12f, 0.95f));
-    if (ImGui::BeginChild("ConfigSummary", ImVec2(0, 120), true)) {
-        
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.9f, 1.0f, 1.0f));
-        HeaderText("Current Configuration Summary:");
-        ImGui::PopStyleColor();
-        
-        char summaryText[512];
-        const char* modeStr = (config.mode == REALMPAL_MODE_AUTO) ? "Auto-Quantize" : "External Palette";
-        const char* quantStr = (config.quantizer == REALMPAL_QUANT_WU) ? "Wu" : "Median-Cut";
-        const char* ditherNames[] = {"None", "Floyd-Steinberg", "FS-Serpentine", "Ordered", "Perceptual"};
-        const char* ditherStr = ditherNames[config.dither];
-        
-        sprintf(summaryText, 
-            "Mode: %s | Colors: %d | Algorithm: %s | Dithering: %s | Transparency: %s",
-            modeStr, config.num_colors, quantStr, ditherStr,
-            (config.transparency_index >= 0) ? "Enabled" : "Disabled"
-        );
-        
-        InfoText(summaryText);
-        
-        if (!g_realmpalInputFile.empty()) {
-            char fileText[256];
-            sprintf(fileText, "Input: %s", g_realmpalInputFile.c_str());
-            InfoText(fileText);
-        }
-        
-        if (!g_realmpalPaletteFile.empty()) {
-            char paletteText[256];
-            sprintf(paletteText, "Palette: %s", g_realmpalPaletteFile.c_str());
-            InfoText(paletteText);
-        }
-        
+    // Conversion button and status
+    bool canImport = (curCell && (*curCell)) && !g_realmpalInputFile.empty();
+    
+    // Check if palette file is required but missing
+    bool needsPalette = (config.mode == REALMPAL_MODE_PALETTE) || 
+                       (selectedPreset == 2 || selectedPreset == 3 || selectedPreset == 4);
+    bool paletteOk = !needsPalette || !g_realmpalPaletteFile.empty();
+    
+    // Check if extra palette is required but missing (for Hybrid mode)
+    bool needsExtra = (selectedPreset == 2) && (config.extra_offset >= 0);
+    bool extraOk = !needsExtra || !g_realmpalExtraFile.empty();
+    
+    canImport = canImport && paletteOk && extraOk;
+    
+    ImGui::Columns(2, "BottomSection", false);
+    ImGui::SetColumnWidth(0, availableWidth * 0.75f);
+    
+    // Status and requirements
+    if (!g_realmpalInputFile.empty()) {
+        SuccessText("✓ Input file selected");
+    } else {
+        ErrorText("✗ Input file required");
     }
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    
+    if (needsPalette) {
+        if (!g_realmpalPaletteFile.empty()) {
+            SuccessText("✓ Base palette file selected");
+        } else {
+            ErrorText("✗ Base palette file required for this mode");
+        }
+    }
+    
+    if (needsExtra) {
+        if (!g_realmpalExtraFile.empty()) {
+            SuccessText("✓ Extra palette file selected for injection");
+        } else {
+            ErrorText("✗ Extra palette file required for Hybrid mode");
+        }
+    }
+    
+    if (curCell && (*curCell)) {
+        SuccessText("✓ Target cell available");
+    } else {
+        ErrorText("✗ No target cell selected");
+    }
+    
+    ImGui::NextColumn();
+    
+    // Convert button
+    if (isConverting) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.2f, 1.0f));
+        ImGui::Text("Converting...");
+        ImGui::PopStyleColor();
+    } else {
+        if (canImport) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.7f, 0.15f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.8f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.6f, 0.1f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.6f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.35f, 0.35f, 0.35f, 0.6f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.25f, 0.25f, 0.25f, 0.6f));
+        }
+        
+        if (ImGui::Button("CONVERT & IMPORT", ImVec2(180, 40)) && canImport) {
+            isConverting = true;
+            
+            // Create temporary BMP file
+            char tempPath[MAX_PATH];
+            GetTempPath(MAX_PATH, tempPath);
+            char tempFile[MAX_PATH];
+            sprintf(tempFile, "%s\\realmpal_temp_%d.bmp", tempPath, GetTickCount());
+            
+            // Setup config for conversion
+            config.input_file = g_realmpalInputFile.c_str();
+            config.output_file = tempFile;
+            config.palette_file = g_realmpalPaletteFile.empty() ? nullptr : g_realmpalPaletteFile.c_str();
+            config.extra_palette_file = g_realmpalExtraFile.empty() ? nullptr : g_realmpalExtraFile.c_str();
+            
+            // Perform conversion
+            int result = realmpal_convert_image(&config);
+            isConverting = false;
+            
+            if (result == REALMPAL_SUCCESS) {
+                // Import the converted BMP into current cell
+                BOOL importResult = ImportBMPToCurrentCell(tempFile, TRUE);
+                
+                if (importResult) {
+                    // Also import the palette from the converted BMP to the global palette
+                    Palette* globalPal = isPicture ? globalPicture->palSCI : globalView->palSCI;
+                    if (globalPal && ImportPaletteFromBMP(tempFile, globalPal)) {
+                        conversionStatus = "SUCCESS: Conversion completed successfully!";
+                        ForceImageRefresh();
+                    } else {
+                        conversionStatus = "WARNING: Image imported successfully, palette import failed";
+                    }
+                    datasaved = false;
+                    InvalidateRect(hWnd, NULL, TRUE);
+                } else {
+                    conversionStatus = "ERROR: Conversion succeeded but import failed";
+                }
+                
+                DeleteFile(tempFile);
+            } else {
+                DeleteFile(tempFile);
+                
+                const char* error_msg = realmpal_get_last_error();
+                char errorBuf[512];
+                sprintf(errorBuf, "ERROR: Conversion failed: %s", error_msg ? error_msg : "Unknown error");
+                conversionStatus = errorBuf;
+            }
+            showStatus = true;
+        }
+        ImGui::PopStyleColor(3);
+    }
+    
+    ImGui::Columns(1);
+    
+    // Status display
+    if (showStatus && !conversionStatus.empty()) {
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::SetCursorPosX((availableWidth - ImGui::CalcTextSize(conversionStatus.c_str()).x) * 0.5f);
+        if (conversionStatus.find("SUCCESS") != std::string::npos) {
+            SuccessText(conversionStatus.c_str());
+        } else if (conversionStatus.find("WARNING") != std::string::npos) {
+            WarningText(conversionStatus.c_str());
+        } else {
+            ErrorText(conversionStatus.c_str());
+        }
+    }
     
     EndDialog();
 }
-
-
 
 #pragma warning(pop)  // Restore warning level
