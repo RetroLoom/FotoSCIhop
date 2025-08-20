@@ -808,18 +808,71 @@ static int best_index_linear_cached(uint8_t r, uint8_t g, uint8_t b,
         return color_cache[hash].best_index;
     }
 
-    int best = 0;
+    RGB8 transparency_color = {0, 0, 0}; // Default to black
+    if (skip_index >= 0 && skip_index < 256) {
+        transparency_color = pal[skip_index];
+    }
+
+    int best = -1;
     int bestd = INT_MAX;
+    
     for (int i = 0; i < 256; i++) {
-        if (skip_index >= 0 && i == skip_index) continue;  // <<-- SKIP HERE
+        // Skip the transparency index itself
+        if (skip_index >= 0 && i == skip_index) continue;
+        
+        // Skip any index that has the same color as transparency index
+        if (skip_index >= 0 && 
+            pal[i].r == transparency_color.r && 
+            pal[i].g == transparency_color.g && 
+            pal[i].b == transparency_color.b) {
+            continue;
+        }
+        
+        // Optional: Skip pure black and pure white for safety (can be disabled)
+        // Only avoid pure black/white if they're not explicitly part of a small palette
+        bool avoid_pure_colors = true; // Make this configurable if needed
+        if (avoid_pure_colors && 
+            ((pal[i].r == 0 && pal[i].g == 0 && pal[i].b == 0) ||
+             (pal[i].r == 255 && pal[i].g == 255 && pal[i].b == 255))) {
+            continue;
+        }
+        
         int dr = (int)r - pal[i].r;
         int dg = (int)g - pal[i].g;
         int db = (int)b - pal[i].b;
         int d = dr*dr + dg*dg + db*db;
-        if (d < bestd) { bestd = d; best = i; }
+        
+        if (best == -1 || d < bestd) {
+            bestd = d;
+            best = i;
+        }
     }
 
-    // Don’t cache results that depend on skip_index
+    // Fallback: if no valid colors found, we need to find the "least bad" option
+    if (best == -1) {
+        // Find any non-transparency index, even if it's black/white
+        for (int i = 0; i < 256; i++) {
+            if (skip_index >= 0 && i == skip_index) continue;
+            
+            // At least avoid the exact transparency color match
+            if (skip_index >= 0 && 
+                pal[i].r == transparency_color.r && 
+                pal[i].g == transparency_color.g && 
+                pal[i].b == transparency_color.b) {
+                continue;
+            }
+            
+            best = i;
+            break;
+        }
+        
+        // Last resort fallback
+        if (best == -1) {
+            best = (skip_index == 0) ? 1 : 0;
+        }
+    }
+
+    // Don't cache results that depend on skip_index
     if (skip_index < 0) {
         color_cache[hash].color = packed;
         color_cache[hash].best_index = (uint8_t)best;
@@ -845,19 +898,69 @@ static int best_index_perceptual_optimized(uint8_t r, uint8_t g, uint8_t b,
     double G = perceptual_lut[g];
     double B = perceptual_lut[b];
 
-    int best = 0;
+    RGB8 transparency_color = {0, 0, 0}; // Default to black
+    if (skip_index >= 0 && skip_index < 256) {
+        transparency_color = pal[skip_index];
+    }
+
+    int best = -1;
     double bestd = 1e99;
+    
     for (int i = 0; i < 256; i++) {
-        if (skip_index >= 0 && i == skip_index) continue;  // <<-- SKIP HERE
+        // Skip the transparency index itself
+        if (skip_index >= 0 && i == skip_index) continue;
+        
+        // Skip any index that has the same color as transparency index
+        if (skip_index >= 0 && 
+            pal[i].r == transparency_color.r && 
+            pal[i].g == transparency_color.g && 
+            pal[i].b == transparency_color.b) {
+            continue;
+        }
+        
+        // Optional: Skip pure black and pure white for safety
+        if ((pal[i].r == 0 && pal[i].g == 0 && pal[i].b == 0) ||
+            (pal[i].r == 255 && pal[i].g == 255 && pal[i].b == 255)) {
+            continue;
+        }
+        
         double pr = perceptual_lut[pal[i].r];
         double pg = perceptual_lut[pal[i].g];
         double pb = perceptual_lut[pal[i].b];
         double dr = R - pr, dg = G - pg, db = B - pb;
         double d = 0.2126*dr*dr + 0.7152*dg*dg + 0.0722*db*db;
-        if (d < bestd) { bestd = d; best = i; }
+        
+        if (best == -1 || d < bestd) {
+            bestd = d;
+            best = i;
+        }
     }
 
-    // Don’t cache results that depend on skip_index
+    // Fallback: if no valid colors found, find the "least bad" option
+    if (best == -1) {
+        // Find any non-transparency index, even if it's black/white
+        for (int i = 0; i < 256; i++) {
+            if (skip_index >= 0 && i == skip_index) continue;
+            
+            // At least avoid the exact transparency color match
+            if (skip_index >= 0 && 
+                pal[i].r == transparency_color.r && 
+                pal[i].g == transparency_color.g && 
+                pal[i].b == transparency_color.b) {
+                continue;
+            }
+            
+            best = i;
+            break;
+        }
+        
+        // Last resort fallback
+        if (best == -1) {
+            best = (skip_index == 0) ? 1 : 0;
+        }
+    }
+
+    // Don't cache results that depend on skip_index
     if (skip_index < 0) {
         color_cache[hash].color = packed;
         color_cache[hash].best_index = (uint8_t)best;
