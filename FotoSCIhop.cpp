@@ -346,7 +346,7 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 				//	globalPicture->cells[i]->GetImage(&globalPicture->cells[i]->bmInfo, &globalPicture->cells[i]->bmImage);
 				//}
 				ShowCell(0);
-			}
+            }
 
 	  }
 	  else //isView
@@ -383,14 +383,12 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 				MessageBox(hwnd, emsg, ERR_TITLE, MB_OK | MB_ICONSTOP);
 			
 			}
-			else
-			{
-				globalView = newView;
-				//globalView->loadView(); // Dhel - view object load
-				ShowLoopCell(0,0);
-			}
-
-	  }
+            else
+            {
+                globalView = newView;
+                ShowLoopCell(0, 0);
+            }
+      }
 
 	  HMENU menu = GetMenu(hwnd); 
 		
@@ -446,7 +444,14 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
       // Reset scroll position when loading new file
       g_scrollX = 0;
       g_scrollY = 0;
+
+      RECT clientRect;
+      GetClientRect(hWnd, &clientRect);
+      g_clientWidth = clientRect.right;
+      g_clientHeight = clientRect.bottom;
+
       UpdateScrollBars();
+      InvalidateRect(hWnd, NULL, FALSE);
 
       return (result==ID_NOERROR);
    }
@@ -1152,11 +1157,13 @@ static int ScaleCoordinate(int value, int magnifyFactor) {
 static POINT GetDisplayOrigin() {
     static int lastPicX = -1, lastPicY = -1, lastTableX = -1;
     static int lastScrollX = -1, lastScrollY = -1;
+    static int lastClientWidth = -1, lastClientHeight = -1;
     static POINT cachedOrigin = {0, 0};
     
-    // Only recalculate if values have changed
+    // Only recalculate if values have changed (including client size for resize handling)
     if (picX != lastPicX || picY != lastPicY || tableX != lastTableX || 
-        g_scrollX != lastScrollX || g_scrollY != lastScrollY) {
+        g_scrollX != lastScrollX || g_scrollY != lastScrollY ||
+        g_clientWidth != lastClientWidth || g_clientHeight != lastClientHeight) {
         
         cachedOrigin.x = UI_LEFT_MARGIN + picX + tableX - g_scrollX;
         cachedOrigin.y = UI_TOP_MARGIN + picY - g_scrollY;
@@ -1166,6 +1173,8 @@ static POINT GetDisplayOrigin() {
         lastTableX = tableX;
         lastScrollX = g_scrollX;
         lastScrollY = g_scrollY;
+        lastClientWidth = g_clientWidth;
+        lastClientHeight = g_clientHeight;
     }
     
     return cachedOrigin;
@@ -1986,17 +1995,86 @@ void UpdateScrollBars() {
     g_clientWidth = clientRect.right;
     g_clientHeight = clientRect.bottom;
     
-    // Calculate content size based on current image and zoom
-    int contentWidth = 400;  // Default minimum
+    // Calculate content size based on actual image positioning and zoom
+    int contentWidth = 600;   // Default minimum
     int contentHeight = 400;
     
     if (curCell && (*curCell) && (*curCell)->bmInfo) {
         int imageWidth = ScaleCoordinate((*curCell)->bmInfo->bmiHeader.biWidth, MagnifyFactor);
         int imageHeight = ScaleCoordinate(abs((*curCell)->bmInfo->bmiHeader.biHeight), MagnifyFactor);
         
-        // Add margins and palette space
-        contentWidth = imageWidth + 500; // Extra space for palette and margins
-        contentHeight = imageHeight + 200; // Extra space for top bar and info
+        // Account for actual image positioning
+        int imageStartX = UI_LEFT_MARGIN + picX + tableX;
+        int imageStartY = UI_TOP_MARGIN + picY;
+        
+        // VIEW FILES: Special handling for view layout
+        if (globalView) {
+            // For view files, image is positioned at xHot/yHot offset
+            CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+            
+            // View images are centered around their hot spot
+            int xHot = ScaleCoordinate(bCell->xHot, MagnifyFactor);
+            int yHot = ScaleCoordinate(bCell->yHot, MagnifyFactor);
+            
+            // Calculate actual image bounds considering hot spot
+            int imageLeft = imageStartX + xHot;
+            int imageTop = imageStartY + yHot;
+            int imageRight = imageLeft + imageWidth;
+            int imageBottom = imageTop + imageHeight;
+            
+            // Content area needs to include the full image bounds
+            contentWidth = imageRight + 100;   // Right edge + margin
+            contentHeight = imageBottom + 100;  // Bottom edge + margin
+            
+            // Ensure we can scroll to see the full image even if positioned oddly
+            contentWidth = max(contentWidth, imageStartX + imageWidth + xHot + 100);
+            contentHeight = max(contentHeight, imageStartY + imageHeight + yHot + 100);
+        }
+        // PICTURE FILES: Use existing logic
+        else if (globalPicture && curCellIndex > 0) {
+            // Individual cell - use its actual position
+            CelHeaderPic *bCell = (CelHeaderPic *)&(*curCell)->Head;
+            imageStartX += ScaleCoordinate(bCell->xpos, MagnifyFactor);
+            imageStartY += ScaleCoordinate(bCell->ypos, MagnifyFactor);
+            
+            contentWidth = imageStartX + imageWidth + 100;
+            contentHeight = imageStartY + imageHeight + 100;
+        } else if (globalPicture && curCellIndex == 0) {
+            // Composite view - calculate bounds of all cells
+            int minX = 0, maxX = imageWidth;
+            int minY = 0, maxY = imageHeight;
+            
+            for (int i = 0; i < globalPicture->CellsCount(); i++) {
+                if (globalPicture->cells[i] && globalPicture->cells[i]->bmInfo) {
+                    CelHeaderPic *cellHeader = (CelHeaderPic *)&globalPicture->cells[i]->Head;
+                    int cellWidth = ScaleCoordinate(globalPicture->cells[i]->bmInfo->bmiHeader.biWidth, MagnifyFactor);
+                    int cellHeight = ScaleCoordinate(abs(globalPicture->cells[i]->bmInfo->bmiHeader.biHeight), MagnifyFactor);
+                    int cellX = ScaleCoordinate(cellHeader->xpos, MagnifyFactor);
+                    int cellY = ScaleCoordinate(cellHeader->ypos, MagnifyFactor);
+                    
+                    minX = min(minX, cellX);
+                    minY = min(minY, cellY);
+                    maxX = max(maxX, cellX + cellWidth);
+                    maxY = max(maxY, cellY + cellHeight);
+                }
+            }
+            
+            imageWidth = maxX - minX;
+            imageHeight = maxY - minY;
+            imageStartX += minX;
+            imageStartY += minY;
+            
+            contentWidth = imageStartX + imageWidth + 100;
+            contentHeight = imageStartY + imageHeight + 100;
+        }
+        
+        // Ensure minimum content size but don't go crazy
+        contentWidth = max(contentWidth, g_clientWidth);
+        contentHeight = max(contentHeight, g_clientHeight);
+        
+        // SAFETY: Cap content size to prevent infinite scrolling
+        contentWidth = min(contentWidth, g_clientWidth * 10);  // Max 10x window size
+        contentHeight = min(contentHeight, g_clientHeight * 10); // Max 10x window size
     }
     
     // Store old values to check if update is needed
@@ -2007,7 +2085,7 @@ void UpdateScrollBars() {
     g_maxScrollX = max(0, contentWidth - g_clientWidth);
     g_maxScrollY = max(0, contentHeight - g_clientHeight);
     
-    // Clamp current scroll position
+    // Clamp current scroll position to valid range
     g_scrollX = max(0, min(g_scrollX, g_maxScrollX));
     g_scrollY = max(0, min(g_scrollY, g_maxScrollY));
     
@@ -2019,21 +2097,28 @@ void UpdateScrollBars() {
     si.nMax = contentWidth;
     si.nPage = g_clientWidth;
     si.nPos = g_scrollX;
-    SetScrollInfo(hWnd, SB_HORZ, &si, FALSE); // FALSE = don't redraw immediately
+    SetScrollInfo(hWnd, SB_HORZ, &si, TRUE); // TRUE = force immediate redraw
     
     // Set up vertical scroll bar
     si.nMax = contentHeight;
     si.nPage = g_clientHeight;
     si.nPos = g_scrollY;
-    SetScrollInfo(hWnd, SB_VERT, &si, FALSE); // FALSE = don't redraw immediately
+    SetScrollInfo(hWnd, SB_VERT, &si, TRUE); // TRUE = force immediate redraw
     
-    // Show/hide scroll bars based on need
-    ShowScrollBar(hWnd, SB_HORZ, g_maxScrollX > 0);
-    ShowScrollBar(hWnd, SB_VERT, g_maxScrollY > 0);
+    // Show/hide scroll bars and force immediate update
+    BOOL needsHorzScroll = (g_maxScrollX > 0);
+    BOOL needsVertScroll = (g_maxScrollY > 0);
     
-    // Only invalidate if scroll ranges actually changed
+    ShowScrollBar(hWnd, SB_HORZ, needsHorzScroll);
+    ShowScrollBar(hWnd, SB_VERT, needsVertScroll);
+    
+    // CRITICAL: Force immediate window frame update to show/hide scroll bars
+    SetWindowPos(hWnd, NULL, 0, 0, 0, 0, 
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+    
+    // Only invalidate content if scroll ranges actually changed
     if (oldMaxScrollX != g_maxScrollX || oldMaxScrollY != g_maxScrollY) {
-        InvalidateRect(hWnd, NULL, FALSE); // FALSE = don't erase background
+        InvalidateRect(hWnd, NULL, FALSE);
     }
 }
 
@@ -2048,21 +2133,18 @@ void ScrollBy(int deltaX, int deltaY) {
         g_scrollX = newScrollX;
         g_scrollY = newScrollY;
         
-        // Update scroll bar positions without redraw
-        SetScrollPos(hWnd, SB_HORZ, g_scrollX, FALSE);
-        SetScrollPos(hWnd, SB_VERT, g_scrollY, FALSE);
+        // Update scroll bar positions with immediate redraw
+        SetScrollPos(hWnd, SB_HORZ, g_scrollX, TRUE);  // TRUE = immediate redraw
+        SetScrollPos(hWnd, SB_VERT, g_scrollY, TRUE);  // TRUE = immediate redraw
         
-        // Use targeted invalidation instead of ScrollWindow
-        // Only invalidate the content area, not the entire window
+        // Invalidate the full content area INCLUDING under zoom controls
+        // The zoom controls will be redrawn on top
         RECT clientRect;
         GetClientRect(hWnd, &clientRect);
         
-        // Don't invalidate the top bar and zoom controls
-        RECT contentArea = {0, 25, clientRect.right - 200, clientRect.bottom};
+        // Invalidate everything except the top bar
+        RECT contentArea = {0, 25, clientRect.right, clientRect.bottom};
         InvalidateRect(hWnd, &contentArea, FALSE);
-        
-        // Force immediate update of scroll bars
-        UpdateWindow(hWnd);
     }
 }
 
@@ -2909,8 +2991,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return 1; // Non-zero means "we handled it"
 
     case WM_SIZE:
-        UpdateScrollBars();
+    {
+        if (wParam != SIZE_MINIMIZED)
+        {
+            // Clear any cached coordinate calculations
+            RECT clientRect;
+            GetClientRect(hWnd, &clientRect);
+            g_clientWidth = clientRect.right;
+            g_clientHeight = clientRect.bottom;
+
+            // Update scroll system first
+            UpdateScrollBars();
+
+            // Force complete redraw after resize to prevent artifacts
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
         break;
+    }
 
     case WM_HSCROLL:
     {
