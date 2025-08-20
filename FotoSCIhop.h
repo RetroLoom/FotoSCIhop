@@ -148,6 +148,7 @@ static const int UI_LEFT_MARGIN = 10;
 static const int UI_TOP_MARGIN = 30;
 static const int UI_PRIORITY_MARGIN = 5;
 static const int UI_INFO_HEIGHT = 20;
+static const int UI_PADDING = 8;
 
 static const int PALETTE_COLORS_PER_ROW = 16;
 static const int PALETTE_TOTAL_COLORS = 256;

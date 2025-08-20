@@ -1244,50 +1244,49 @@ static void DrawChangedIndicator(HDC hdc) {
 }
 
 // Helper function for palette status indicators
-static void DrawPaletteStatusIndicators(HDC hdc, Palette* tpalette) {
+void DrawPaletteStatusIndicators(HDC hdc, Palette* tpalette) {
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+    
     if (!tpalette->palData) {
-        DrawTextInRect(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 190, 320);
+        FotoSCIhopStyles::DrawThemedText(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 190, 20, true);
         return;
     }
 
-    // Missing colors indicator
-    HBRUSH cyanBrush = CreateSolidBrush(COLOR_CYAN);
-    HPEN redPen = CreatePen(PS_SOLID, 1, COLOR_RED);
+    // Missing colors indicator with themed colors
+    RECT missingRect = {20, 300, 32, 312};
+    FotoSCIhopStyles::DrawRoundedRect(hdc, missingRect, colors.warning, colors.warning);
     
-    RECT indicatorRect = {20, 300, 30, 310};
-    FillRect(hdc, &indicatorRect, cyanBrush);
-
-    HPEN oldPen = (HPEN)SelectObject(hdc, redPen);
-    MoveToEx(hdc, 19, 299, NULL);
-    LineTo(hdc, 31, 311);
-    MoveToEx(hdc, 19, 310, NULL);
-    LineTo(hdc, 31, 298);
+    // Draw warning icon (triangle)
+    HPEN iconPen = CreatePen(PS_SOLID, 2, colors.textPrimary);
+    HPEN oldPen = (HPEN)SelectObject(hdc, iconPen);
+    
+    POINT triangle[4] = {
+        {26, 304}, {23, 309}, {29, 309}, {26, 304}
+    };
+    Polyline(hdc, triangle, 4);
+    
     SelectObject(hdc, oldPen);
+    DeleteObject(iconPen);
 
-    DrawTextInRect(hdc, INTERFACE_MISSINGCOLORSSTR, 40, 295, 190, 315);
+    FotoSCIhopStyles::DrawThemedText(hdc, INTERFACE_MISSINGCOLORSSTR, 40, 295, 150, 20, true);
 
-    // Locked colors indicator (only for certain palette types)
+    // Locked colors indicator
     if (!tpalette->Head.type) {
-        RECT lockRect = {20, 320, 30, 330};
-        FillRect(hdc, &lockRect, cyanBrush);
-
-        oldPen = (HPEN)SelectObject(hdc, redPen);
-        for (int i = 1; i <= 2; i++) {
-            int yLine = lockRect.bottom + i;
-            MoveToEx(hdc, lockRect.left, yLine, NULL);
-            LineTo(hdc, lockRect.right, yLine);
-        }
-
-        SelectObject(hdc, GetStockObject(WHITE_PEN));
-        MoveToEx(hdc, lockRect.left, lockRect.bottom, NULL);
-        LineTo(hdc, lockRect.right, lockRect.bottom);
+        RECT lockRect = {20, 320, 32, 332};
+        FotoSCIhopStyles::DrawRoundedRect(hdc, lockRect, colors.error, colors.error);
+        
+        // Draw lock icon
+        HPEN lockPen = CreatePen(PS_SOLID, 1, colors.textPrimary);
+        oldPen = (HPEN)SelectObject(hdc, lockPen);
+        
+        Rectangle(hdc, 23, 327, 29, 331);
+        Arc(hdc, 24, 322, 28, 328, 24, 325, 28, 325);
+        
         SelectObject(hdc, oldPen);
+        DeleteObject(lockPen);
 
-        DrawTextInRect(hdc, INTERFACE_LOCKEDCOLORSSTR, 40, 316, 190, 336);
+        FotoSCIhopStyles::DrawThemedText(hdc, INTERFACE_LOCKEDCOLORSSTR, 40, 316, 150, 20, true);
     }
-    
-    SafeDeleteGDIObject(cyanBrush);
-    SafeDeleteGDIObject(redPen);
 }
 
 RGBQUAD ExtractPaletteIndexFromBM(char *image, int index) {
@@ -1456,6 +1455,59 @@ void DisplayCell(HDC hdc, int index) {
     DisplayImage(hdc, globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, bCell->xpos, bCell->ypos);
 }
 
+void DisplayCellWithFrame(HDC hdc, int index) {
+    if (!globalPicture || index < 0 || index >= globalPicture->CellsCount()) return;
+
+    void* cellPtr = globalPicture->cells[index];
+    if (!cellPtr) return;
+
+    // Refresh bitmap data if needed (same as original DisplayCell)
+    if (globalPicture->cells[index]->cellImage->image != globalPicture->cells[index]->bmImage) {
+        delete globalPicture->cells[index]->bmImage;
+        if (globalPicture->cells[index]->bmInfo) {
+            delete globalPicture->cells[index]->bmInfo;
+        }
+        globalPicture->cells[index]->bmInfo = 0;
+        globalPicture->cells[index]->bmImage = 0;
+    }
+
+    if (!globalPicture->cells[index]->bmInfo || !globalPicture->cells[index]->bmImage) {
+        globalPicture->cells[index]->GetImage(&globalPicture->cells[index]->bmInfo, &globalPicture->cells[index]->bmImage);
+    }
+
+    if (!globalPicture->cells[index]->bmInfo) return;
+
+    CelHeaderPic *bCell = (CelHeaderPic *)&globalPicture->cells[index]->Head;
+    skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+
+    // Draw frame AFTER bitmap data is confirmed valid
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+    POINT origin = GetDisplayOrigin();
+    
+    int imageWidth = ScaleCoordinate(globalPicture->cells[index]->bmInfo->bmiHeader.biWidth, MagnifyFactor);
+    int imageHeight = ScaleCoordinate(abs(globalPicture->cells[index]->bmInfo->bmiHeader.biHeight), MagnifyFactor);
+    
+    RECT frameRect = {
+        origin.x + ScaleCoordinate(bCell->xpos, MagnifyFactor) - UI_PADDING,
+        origin.y + ScaleCoordinate(bCell->ypos, MagnifyFactor) - UI_PADDING,
+        origin.x + ScaleCoordinate(bCell->xpos, MagnifyFactor) + imageWidth + UI_PADDING,
+        origin.y + ScaleCoordinate(bCell->ypos, MagnifyFactor) + imageHeight + UI_PADDING
+    };
+    
+    // Draw shadow
+    RECT shadowRect = frameRect;
+    OffsetRect(&shadowRect, 2, 2);
+    HBRUSH shadowBrush = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, &shadowRect, shadowBrush);
+    DeleteObject(shadowBrush);
+    
+    // Draw frame
+    FotoSCIhopStyles::DrawThemedFrame(hdc, frameRect);
+
+    // Display the actual image
+    DisplayImage(hdc, globalPicture->cells[index]->bmImage, globalPicture->cells[index]->bmInfo, bCell->xpos, bCell->ypos);
+}
+
 void DisplayCurrentView(HDC hdc) {
     if (!curCell || !(*curCell)) return;
 
@@ -1478,6 +1530,56 @@ void DisplayCurrentView(HDC hdc) {
     CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
     skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
 
+    DisplayImage(hdc, (*curCell)->bmImage, (*curCell)->bmInfo, bCell->xHot, bCell->yHot);
+}
+
+void DisplayCurrentViewWithFrame(HDC hdc) {
+    if (!curCell || !(*curCell)) return;
+
+    // Original display logic first
+    if ((*curCell)->cellImage->image != (*curCell)->bmImage) {
+        delete (*curCell)->bmImage;
+        if ((*curCell)->bmInfo) {
+            delete (*curCell)->bmInfo;
+        }
+        (*curCell)->bmInfo = 0;
+        (*curCell)->bmImage = 0;
+    }
+
+    if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+        (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+    }
+
+    if (!(*curCell)->bmInfo) return;
+
+    CelHeaderView *bCell = (CelHeaderView *)&(*curCell)->Head;
+    skipColor = (*curCell)->bmInfo->bmiColors[bCell->skip];
+
+    // NOW draw frame - after we know bitmap data is valid
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+    POINT origin = GetDisplayOrigin();
+    
+    int imageWidth = ScaleCoordinate((*curCell)->bmInfo->bmiHeader.biWidth, MagnifyFactor);
+    int imageHeight = ScaleCoordinate(abs((*curCell)->bmInfo->bmiHeader.biHeight), MagnifyFactor);
+    
+    RECT frameRect = {
+        origin.x - UI_PADDING,
+        origin.y - UI_PADDING,
+        origin.x + imageWidth + UI_PADDING,
+        origin.y + imageHeight + UI_PADDING
+    };
+    
+    // Draw shadow
+    RECT shadowRect = frameRect;
+    OffsetRect(&shadowRect, 2, 2);
+    HBRUSH shadowBrush = CreateSolidBrush(RGB(0, 0, 0));
+    FillRect(hdc, &shadowRect, shadowBrush);
+    DeleteObject(shadowBrush);
+    
+    // Draw frame
+    FotoSCIhopStyles::DrawThemedFrame(hdc, frameRect);
+
+    // Then display the actual image
     DisplayImage(hdc, (*curCell)->bmImage, (*curCell)->bmInfo, bCell->xHot, bCell->yHot);
 }
 
@@ -1565,6 +1667,21 @@ void DisplayCurrentPic(HDC hdc) {
     }
 }
 
+void DisplayCurrentPicWithFrame(HDC hdc) {
+    if (!globalPicture) return;
+
+    if (curCellIndex == 0) {
+        // Composite mode - display all cells WITHOUT individual cell frames
+        // The composite view should show all cells naturally without extra framing
+        for (int i = 0; i < globalPicture->CellsCount(); i++) {
+            DisplayCell(hdc, i);
+        }
+    } else {
+        // Individual cell mode - display specific cell WITH frame
+        DisplayCellWithFrame(hdc, curCellIndex);
+    }
+}
+
 void DisplayPriorityBars(HDC hdc) {
     if (!globalPicture || !curCell || !(*curCell)) return;
 
@@ -1620,25 +1737,32 @@ void DisplayPriorityBars(HDC hdc) {
 }
 
 void DrawPaletteTable(HDC hdc) {
-    HPEN redpen = CreatePen(PS_SOLID, 1, COLOR_RED);
-    
     Palette *tpalette = (isPicture ? globalPicture->palSCI : globalView->palSCI);
     
     if (!tpalette) {
-        DrawTextInRect(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 190, 320);
-        SafeDeleteGDIObject(redpen);
+        FotoSCIhopStyles::DrawThemedText(hdc, INTERFACE_MISSINGPALETTE, 30, 300, 160, 20, true);
         return;
     }
 
-    // Draw palette grid with optimized drawing
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+
+    // Themed background for palette area
+    RECT paletteBackground = {
+        UI_LEFT_MARGIN - 4, 
+        UI_TOP_MARGIN - 4, 
+        UI_LEFT_MARGIN + (PALETTE_COLORS_PER_ROW * PALETTE_CELL_WIDTH) + 4, 
+        UI_TOP_MARGIN + (PALETTE_COLORS_PER_ROW * PALETTE_CELL_HEIGHT) + 4
+    };
+    FotoSCIhopStyles::DrawRoundedRect(hdc, paletteBackground, colors.surface, colors.border);
+
+    // Draw palette grid with theme colors
     for (int i = 0; i < PALETTE_COLORS_PER_ROW; i++) {
         for (int j = 0; j < PALETTE_COLORS_PER_ROW; j++) {
             int colorIndex = i * PALETTE_COLORS_PER_ROW + j;
             PalEntry *tentry = tpalette->GetPalEntry(colorIndex);
             
-            if (!tentry) continue; // Safety check
+            if (!tentry) continue;
 
-            // Calculate cell rectangle once
             RECT cellRect = {
                 UI_LEFT_MARGIN + (j * PALETTE_CELL_WIDTH), 
                 UI_TOP_MARGIN + (i * PALETTE_CELL_HEIGHT), 
@@ -1646,116 +1770,116 @@ void DrawPaletteTable(HDC hdc) {
                 UI_TOP_MARGIN + (i * PALETTE_CELL_HEIGHT) + PALETTE_CELL_DISPLAY_SIZE
             };
 
-            // Fill color cell
-            HBRUSH tbrush = CreateSolidBrush(RGB(tentry->red, tentry->green, tentry->blue));
-            FillRect(hdc, &cellRect, tbrush);
-            SafeDeleteGDIObject(tbrush);
-
-            // Draw remap indicator with optimized pen management
-            if (tentry->remap == 1) {
-                HPEN remapRedPen = CreatePen(PS_SOLID, 1, COLOR_RED);
-                HPEN oldPen = (HPEN)SelectObject(hdc, remapRedPen);
-                
-                // Red indicator lines
-                for (int lineOffset = 1; lineOffset <= 2; lineOffset++) {
-                    int yLine = cellRect.bottom + lineOffset;
-                    MoveToEx(hdc, cellRect.left, yLine, NULL);
-                    LineTo(hdc, cellRect.right, yLine);
-                }
-                
-                // White line
-                SelectObject(hdc, GetStockObject(WHITE_PEN));
-                MoveToEx(hdc, cellRect.left, cellRect.bottom - 1, NULL);
-                LineTo(hdc, cellRect.right, cellRect.bottom - 1);
-                
-                SelectObject(hdc, oldPen);
-                SafeDeleteGDIObject(remapRedPen);
-            }
-
-            // Draw invalid color indicator
             bool isOutOfRange = (colorIndex < tpalette->Head.startOffset) ||
                                (colorIndex >= tpalette->Head.startOffset + tpalette->Head.nColors);
-                               
+
+            COLORREF cellColor = RGB(tentry->red, tentry->green, tentry->blue);
+            
+            // Draw the color cell
+            COLORREF borderColor = isOutOfRange ? colors.error : colors.border;
+            FotoSCIhopStyles::DrawRoundedRect(hdc, cellRect, cellColor, borderColor, 3);
+
+            // Remap indicator
+            if (tentry->remap == 1) {
+                RECT remapRect = {cellRect.left, cellRect.bottom + 1, cellRect.right, cellRect.bottom + 4};
+                FotoSCIhopStyles::DrawRoundedRect(hdc, remapRect, colors.warning, colors.warning, 1);
+            }
+
+            // Invalid color indicator
             if (isOutOfRange) {
-                HPEN oldPen = (HPEN)SelectObject(hdc, redpen);
+                HPEN errorPen = CreatePen(PS_SOLID, 2, colors.error);
+                HPEN oldPen = (HPEN)SelectObject(hdc, errorPen);
                 
-                // Draw X pattern with extended bounds for visibility
-                MoveToEx(hdc, cellRect.left - 1, cellRect.top - 1, NULL);
-                LineTo(hdc, cellRect.right + 1, cellRect.bottom + 1);
-                MoveToEx(hdc, cellRect.left - 1, cellRect.bottom, NULL);
-                LineTo(hdc, cellRect.right + 1, cellRect.top - 2);
+                MoveToEx(hdc, cellRect.left + 2, cellRect.top + 2, NULL);
+                LineTo(hdc, cellRect.right - 2, cellRect.bottom - 2);
+                MoveToEx(hdc, cellRect.right - 2, cellRect.top + 2, NULL);
+                LineTo(hdc, cellRect.left + 2, cellRect.bottom - 2);
                 
                 SelectObject(hdc, oldPen);
+                DeleteObject(errorPen);
             }
         }
     }
 
-    // Draw palette status indicators
     DrawPaletteStatusIndicators(hdc, tpalette);
-    SafeDeleteGDIObject(redpen);
 }
 
 void DrawCellInfo(HDC hdc) {
     if (!curCell || !(*curCell)) return;
 
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
     CelBase *bCell = (CelBase *)&(*curCell)->Head;
     
-    // Optimized text buffer to reduce sprintf calls
+    // Themed info panel background
+    RECT infoPanel = {10, 2, 500, 23};
+    FotoSCIhopStyles::DrawThemedFrame(hdc, infoPanel);
+    
     char textBuffer[128];
+    int xPos = 20;
 
-    // Draw view-specific information
+    // View-specific information (V56 files only)
     if (globalView) {
-        // Loop count information
-        int result = sprintf(textBuffer, INTERFACE_LOOPSSTR, curLoopIndex + 1, globalView->Head.view32.loopCount);
-        if (result > 0) {
-            DrawTextInRect(hdc, textBuffer, 25, 0, 125, UI_INFO_HEIGHT);
-        }
+        sprintf(textBuffer, "Loop %d/%d", curLoopIndex + 1, globalView->Head.view32.loopCount);
+        FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 80, 15);
+        xPos += 85;
 
+        // Safe loop access - only for V56 files
         if (curLoop && (*curLoop)) {
             if ((*curLoop)->Head.flags) {
-                // Mirrored loop information
-                result = sprintf(textBuffer, INTERFACE_MIRROREDSTR, (*curLoop)->Head.altLoop + 1);
-                if (result > 0) {
-                    DrawTextInRect(hdc, textBuffer, 125, 0, 325, UI_INFO_HEIGHT);
-                }
+                sprintf(textBuffer, "Mirror -> %d", (*curLoop)->Head.altLoop + 1);
+                FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 120, 15, true);
             } else {
-                // Cell count information
-                result = sprintf(textBuffer, INTERFACE_CELLSSTR, curCellIndex + 1, (*curLoop)->Head.numCels);
-                if (result > 0) {
-                    DrawTextInRect(hdc, textBuffer, 125, 0, 225, UI_INFO_HEIGHT);
-                }
+                sprintf(textBuffer, "Cell %d/%d", curCellIndex + 1, (*curLoop)->Head.numCels);
+                FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 80, 15);
             }
         }
-
-        // Skip color info for non-mirrored loops
+        xPos += 125;
+        
+        // Skip color info for V56 files - only show if not mirrored loop
         if (curLoop && (*curLoop) && !(*curLoop)->Head.flags) {
-            DrawSkipColorInfo(hdc, bCell, textBuffer);
+            sprintf(textBuffer, "Skip: %d", bCell->skip);
+            FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 60, 15);
             
-            if ((*curCell)->changed) {
-                DrawChangedIndicator(hdc);
+            if ((*curCell)->bmInfo && bCell->skip < PALETTE_TOTAL_COLORS) {
+                RGBQUAD skipColorQuad = (*curCell)->bmInfo->bmiColors[bCell->skip];
+                RECT swatchRect = {xPos + 65, 7, xPos + 80, 17};
+                COLORREF swatchColor = RGB(skipColorQuad.rgbRed, skipColorQuad.rgbGreen, skipColorQuad.rgbBlue);
+                FotoSCIhopStyles::DrawRoundedRect(hdc, swatchRect, swatchColor, colors.border, 2);
             }
+            xPos += 85;
         }
     }
 
-    // Draw picture-specific information
+    // Picture-specific information (P56 files only)
     if (globalPicture) {
-        DrawSkipColorInfo(hdc, bCell, textBuffer);
-
-        // Version information
         const char* versionStr = (globalPicture->format == _PIC_11) ? "SCI1.1" : "SCI32";
-        DrawTextInRect(hdc, versionStr, 25, 0, 100, UI_INFO_HEIGHT);
+        FotoSCIhopStyles::DrawThemedText(hdc, versionStr, xPos, 5, 80, 15);
+        xPos += 85;
 
-        // Cell count for pictures
-        int result = sprintf(textBuffer, INTERFACE_CELLSSTR, curCellIndex + 1, globalPicture->CellsCount());
-        if (result > 0) {
-            DrawTextInRect(hdc, textBuffer, 125, 0, 250, UI_INFO_HEIGHT);
+        sprintf(textBuffer, "Cell %d/%d", curCellIndex + 1, globalPicture->CellsCount());
+        FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 80, 15);
+        xPos += 85;
+        
+        // Skip color info for P56 files - always show since pictures don't have loops
+        sprintf(textBuffer, "Skip: %d", bCell->skip);
+        FotoSCIhopStyles::DrawThemedText(hdc, textBuffer, xPos, 5, 60, 15);
+        
+        if ((*curCell)->bmInfo && bCell->skip < PALETTE_TOTAL_COLORS) {
+            RGBQUAD skipColorQuad = (*curCell)->bmInfo->bmiColors[bCell->skip];
+            RECT swatchRect = {xPos + 65, 7, xPos + 80, 17};
+            COLORREF swatchColor = RGB(skipColorQuad.rgbRed, skipColorQuad.rgbGreen, skipColorQuad.rgbBlue);
+            FotoSCIhopStyles::DrawRoundedRect(hdc, swatchRect, swatchColor, colors.border, 2);
         }
+        xPos += 85;
+    }
 
-        if ((*curCell)->changed) {
-            DrawChangedIndicator(hdc);
-        }
+    // Changed indicator with theme color - safe for both file types
+    if ((*curCell)->changed) {
+        FotoSCIhopStyles::DrawStatusText(hdc, "* Modified", xPos, 5, 80, 15, FotoSCIhopStyles::STATUS_WARNING);
     }
 }
+
+
 
 void LoadConfig ()
 {
@@ -2365,57 +2489,79 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             return DefWindowProc(hWnd, message, wParam, lParam);
         }
         break;
-        
+
     case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+
+        // Set up theme font
+        HFONT themeFont = FotoSCIhopStyles::CreateThemeFont(16);
+        HFONT oldFont = (HFONT)SelectObject(hdc, themeFont);
+
+        // Theme background
+        const FotoSCIhopStyles::UnifiedColors &colors = FotoSCIhopStyles::GetCurrentColors();
+        GetClientRect(hWnd, &rc);
+        HBRUSH bgBrush = CreateSolidBrush(colors.background);
+        FillRect(hdc, &rc, bgBrush);
+        DeleteObject(bgBrush);
+
+        // Themed top bar
+        RECT topBar = {0, 0, rc.right, 25};
+        FotoSCIhopStyles::DrawRoundedRect(hdc, topBar, colors.surface, colors.border, 0);
+
+        // Initialize layout variables properly based on file type
+        if (globalView)
         {
-            HDC hdc = BeginPaint(hWnd, &ps);
-            SelectObject(hdc, hfDefault);
-            GetClientRect(hWnd, &rc);
-            SetBkMode(hdc, TRANSPARENT);
-            GetWindowRect(hWnd, &rc);
-            long int twidth = rc.right - rc.left;
-            SetRect(&rc, 0, 0, twidth, 20);
-            FillRect(hdc, &rc, GetSysColorBrush(COLOR_BTNFACE));
-
-            if (globalView)
-                picX = 220;
-
-            if (globalPicture)
-                picX = 0;
-
-            // palette will be drawn only if the image exists
-            if (tableX > 0)
-                DrawPaletteTable(hdc);
-
-            if (globalView && !(*curLoop)->Head.flags)
-            {
-                if (gReferenceBM && !gReferencePriority)
-                    DisplayReferenceImage(hdc);
-
-                DisplayCurrentView(hdc);
-
-                if (gReferenceBM && gReferencePriority)
-                    DisplayReferenceImage(hdc);
-            
-                if ((*curCell)->Head.view.linkTableCount >= 1)
-                    DisplayLinkPoints(hdc);
-            }
-
-            if (globalPicture)
-            {
-                DisplayCurrentPic(hdc);
-
-                if (showpbars)
-                    DisplayPriorityBars(hdc);
-            }
-
-            if (curCell)
-                DrawCellInfo(hdc);
-
-            EndPaint(hWnd, &ps);
-
-            break;
+            picX = 220; // Views need space for loop information
         }
+        if (globalPicture)
+        {
+            picX = 0; // Pictures start at left edge
+        }
+
+        // Enhanced palette with unified styling
+        if (tableX > 0)
+        {
+            DrawPaletteTable(hdc);
+        }
+
+        // REVISED: Use integrated display functions (frame + image together)
+        if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags)
+        {
+            if (gReferenceBM && !gReferencePriority)
+                DisplayReferenceImage(hdc);
+
+            // Use enhanced version that includes frame drawing
+            DisplayCurrentViewWithFrame(hdc);
+
+            if (gReferenceBM && gReferencePriority)
+                DisplayReferenceImage(hdc);
+
+            if ((*curCell) && (*curCell)->Head.view.linkTableCount >= 1)
+                DisplayLinkPoints(hdc);
+        }
+
+        if (globalPicture)
+        {
+            // Use enhanced version that includes frame drawing
+            DisplayCurrentPicWithFrame(hdc);
+
+            if (showpbars)
+                DisplayPriorityBars(hdc);
+        }
+
+        // Themed cell info display - safe for both file types
+        if (curCell && (*curCell))
+        {
+            DrawCellInfo(hdc);
+        }
+
+        SelectObject(hdc, oldFont);
+        FotoSCIhopStyles::SafeDeleteFont(themeFont);
+        EndPaint(hWnd, &ps);
+        break;
+    }
 
     case WM_LBUTTONDOWN:
     {
