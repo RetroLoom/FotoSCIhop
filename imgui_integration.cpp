@@ -3,7 +3,6 @@
 #include <windowsx.h>
 
 // ImGui includes
-#include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_opengl3.h"
 
@@ -84,82 +83,10 @@ namespace ImGuiDialogs {
     };
     
     static EngineState g_engine;
-        
-    void RegisterDialog(DialogType type, const char* title, ImGuiDialogCallback callback) {
-        if (type >= 0 && type < DIALOG_COUNT) {
-            g_engine.dialogs[type] = DialogInfo(title, callback);
-        }
-    }
-
-    void ShowDialog(DialogType type)
-    {
-        if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT)
-            return;
-
-        // Hide other dialogs first
-        for (int i = 0; i < DIALOG_COUNT; i++)
-        {
-            if (i != type)
-            {
-                g_engine.dialogs[i].isOpen = false;
-            }
-        }
-
-        g_engine.dialogs[type].isOpen = true;
-        g_engine.activeDialogType = type;
-
-        if (g_engine.hwnd)
-        {
-            DialogInfo &dialog = g_engine.dialogs[type];
-
-            int winWidth = dialog.currentWidth + 16;
-            int winHeight = dialog.currentHeight + 39;
-
-            winWidth = max(300, min(1400, winWidth));
-            winHeight = max(200, min(900, winHeight));
-
-            RECT currentRect;
-            bool hasCurrentPos = GetWindowRect(g_engine.hwnd, &currentRect);
-
-            if (!g_engine.windowVisible || !hasCurrentPos)
-            {
-                int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-                int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-                int x = (screenWidth - winWidth) / 2;
-                int y = (screenHeight - winHeight) / 2;
-
-                SetWindowPos(g_engine.hwnd, NULL, x, y, winWidth, winHeight, SWP_NOZORDER);
-            }
-            else
-            {
-                SetWindowPos(g_engine.hwnd, NULL,
-                             currentRect.left, currentRect.top,
-                             winWidth, winHeight,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-
-            ShowWindow(g_engine.hwnd, SW_SHOW);
-            SetForegroundWindow(g_engine.hwnd);
-            g_engine.windowVisible = true;
-        }
-    }
-
-    void HideDialog(DialogType type) {
-        if (type >= 0 && type < DIALOG_COUNT) {
-            g_engine.dialogs[type].isOpen = false;
-        }
-    }
     
-    bool IsDialogOpen(DialogType type) {
-        return (type >= 0 && type < DIALOG_COUNT) ? g_engine.dialogs[type].isOpen : false;
-    }
-    
-    bool IsAnyDialogOpen() {
-        for (int i = 0; i < DIALOG_COUNT; i++) {
-            if (g_engine.dialogs[i].isOpen) return true;
-        }
-        return false;
-    }
+    // =========================================================================
+    // WIN32/OPENGL INTEGRATION
+    // =========================================================================
     
     LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam))
@@ -247,6 +174,90 @@ namespace ImGuiDialogs {
             g_engine.hdc = NULL;
         }
     }
+    
+    // =========================================================================
+    // DIALOG MANAGEMENT
+    // =========================================================================
+        
+    void RegisterDialog(DialogType type, const char* title, ImGuiDialogCallback callback) {
+        if (type >= 0 && type < DIALOG_COUNT) {
+            g_engine.dialogs[type] = DialogInfo(title, callback);
+        }
+    }
+
+    void ShowDialog(DialogType type)
+    {
+        if (!g_engine.initialized || type < 0 || type >= DIALOG_COUNT)
+            return;
+
+        // Hide other dialogs first
+        for (int i = 0; i < DIALOG_COUNT; i++)
+        {
+            if (i != type)
+            {
+                g_engine.dialogs[i].isOpen = false;
+            }
+        }
+
+        g_engine.dialogs[type].isOpen = true;
+        g_engine.activeDialogType = type;
+
+        if (g_engine.hwnd)
+        {
+            DialogInfo &dialog = g_engine.dialogs[type];
+
+            int winWidth = dialog.currentWidth + 16;
+            int winHeight = dialog.currentHeight + 39;
+
+            winWidth = max(300, min(1400, winWidth));
+            winHeight = max(200, min(900, winHeight));
+
+            RECT currentRect;
+            bool hasCurrentPos = GetWindowRect(g_engine.hwnd, &currentRect);
+
+            if (!g_engine.windowVisible || !hasCurrentPos)
+            {
+                int screenWidth = GetSystemMetrics(SM_CXSCREEN);
+                int screenHeight = GetSystemMetrics(SM_CYSCREEN);
+                int x = (screenWidth - winWidth) / 2;
+                int y = (screenHeight - winHeight) / 2;
+
+                SetWindowPos(g_engine.hwnd, NULL, x, y, winWidth, winHeight, SWP_NOZORDER);
+            }
+            else
+            {
+                SetWindowPos(g_engine.hwnd, NULL,
+                             currentRect.left, currentRect.top,
+                             winWidth, winHeight,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+
+            ShowWindow(g_engine.hwnd, SW_SHOW);
+            SetForegroundWindow(g_engine.hwnd);
+            g_engine.windowVisible = true;
+        }
+    }
+
+    void HideDialog(DialogType type) {
+        if (type >= 0 && type < DIALOG_COUNT) {
+            g_engine.dialogs[type].isOpen = false;
+        }
+    }
+    
+    bool IsDialogOpen(DialogType type) {
+        return (type >= 0 && type < DIALOG_COUNT) ? g_engine.dialogs[type].isOpen : false;
+    }
+    
+    bool IsAnyDialogOpen() {
+        for (int i = 0; i < DIALOG_COUNT; i++) {
+            if (g_engine.dialogs[i].isOpen) return true;
+        }
+        return false;
+    }
+    
+    // =========================================================================
+    // CORE ENGINE FUNCTIONS
+    // =========================================================================
 
     bool Initialize(HWND parent)
     {
@@ -399,7 +410,7 @@ namespace ImGuiDialogs {
     }
     
     // =========================================================================
-    // MINIMAL DIALOG MANAGEMENT
+    // DIALOG FRAME MANAGEMENT
     // =========================================================================
     
     bool BeginDialog(const char* title, bool* open) {
@@ -479,7 +490,7 @@ namespace ImGuiDialogs {
     }
         
     // =========================================================================
-    // THEME FUNCTIONS - Keep existing themes
+    // THEME FUNCTIONS
     // =========================================================================
     
     void ApplyTheme(Theme theme) {
