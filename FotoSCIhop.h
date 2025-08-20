@@ -22,6 +22,7 @@
 #include "v56files.h"
 #include "english.h"
 #include <set>
+#include <string>
 
 // ============================================================================
 // FORWARD DECLARATIONS
@@ -135,10 +136,30 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
                                WPARAM wParam,
                                LPARAM lParam);
 
+void ForceImageRefresh();
+
+// Function declarations
+void ShowLoopCell(unsigned char newloop, unsigned char newcell);
+void ShowCell(unsigned char newcell);
+bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
+bool ImportBMPToCurrentCell(const char* filename, bool applyPalette);
+
+// Display constants 
+static const int UI_LEFT_MARGIN = 10;
+static const int UI_TOP_MARGIN = 30;
+
+// Dialog functions
 void RenderPropertiesDialog();
-void RenderAboutDialog();
+void RenderAboutDialog(); 
 void RenderClutGeneratorDialog();
 void RenderRealmpalDialog();
-void ForceImageRefresh();
+
+// Realmpal dialog state variables
+extern std::string g_realmpalInputFile;
+extern std::string g_realmpalPaletteFile;
+extern std::string g_realmpalExtraFile;
+extern bool g_requestInputDialog;
+extern bool g_requestPaletteDialog;
+extern bool g_requestExtraDialog;
 
 #endif // FOTOSCIHOP_H
