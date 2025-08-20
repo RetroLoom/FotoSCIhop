@@ -124,7 +124,6 @@ bool HandleCliCommands(char* cmdLine);
 void ParseAppPath(void);
 
 // CLI and palette functions
-BOOL CLIPaletteImport(char *palette);
 int cliExport(char *name);
 
 // Magic wand and color sampling functions

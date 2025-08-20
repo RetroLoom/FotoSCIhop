@@ -20,17 +20,12 @@
 #include "librealmpal.h"
 #include <set> 
 
-
-
-
 // Global Variables:
 HINSTANCE hInst;								// current instance
 TCHAR szTitle[MAX_PATH+20];					// The title bar text
 TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 char szFileName[MAX_PATH] = "";
 char szNextFileName[MAX_PATH] = "";
-
-
 
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
@@ -112,10 +107,6 @@ RECT rc;
 HWND hWndTopBar;
 HFONT hfDefault;
 RGBQUAD skipColor;
-
-// Image import settings
-int colorLimit = 255;
-int tolerance = 50;
 
 void ShowLoopCell(unsigned char newloop, unsigned char newcell)
 {
