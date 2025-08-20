@@ -441,8 +441,13 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 			strcat(wname, (char *)(((long)szFileName)+pos));
 		  }
       }
-      SetWindowText(hwnd, wname);    
-              
+      SetWindowText(hwnd, wname);
+
+      // Reset scroll position when loading new file
+      g_scrollX = 0;
+      g_scrollY = 0;
+      UpdateScrollBars();
+
       return (result==ID_NOERROR);
    }
    return FALSE;
@@ -1146,15 +1151,21 @@ static int ScaleCoordinate(int value, int magnifyFactor) {
 // Cached origin calculation to avoid repeated arithmetic
 static POINT GetDisplayOrigin() {
     static int lastPicX = -1, lastPicY = -1, lastTableX = -1;
+    static int lastScrollX = -1, lastScrollY = -1;
     static POINT cachedOrigin = {0, 0};
     
     // Only recalculate if values have changed
-    if (picX != lastPicX || picY != lastPicY || tableX != lastTableX) {
-        cachedOrigin.x = UI_LEFT_MARGIN + picX + tableX;
-        cachedOrigin.y = UI_TOP_MARGIN + picY;
+    if (picX != lastPicX || picY != lastPicY || tableX != lastTableX || 
+        g_scrollX != lastScrollX || g_scrollY != lastScrollY) {
+        
+        cachedOrigin.x = UI_LEFT_MARGIN + picX + tableX - g_scrollX;
+        cachedOrigin.y = UI_TOP_MARGIN + picY - g_scrollY;
+        
         lastPicX = picX;
         lastPicY = picY;
         lastTableX = tableX;
+        lastScrollX = g_scrollX;
+        lastScrollY = g_scrollY;
     }
     
     return cachedOrigin;
@@ -1879,7 +1890,312 @@ void DrawCellInfo(HDC hdc) {
     }
 }
 
+void SetZoomLevel(int zoomPercentage) {
+    if (MagnifyFactor == zoomPercentage) {
+        return; // No change needed
+    }
+    
+    MagnifyFactor = zoomPercentage;
+    
+    // Update menu checkmarks without causing redraws
+    HMENU menu = GetMenu(hWnd);
+    if (menu) {
+        CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_UNCHECKED);
+        CheckMenuItem(menu, ID_INGRANDIMENTO_X2, MF_UNCHECKED);
+        CheckMenuItem(menu, ID_INGRANDIMENTO_X3, MF_UNCHECKED);
+        CheckMenuItem(menu, ID_INGRANDIMENTO_X4, MF_UNCHECKED);
+        
+        // Check appropriate menu item based on zoom level
+        if (zoomPercentage == gBaseMagnify) {
+            CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_CHECKED);
+        } else if (zoomPercentage == gBaseMagnify * 2) {
+            CheckMenuItem(menu, ID_INGRANDIMENTO_X2, MF_CHECKED);
+        } else if (zoomPercentage == gBaseMagnify * 3) {
+            CheckMenuItem(menu, ID_INGRANDIMENTO_X3, MF_CHECKED);
+        } else if (zoomPercentage == gBaseMagnify * 4) {
+            CheckMenuItem(menu, ID_INGRANDIMENTO_X4, MF_CHECKED);
+        }
+    }
+    
+    UpdateScrollBars(); // This handles its own invalidation efficiently
+}
 
+void ZoomIn() {
+    if (g_currentZoomIndex < ZOOM_LEVEL_COUNT - 1) {
+        g_currentZoomIndex++;
+        SetZoomLevel(ZOOM_LEVELS[g_currentZoomIndex]);
+    }
+}
+
+void ZoomOut() {
+    if (g_currentZoomIndex > 0) {
+        g_currentZoomIndex--;
+        SetZoomLevel(ZOOM_LEVELS[g_currentZoomIndex]);
+    }
+}
+
+void ZoomToFit() {
+    if (!curCell || !(*curCell) || !(*curCell)->bmInfo) return;
+    
+    RECT clientRect;
+    GetClientRect(hWnd, &clientRect);
+    
+    int imageWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
+    int imageHeight = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+    
+    // Calculate zoom to fit both dimensions with some padding
+    int availableWidth = clientRect.right - 300; // Account for palette space
+    int availableHeight = clientRect.bottom - 100; // Account for top bar and info
+    
+    int zoomX = (availableWidth * 100) / imageWidth;
+    int zoomY = (availableHeight * 100) / imageHeight;
+    
+    int fitZoom = min(zoomX, zoomY);
+    fitZoom = max(25, min(1600, fitZoom)); // Clamp to reasonable range
+    
+    // Find closest zoom level
+    for (int i = 0; i < ZOOM_LEVEL_COUNT; i++) {
+        if (ZOOM_LEVELS[i] >= fitZoom || i == ZOOM_LEVEL_COUNT - 1) {
+            g_currentZoomIndex = i;
+            break;
+        }
+    }
+    
+    SetZoomLevel(ZOOM_LEVELS[g_currentZoomIndex]);
+}
+
+void ZoomTo100() {
+    for (int i = 0; i < ZOOM_LEVEL_COUNT; i++) {
+        if (ZOOM_LEVELS[i] == 100) {
+            g_currentZoomIndex = i;
+            break;
+        }
+    }
+    SetZoomLevel(100);
+}
+
+// ============================================================================
+// SCROLL MANAGEMENT FUNCTIONS
+// ============================================================================
+
+void UpdateScrollBars() {
+    if (!hWnd) return;
+    
+    RECT clientRect;
+    GetClientRect(hWnd, &clientRect);
+    g_clientWidth = clientRect.right;
+    g_clientHeight = clientRect.bottom;
+    
+    // Calculate content size based on current image and zoom
+    int contentWidth = 400;  // Default minimum
+    int contentHeight = 400;
+    
+    if (curCell && (*curCell) && (*curCell)->bmInfo) {
+        int imageWidth = ScaleCoordinate((*curCell)->bmInfo->bmiHeader.biWidth, MagnifyFactor);
+        int imageHeight = ScaleCoordinate(abs((*curCell)->bmInfo->bmiHeader.biHeight), MagnifyFactor);
+        
+        // Add margins and palette space
+        contentWidth = imageWidth + 500; // Extra space for palette and margins
+        contentHeight = imageHeight + 200; // Extra space for top bar and info
+    }
+    
+    // Store old values to check if update is needed
+    int oldMaxScrollX = g_maxScrollX;
+    int oldMaxScrollY = g_maxScrollY;
+    
+    // Calculate max scroll values
+    g_maxScrollX = max(0, contentWidth - g_clientWidth);
+    g_maxScrollY = max(0, contentHeight - g_clientHeight);
+    
+    // Clamp current scroll position
+    g_scrollX = max(0, min(g_scrollX, g_maxScrollX));
+    g_scrollY = max(0, min(g_scrollY, g_maxScrollY));
+    
+    // Set up horizontal scroll bar
+    SCROLLINFO si = {0};
+    si.cbSize = sizeof(si);
+    si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL;
+    si.nMin = 0;
+    si.nMax = contentWidth;
+    si.nPage = g_clientWidth;
+    si.nPos = g_scrollX;
+    SetScrollInfo(hWnd, SB_HORZ, &si, FALSE); // FALSE = don't redraw immediately
+    
+    // Set up vertical scroll bar
+    si.nMax = contentHeight;
+    si.nPage = g_clientHeight;
+    si.nPos = g_scrollY;
+    SetScrollInfo(hWnd, SB_VERT, &si, FALSE); // FALSE = don't redraw immediately
+    
+    // Show/hide scroll bars based on need
+    ShowScrollBar(hWnd, SB_HORZ, g_maxScrollX > 0);
+    ShowScrollBar(hWnd, SB_VERT, g_maxScrollY > 0);
+    
+    // Only invalidate if scroll ranges actually changed
+    if (oldMaxScrollX != g_maxScrollX || oldMaxScrollY != g_maxScrollY) {
+        InvalidateRect(hWnd, NULL, FALSE); // FALSE = don't erase background
+    }
+}
+
+void ScrollBy(int deltaX, int deltaY) {
+    int newScrollX = g_scrollX + deltaX;
+    int newScrollY = g_scrollY + deltaY;
+    
+    newScrollX = max(0, min(newScrollX, g_maxScrollX));
+    newScrollY = max(0, min(newScrollY, g_maxScrollY));
+    
+    if (newScrollX != g_scrollX || newScrollY != g_scrollY) {
+        g_scrollX = newScrollX;
+        g_scrollY = newScrollY;
+        
+        // Update scroll bar positions without redraw
+        SetScrollPos(hWnd, SB_HORZ, g_scrollX, FALSE);
+        SetScrollPos(hWnd, SB_VERT, g_scrollY, FALSE);
+        
+        // Use targeted invalidation instead of ScrollWindow
+        // Only invalidate the content area, not the entire window
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+        
+        // Don't invalidate the top bar and zoom controls
+        RECT contentArea = {0, 25, clientRect.right - 200, clientRect.bottom};
+        InvalidateRect(hWnd, &contentArea, FALSE);
+        
+        // Force immediate update of scroll bars
+        UpdateWindow(hWnd);
+    }
+}
+
+void ScrollTo(int x, int y) {
+    ScrollBy(x - g_scrollX, y - g_scrollY);
+}
+
+// ============================================================================
+// ENHANCED COORDINATE FUNCTIONS
+// ============================================================================
+
+// Updated GetDisplayOrigin to account for scrolling
+static POINT GetDisplayOriginWithScroll() {
+    POINT origin = GetDisplayOrigin();
+    origin.x -= g_scrollX;
+    origin.y -= g_scrollY;
+    return origin;
+}
+
+// Convert screen coordinates to image coordinates
+POINT ScreenToImageCoords(int screenX, int screenY) {
+    POINT origin = GetDisplayOriginWithScroll();
+    POINT imagePoint;
+    
+    imagePoint.x = ((screenX - origin.x) * 100) / MagnifyFactor;
+    imagePoint.y = ((screenY - origin.y) * 100) / MagnifyFactor;
+    
+    return imagePoint;
+}
+
+// Convert image coordinates to screen coordinates  
+POINT ImageToScreenCoords(int imageX, int imageY) {
+    POINT origin = GetDisplayOriginWithScroll();
+    POINT screenPoint;
+    
+    screenPoint.x = origin.x + ScaleCoordinate(imageX, MagnifyFactor);
+    screenPoint.y = origin.y + ScaleCoordinate(imageY, MagnifyFactor);
+    
+    return screenPoint;
+}
+
+// ============================================================================
+// PANNING SUPPORT
+// ============================================================================
+
+void StartPanning(int x, int y) {
+    g_isPanning = true;
+    g_lastPanPoint.x = x;
+    g_lastPanPoint.y = y;
+    SetCapture(hWnd);
+    SetCursor(LoadCursor(NULL, IDC_SIZEALL));
+}
+
+void UpdatePanning(int x, int y) {
+    if (!g_isPanning) return;
+    
+    int deltaX = g_lastPanPoint.x - x;
+    int deltaY = g_lastPanPoint.y - y;
+    
+    // Use the smooth scrolling version
+    ScrollBy(deltaX, deltaY);
+    
+    g_lastPanPoint.x = x;
+    g_lastPanPoint.y = y;
+}
+
+void StopPanning() {
+    if (g_isPanning) {
+        g_isPanning = false;
+        ReleaseCapture();
+        SetCursor(LoadCursor(NULL, IDC_ARROW));
+    }
+}
+
+// ============================================================================
+// ZOOM UI CONTROLS
+// ============================================================================
+
+void DrawZoomControls(HDC hdc) {
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+    
+    // Zoom control panel
+    RECT zoomPanel = {g_clientWidth - 180, 30, g_clientWidth - 10, 80};
+    FotoSCIhopStyles::DrawThemedFrame(hdc, zoomPanel);
+    
+    // Zoom percentage text
+    char zoomText[64];
+    sprintf(zoomText, "Zoom: %d%%", MagnifyFactor);
+    FotoSCIhopStyles::DrawThemedText(hdc, zoomText, zoomPanel.left + 10, zoomPanel.top + 5, 100, 20);
+    
+    // Zoom buttons
+    RECT zoomOutBtn = {zoomPanel.left + 10, zoomPanel.top + 25, zoomPanel.left + 35, zoomPanel.top + 45};
+    RECT zoomInBtn = {zoomPanel.left + 40, zoomPanel.top + 25, zoomPanel.left + 65, zoomPanel.top + 45};
+    RECT fitBtn = {zoomPanel.left + 70, zoomPanel.top + 25, zoomPanel.left + 100, zoomPanel.top + 45};
+    RECT resetBtn = {zoomPanel.left + 105, zoomPanel.top + 25, zoomPanel.left + 135, zoomPanel.top + 45};
+    
+    FotoSCIhopStyles::DrawThemedButton(hdc, zoomOutBtn, "-", false, false, g_currentZoomIndex > 0);
+    FotoSCIhopStyles::DrawThemedButton(hdc, zoomInBtn, "+", false, false, g_currentZoomIndex < ZOOM_LEVEL_COUNT - 1);
+    FotoSCIhopStyles::DrawThemedButton(hdc, fitBtn, "Fit", false, false, true);
+    FotoSCIhopStyles::DrawThemedButton(hdc, resetBtn, "100%", false, false, true);
+}
+
+bool HandleZoomControlClick(int x, int y) {
+    RECT zoomPanel = {g_clientWidth - 180, 30, g_clientWidth - 10, 80};
+    
+    if (x < zoomPanel.left || x > zoomPanel.right || y < zoomPanel.top || y > zoomPanel.bottom) {
+        return false; // Click not in zoom control area
+    }
+    
+    RECT zoomOutBtn = {zoomPanel.left + 10, zoomPanel.top + 25, zoomPanel.left + 35, zoomPanel.top + 45};
+    RECT zoomInBtn = {zoomPanel.left + 40, zoomPanel.top + 25, zoomPanel.left + 65, zoomPanel.top + 45};
+    RECT fitBtn = {zoomPanel.left + 70, zoomPanel.top + 25, zoomPanel.left + 100, zoomPanel.top + 45};
+    RECT resetBtn = {zoomPanel.left + 105, zoomPanel.top + 25, zoomPanel.left + 135, zoomPanel.top + 45};
+    
+    if (PtInRect(&zoomOutBtn, {x, y})) {
+        ZoomOut();
+        return true;
+    }
+    if (PtInRect(&zoomInBtn, {x, y})) {
+        ZoomIn();
+        return true;
+    }
+    if (PtInRect(&fitBtn, {x, y})) {
+        ZoomToFit();
+        return true;
+    }
+    if (PtInRect(&resetBtn, {x, y})) {
+        ZoomTo100();
+        return true;
+    }
+    
+    return false;
+}
 
 void LoadConfig ()
 {
@@ -2174,15 +2490,14 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     WNDCLASSEX wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX); 
-
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
+    wcex.style          = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS; // Removed CS_OWNDC if present
     wcex.lpfnWndProc    = (WNDPROC)WndProc;
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
     wcex.hInstance      = hInstance;
     wcex.hIcon          = LoadIcon(hInstance, (LPCTSTR)IDI_IMMAGINA);
     wcex.hCursor        = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
+    wcex.hbrBackground  = NULL; // IMPORTANT: Set to NULL to prevent auto-erase
     wcex.lpszMenuName   = (LPCTSTR)IDC_IMMAGINA;
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon((HINSTANCE)wcex.hInstance, (LPCTSTR)IDI_SMALL);
@@ -2209,6 +2524,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     // Create the window
     hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
                        x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
+
+    // Enable scroll bars
+    LONG style = GetWindowLong(hWnd, GWL_STYLE);
+    style |= WS_HSCROLL | WS_VSCROLL;
+    SetWindowLong(hWnd, GWL_STYLE, style);
+
+    // Initialize scroll system
+    UpdateScrollBars();
 
     // If the window couldn't be created, return FALSE
     if (!hWnd)
@@ -2409,19 +2732,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
             
         case ID_INGRANDIMENTO_NORMALE:
-            SetMagnify(gBaseMagnify);
+            SetZoomLevel(gBaseMagnify);
             break;
             
         case ID_INGRANDIMENTO_X2:
-            SetMagnify(gBaseMagnify * 2);
+            SetZoomLevel(gBaseMagnify * 2);
             break;
             
         case ID_INGRANDIMENTO_X3:
-            SetMagnify(gBaseMagnify * 3);
+            SetZoomLevel(gBaseMagnify * 3);
             break;
             
         case ID_INGRANDIMENTO_X4:
-            SetMagnify(gBaseMagnify * 4);
+            SetZoomLevel(gBaseMagnify * 4);
             break;
             
         case ID_PRIORITYBARS:
@@ -2493,22 +2816,32 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hWnd, &ps);
+        HDC hdcScreen = BeginPaint(hWnd, &ps);
+
+        // Get client rect
+        RECT clientRect;
+        GetClientRect(hWnd, &clientRect);
+        g_clientWidth = clientRect.right;
+        g_clientHeight = clientRect.bottom;
+
+        // Create double buffer
+        HDC hdcBuffer = CreateCompatibleDC(hdcScreen);
+        HBITMAP hbmBuffer = CreateCompatibleBitmap(hdcScreen, g_clientWidth, g_clientHeight);
+        HBITMAP hbmOld = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
 
         // Set up theme font
         HFONT themeFont = FotoSCIhopStyles::CreateThemeFont(16);
-        HFONT oldFont = (HFONT)SelectObject(hdc, themeFont);
+        HFONT oldFont = (HFONT)SelectObject(hdcBuffer, themeFont);
 
         // Theme background
         const FotoSCIhopStyles::UnifiedColors &colors = FotoSCIhopStyles::GetCurrentColors();
-        GetClientRect(hWnd, &rc);
         HBRUSH bgBrush = CreateSolidBrush(colors.background);
-        FillRect(hdc, &rc, bgBrush);
+        FillRect(hdcBuffer, &clientRect, bgBrush);
         DeleteObject(bgBrush);
 
         // Themed top bar
-        RECT topBar = {0, 0, rc.right, 25};
-        FotoSCIhopStyles::DrawRoundedRect(hdc, topBar, colors.surface, colors.border, 0);
+        RECT topBar = {0, 0, clientRect.right, 25};
+        FotoSCIhopStyles::DrawRoundedRect(hdcBuffer, topBar, colors.surface, colors.border, 0);
 
         // Initialize layout variables properly based on file type
         if (globalView)
@@ -2523,79 +2856,192 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         // Enhanced palette with unified styling
         if (tableX > 0)
         {
-            DrawPaletteTable(hdc);
+            DrawPaletteTable(hdcBuffer);
         }
 
-        // REVISED: Use integrated display functions (frame + image together)
+        // Image display
         if (globalView && curLoop && (*curLoop) && !(*curLoop)->Head.flags)
         {
             if (gReferenceBM && !gReferencePriority)
-                DisplayReferenceImage(hdc);
+                DisplayReferenceImage(hdcBuffer);
 
-            // Use enhanced version that includes frame drawing
-            DisplayCurrentViewWithFrame(hdc);
+            DisplayCurrentViewWithFrame(hdcBuffer);
 
             if (gReferenceBM && gReferencePriority)
-                DisplayReferenceImage(hdc);
+                DisplayReferenceImage(hdcBuffer);
 
             if ((*curCell) && (*curCell)->Head.view.linkTableCount >= 1)
-                DisplayLinkPoints(hdc);
+                DisplayLinkPoints(hdcBuffer);
         }
 
         if (globalPicture)
         {
-            // Use enhanced version that includes frame drawing
-            DisplayCurrentPicWithFrame(hdc);
+            DisplayCurrentPicWithFrame(hdcBuffer);
 
             if (showpbars)
-                DisplayPriorityBars(hdc);
+                DisplayPriorityBars(hdcBuffer);
         }
 
-        // Themed cell info display - safe for both file types
+        // Themed cell info display
         if (curCell && (*curCell))
         {
-            DrawCellInfo(hdc);
+            DrawCellInfo(hdcBuffer);
         }
 
-        SelectObject(hdc, oldFont);
+        // Draw zoom controls
+        DrawZoomControls(hdcBuffer);
+
+        // Copy buffer to screen in one operation
+        BitBlt(hdcScreen, 0, 0, g_clientWidth, g_clientHeight, hdcBuffer, 0, 0, SRCCOPY);
+
+        // Cleanup
+        SelectObject(hdcBuffer, oldFont);
+        SelectObject(hdcBuffer, hbmOld);
+        DeleteObject(hbmBuffer);
+        DeleteDC(hdcBuffer);
         FotoSCIhopStyles::SafeDeleteFont(themeFont);
+
         EndPaint(hWnd, &ps);
         break;
     }
 
+    case WM_ERASEBKGND:
+        return 1; // Non-zero means "we handled it"
+
+    case WM_SIZE:
+        UpdateScrollBars();
+        break;
+
+    case WM_HSCROLL:
+    {
+        int scrollCode = LOWORD(wParam);
+        int scrollPos = HIWORD(wParam);
+
+        switch (scrollCode)
+        {
+        case SB_LINEUP:
+            ScrollBy(-20, 0);
+            break;
+        case SB_LINEDOWN:
+            ScrollBy(20, 0);
+            break;
+        case SB_PAGEUP:
+            ScrollBy(-g_clientWidth / 4, 0);
+            break;
+        case SB_PAGEDOWN:
+            ScrollBy(g_clientWidth / 4, 0);
+            break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION:
+            ScrollTo(scrollPos, g_scrollY);
+            break;
+        }
+        break;
+    }
+
+    case WM_VSCROLL:
+    {
+        int scrollCode = LOWORD(wParam);
+        int scrollPos = HIWORD(wParam);
+
+        switch (scrollCode)
+        {
+        case SB_LINEUP:
+            ScrollBy(0, -20);
+            break;
+        case SB_LINEDOWN:
+            ScrollBy(0, 20);
+            break;
+        case SB_PAGEUP:
+            ScrollBy(0, -g_clientHeight / 4);
+            break;
+        case SB_PAGEDOWN:
+            ScrollBy(0, g_clientHeight / 4);
+            break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION:
+            ScrollTo(g_scrollX, scrollPos);
+            break;
+        }
+        break;
+    }
+
+    case WM_MOUSEWHEEL:
+    {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        WORD keys = GET_KEYSTATE_WPARAM(wParam);
+
+        if (keys & MK_CONTROL)
+        {
+            // Ctrl + wheel = zoom
+            if (delta > 0)
+            {
+                ZoomIn();
+            }
+            else
+            {
+                ZoomOut();
+            }
+        }
+        else
+        {
+            // Plain wheel = vertical scroll
+            ScrollBy(0, -delta / 4);
+        }
+        break;
+    }
+
+    case WM_MOUSEMOVE:
+    {
+        int x = LOWORD(lParam);
+        int y = HIWORD(lParam);
+
+        // Handle panning
+        if (g_isPanning)
+        {
+            UpdatePanning(x, y);
+        }
+
+        break;
+    }
+
+    case WM_LBUTTONUP:
+        StopPanning();
+        break;
+
     case WM_LBUTTONDOWN:
     {
-        // Check if magic wand is enabled first
-        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled()) {
+        int x = LOWORD(lParam);
+        int y = HIWORD(lParam);
+
+        // Check zoom control click first
+        if (HandleZoomControlClick(x, y))
+        {
+            break;
+        }
+
+        // Check if magic wand is enabled
+        if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled())
+        {
             int colorIndex;
-            int clientX = LOWORD(lParam);
-            int clientY = HIWORD(lParam);
-            
-            if (SampleColorAtScreenPosition(clientX, clientY, colorIndex)) {
+            if (SampleColorAtScreenPosition(x, y, colorIndex))
+            {
                 g_clutGenerator->SetSelectedFromColor(colorIndex);
-                
-                // Show feedback to user
                 char message[256];
                 sprintf(message, "FotoSCIhop - Magic Wand: Selected color %d as FROM color", colorIndex);
                 SetWindowText(hWnd, message);
-                
-                // Restore normal title after 3 seconds
                 SetTimer(hWnd, 2, 3000, NULL);
-                
-                // Optional: Also show in console for debugging
-                #ifdef _DEBUG
-                char debugMsg[128];
-                sprintf(debugMsg, "[DEBUG] Magic Wand FROM: Color %d at (%d,%d)\n", colorIndex, clientX, clientY);
-                OutputDebugStringA(debugMsg);
-                #endif
-            } else {
-                // Click was outside image area
-                SetWindowText(hWnd, "FotoSCIhop - Magic Wand: Click inside the image area");
-                SetTimer(hWnd, 2, 2000, NULL);
             }
-            return 0; // Consume the message
+            break;
         }
-        // If magic wand not enabled, let default processing handle it
+
+        // Start panning with middle mouse button or space key + drag
+        WORD keys = wParam;
+        if (keys & MK_MBUTTON || GetKeyState(VK_SPACE) & 0x8000)
+        {
+            StartPanning(x, y);
+        }
+
         break;
     }
 

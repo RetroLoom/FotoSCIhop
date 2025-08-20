@@ -188,4 +188,49 @@ extern bool g_requestInputDialog;
 extern bool g_requestPaletteDialog;
 extern bool g_requestExtraDialog;
 
+// Scroll and zoom state
+static int g_scrollX = 0;
+static int g_scrollY = 0;
+static int g_maxScrollX = 0;
+static int g_maxScrollY = 0;
+static int g_clientWidth = 0;
+static int g_clientHeight = 0;
+static bool g_isPanning = false;
+static POINT g_lastPanPoint = {0, 0};
+
+// Enhanced magnification levels (percentage)
+static const int ZOOM_LEVELS[] = {
+    25, 50, 75, 100, 125, 150, 200, 300, 400, 600, 800, 1200, 1600
+};
+static const int ZOOM_LEVEL_COUNT = sizeof(ZOOM_LEVELS) / sizeof(ZOOM_LEVELS[0]);
+static int g_currentZoomIndex = 3; // Start at 100%
+
+// Mouse wheel zoom sensitivity
+static const int WHEEL_ZOOM_DELTA = 120;
+
+// Zoom control functions
+void SetZoomLevel(int zoomPercentage);
+void ZoomIn();
+void ZoomOut();
+void ZoomToFit();
+void ZoomTo100();
+
+// Scroll management functions
+void UpdateScrollBars();
+void ScrollBy(int deltaX, int deltaY);
+void ScrollTo(int x, int y);
+
+// Enhanced coordinate functions
+POINT ScreenToImageCoords(int screenX, int screenY);
+POINT ImageToScreenCoords(int imageX, int imageY);
+
+// Panning support
+void StartPanning(int x, int y);
+void UpdatePanning(int x, int y);
+void StopPanning();
+
+// Zoom UI controls
+void DrawZoomControls(HDC hdc);
+bool HandleZoomControlClick(int x, int y);
+
 #endif // FOTOSCIHOP_H
