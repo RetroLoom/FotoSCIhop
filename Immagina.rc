@@ -63,6 +63,7 @@ BEGIN
         MENUITEM "Import Palette...",           ID_COLORI_IMPORTACOLORI
         MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI
         MENUITEM SEPARATOR
+        MENUITEM "Realmpal Import",             IDM_REALMPAL_IMPORT
         MENUITEM "Clut Generator",              IDM_CLUTGEN
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES
         POPUP "Magnification"
