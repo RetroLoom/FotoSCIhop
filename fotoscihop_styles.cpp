@@ -1,6 +1,5 @@
 #include "stdafx.h"
 #include "fotoscihop_styles.h"
-#include "imgui_integration.h"
 
 namespace FotoSCIhopStyles {
     
@@ -80,94 +79,130 @@ namespace FotoSCIhopStyles {
     // ========================================================================
     
     void ApplyPhotoshopDarkTheme() {
-        using namespace ImGuiDialogs;
-        
         // Clear any existing style stack
         if (g_styleStackDepth > 0) {
-            PopStyleVar(g_styleStackDepth);
+            ImGui::PopStyleVar(g_styleStackDepth);
             g_styleStackDepth = 0;
         }
         
-        ApplyTheme(THEME_PHOTOSHOP);
+        // Apply base dark theme
+        ImGui::StyleColorsDark();
+        
+        // Customize with Photoshop-like colors
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImVec4* colors = style.Colors;
+        
+        colors[ImGuiCol_WindowBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+        colors[ImGuiCol_ChildBg] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
+        colors[ImGuiCol_PopupBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+        colors[ImGuiCol_Border] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+        colors[ImGuiCol_FrameBg] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
+        colors[ImGuiCol_FrameBgHovered] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);
+        colors[ImGuiCol_TitleBg] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
+        colors[ImGuiCol_TitleBgActive] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+        colors[ImGuiCol_Button] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+        colors[ImGuiCol_Header] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
+        colors[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
         
         // Apply our custom settings
-        PushStyleVar2(IMGUI_STYLE_VAR_WINDOW_PADDING, StyleSettings::WINDOW_PADDING_X, StyleSettings::WINDOW_PADDING_Y);
-        PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, StyleSettings::FRAME_PADDING_X, StyleSettings::FRAME_PADDING_Y);
-        PushStyleVar2(IMGUI_STYLE_VAR_ITEM_SPACING, StyleSettings::ITEM_SPACING_X, StyleSettings::ITEM_SPACING_Y);
-        PushStyleVar2(IMGUI_STYLE_VAR_ITEM_INNER_SPACING, StyleSettings::ITEM_INNER_SPACING_X, StyleSettings::ITEM_INNER_SPACING_Y);
-        PushStyleVar(IMGUI_STYLE_VAR_INDENT_SPACING, StyleSettings::INDENT_SPACING);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(StyleSettings::WINDOW_PADDING_X, StyleSettings::WINDOW_PADDING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(StyleSettings::FRAME_PADDING_X, StyleSettings::FRAME_PADDING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(StyleSettings::ITEM_SPACING_X, StyleSettings::ITEM_SPACING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(StyleSettings::ITEM_INNER_SPACING_X, StyleSettings::ITEM_INNER_SPACING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_IndentSpacing, StyleSettings::INDENT_SPACING);
         
-        SetWindowRounding(StyleSettings::WINDOW_ROUNDING);
-        SetFrameRounding(StyleSettings::FRAME_ROUNDING);
-        SetScrollbarRounding(StyleSettings::SCROLLBAR_ROUNDING);
-        SetGrabRounding(StyleSettings::GRAB_ROUNDING);
+        style.WindowRounding = StyleSettings::WINDOW_ROUNDING;
+        style.FrameRounding = StyleSettings::FRAME_ROUNDING;
+        style.ScrollbarRounding = StyleSettings::SCROLLBAR_ROUNDING;
+        style.GrabRounding = StyleSettings::GRAB_ROUNDING;
         
         g_styleStackDepth = 5;  // Track that we pushed 5 style variables
     }
     
     void ApplyPhotoshopLightTheme() {
-        using namespace ImGuiDialogs;
-        
         if (g_styleStackDepth > 0) {
-            PopStyleVar(g_styleStackDepth);
+            ImGui::PopStyleVar(g_styleStackDepth);
             g_styleStackDepth = 0;
         }
         
-        ApplyTheme(THEME_LIGHT);
+        // Apply base light theme
+        ImGui::StyleColorsLight();
         
         // Light theme customizations
-        PushStyleColor(IMGUI_COL_WINDOW_BG, 0.94f, 0.94f, 0.94f, 1.00f);
-        PushStyleColor(IMGUI_COL_CHILD_BG, 0.90f, 0.90f, 0.90f, 1.00f);
-        PushStyleColor(IMGUI_COL_FRAME_BG, 0.85f, 0.85f, 0.85f, 1.00f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.94f, 0.94f, 0.94f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.90f, 0.90f, 0.90f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.85f, 0.85f, 0.85f, 1.00f));
         
-        PushStyleVar2(IMGUI_STYLE_VAR_WINDOW_PADDING, StyleSettings::WINDOW_PADDING_X, StyleSettings::WINDOW_PADDING_Y);
-        PushStyleVar2(IMGUI_STYLE_VAR_FRAME_PADDING, StyleSettings::FRAME_PADDING_X, StyleSettings::FRAME_PADDING_Y);
-        PushStyleVar2(IMGUI_STYLE_VAR_ITEM_SPACING, StyleSettings::ITEM_SPACING_X, StyleSettings::ITEM_SPACING_Y);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(StyleSettings::WINDOW_PADDING_X, StyleSettings::WINDOW_PADDING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(StyleSettings::FRAME_PADDING_X, StyleSettings::FRAME_PADDING_Y));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(StyleSettings::ITEM_SPACING_X, StyleSettings::ITEM_SPACING_Y));
         
-        SetWindowRounding(StyleSettings::WINDOW_ROUNDING);
-        SetFrameRounding(StyleSettings::FRAME_ROUNDING);
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = StyleSettings::WINDOW_ROUNDING;
+        style.FrameRounding = StyleSettings::FRAME_ROUNDING;
         
         g_styleStackDepth = 3;
     }
     
     void ApplyHighContrastTheme() {
-        using namespace ImGuiDialogs;
-        
         if (g_styleStackDepth > 0) {
-            PopStyleVar(g_styleStackDepth);
+            ImGui::PopStyleVar(g_styleStackDepth);
             g_styleStackDepth = 0;
         }
         
-        ApplyTheme(THEME_HIGH_CONTRAST);
+        // Apply base dark theme
+        ImGui::StyleColorsDark();
+        
+        // High contrast customizations
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImVec4* colors = style.Colors;
+        
+        colors[ImGuiCol_Text] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+        colors[ImGuiCol_TextDisabled] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
+        colors[ImGuiCol_WindowBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+        colors[ImGuiCol_ChildBg] = ImVec4(0.10f, 0.10f, 0.10f, 1.00f);
+        colors[ImGuiCol_Border] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
+        colors[ImGuiCol_FrameBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+        colors[ImGuiCol_FrameBgHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
+        colors[ImGuiCol_FrameBgActive] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
+        colors[ImGuiCol_Button] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.60f, 0.60f, 0.60f, 1.00f);
+        colors[ImGuiCol_ButtonActive] = ImVec4(0.80f, 0.80f, 0.80f, 1.00f);
         
         // High contrast uses sharp edges
-        SetWindowRounding(0.0f);
-        SetFrameRounding(0.0f);
-        SetScrollbarRounding(0.0f);
-        SetGrabRounding(0.0f);
+        style.WindowRounding = 0.0f;
+        style.FrameRounding = 0.0f;
+        style.ScrollbarRounding = 0.0f;
+        style.GrabRounding = 0.0f;
+        style.WindowBorderSize = 2.0f;
+        style.FrameBorderSize = 1.0f;
     }
     
     void ApplyRetroSCITheme() {
-        using namespace ImGuiDialogs;
-        
         if (g_styleStackDepth > 0) {
-            PopStyleVar(g_styleStackDepth);
+            ImGui::PopStyleVar(g_styleStackDepth);
             g_styleStackDepth = 0;
         }
         
-        ApplyTheme(THEME_DARK);
+        // Apply base dark theme
+        ImGui::StyleColorsDark();
         
         // Retro SCI colors (dark blue theme)
-        PushStyleColor(IMGUI_COL_WINDOW_BG, 0.0f, 0.0f, 0.2f, 1.00f);
-        PushStyleColor(IMGUI_COL_CHILD_BG, 0.05f, 0.05f, 0.25f, 1.00f);
-        PushStyleColor(IMGUI_COL_FRAME_BG, 0.1f, 0.1f, 0.3f, 1.00f);
-        PushStyleColor(IMGUI_COL_HEADER, 0.2f, 0.2f, 0.5f, 1.00f);
-        PushStyleColor(IMGUI_COL_BUTTON, 0.15f, 0.15f, 0.4f, 1.00f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.2f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.05f, 0.05f, 0.25f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.3f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.2f, 0.5f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.4f, 1.00f));
         
-        SetWindowRounding(2.0f);
-        SetFrameRounding(1.0f);
-        SetScrollbarRounding(1.0f);
-        SetGrabRounding(1.0f);
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 2.0f;
+        style.FrameRounding = 1.0f;
+        style.ScrollbarRounding = 1.0f;
+        style.GrabRounding = 1.0f;
     }
     
     void ApplyCustomTheme() {
@@ -218,101 +253,124 @@ namespace FotoSCIhopStyles {
     
     // Colored text helpers
     void HeaderText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_HEADER[0], TEXT_HEADER[1], TEXT_HEADER[2], TEXT_HEADER[3], text);
+        ImGui::TextColored(ImVec4(TEXT_HEADER[0], TEXT_HEADER[1], TEXT_HEADER[2], TEXT_HEADER[3]), "%s", text);
     }
     
     void WarningText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_WARNING[0], TEXT_WARNING[1], TEXT_WARNING[2], TEXT_WARNING[3], text);
+        ImGui::TextColored(ImVec4(TEXT_WARNING[0], TEXT_WARNING[1], TEXT_WARNING[2], TEXT_WARNING[3]), "%s", text);
     }
     
     void ErrorText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_ERROR[0], TEXT_ERROR[1], TEXT_ERROR[2], TEXT_ERROR[3], text);
+        ImGui::TextColored(ImVec4(TEXT_ERROR[0], TEXT_ERROR[1], TEXT_ERROR[2], TEXT_ERROR[3]), "%s", text);
     }
     
     void SuccessText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_SUCCESS[0], TEXT_SUCCESS[1], TEXT_SUCCESS[2], TEXT_SUCCESS[3], text);
+        ImGui::TextColored(ImVec4(TEXT_SUCCESS[0], TEXT_SUCCESS[1], TEXT_SUCCESS[2], TEXT_SUCCESS[3]), "%s", text);
     }
     
     void InfoText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_INFO[0], TEXT_INFO[1], TEXT_INFO[2], TEXT_INFO[3], text);
+        ImGui::TextColored(ImVec4(TEXT_INFO[0], TEXT_INFO[1], TEXT_INFO[2], TEXT_INFO[3]), "%s", text);
     }
     
     void DisabledText(const char* text) {
-        ImGuiDialogs::TextColored(TEXT_DISABLED[0], TEXT_DISABLED[1], TEXT_DISABLED[2], TEXT_DISABLED[3], text);
+        ImGui::TextColored(ImVec4(TEXT_DISABLED[0], TEXT_DISABLED[1], TEXT_DISABLED[2], TEXT_DISABLED[3]), "%s", text);
     }
     
-    // Button helpers
+    // Button helpers - implement using ImGui's push/pop style colors
     bool ApplyButton(const char* label) {
-        return ImGuiDialogs::ButtonColored(label, BUTTON_APPLY[0], BUTTON_APPLY[1], BUTTON_APPLY[2], BUTTON_APPLY[3]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(BUTTON_APPLY[0], BUTTON_APPLY[1], BUTTON_APPLY[2], BUTTON_APPLY[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(BUTTON_APPLY[0] * 1.2f, BUTTON_APPLY[1] * 1.2f, BUTTON_APPLY[2] * 1.2f, BUTTON_APPLY[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(BUTTON_APPLY[0] * 0.8f, BUTTON_APPLY[1] * 0.8f, BUTTON_APPLY[2] * 0.8f, BUTTON_APPLY[3]));
+        bool result = ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return result;
     }
     
     bool CancelButton(const char* label) {
-        return ImGuiDialogs::ButtonColored(label, BUTTON_CANCEL[0], BUTTON_CANCEL[1], BUTTON_CANCEL[2], BUTTON_CANCEL[3]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(BUTTON_CANCEL[0], BUTTON_CANCEL[1], BUTTON_CANCEL[2], BUTTON_CANCEL[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(BUTTON_CANCEL[0] * 1.2f, BUTTON_CANCEL[1] * 1.2f, BUTTON_CANCEL[2] * 1.2f, BUTTON_CANCEL[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(BUTTON_CANCEL[0] * 0.8f, BUTTON_CANCEL[1] * 0.8f, BUTTON_CANCEL[2] * 0.8f, BUTTON_CANCEL[3]));
+        bool result = ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return result;
     }
     
     bool CloseButton(const char* label) {
-        return ImGuiDialogs::ButtonColored(label, BUTTON_CLOSE[0], BUTTON_CLOSE[1], BUTTON_CLOSE[2], BUTTON_CLOSE[3]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(BUTTON_CLOSE[0], BUTTON_CLOSE[1], BUTTON_CLOSE[2], BUTTON_CLOSE[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(BUTTON_CLOSE[0] * 1.2f, BUTTON_CLOSE[1] * 1.2f, BUTTON_CLOSE[2] * 1.2f, BUTTON_CLOSE[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(BUTTON_CLOSE[0] * 0.8f, BUTTON_CLOSE[1] * 0.8f, BUTTON_CLOSE[2] * 0.8f, BUTTON_CLOSE[3]));
+        bool result = ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return result;
     }
     
     bool AddButton(const char* label) {
-        return ImGuiDialogs::ButtonColored(label, BUTTON_ADD[0], BUTTON_ADD[1], BUTTON_ADD[2], BUTTON_ADD[3]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(BUTTON_ADD[0], BUTTON_ADD[1], BUTTON_ADD[2], BUTTON_ADD[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(BUTTON_ADD[0] * 1.2f, BUTTON_ADD[1] * 1.2f, BUTTON_ADD[2] * 1.2f, BUTTON_ADD[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(BUTTON_ADD[0] * 0.8f, BUTTON_ADD[1] * 0.8f, BUTTON_ADD[2] * 0.8f, BUTTON_ADD[3]));
+        bool result = ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return result;
     }
     
     bool RemoveButton(const char* label) {
-        return ImGuiDialogs::ButtonColored(label, BUTTON_REMOVE[0], BUTTON_REMOVE[1], BUTTON_REMOVE[2], BUTTON_REMOVE[3]);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(BUTTON_REMOVE[0], BUTTON_REMOVE[1], BUTTON_REMOVE[2], BUTTON_REMOVE[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(BUTTON_REMOVE[0] * 1.2f, BUTTON_REMOVE[1] * 1.2f, BUTTON_REMOVE[2] * 1.2f, BUTTON_REMOVE[3]));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(BUTTON_REMOVE[0] * 0.8f, BUTTON_REMOVE[1] * 0.8f, BUTTON_REMOVE[2] * 0.8f, BUTTON_REMOVE[3]));
+        bool result = ImGui::Button(label);
+        ImGui::PopStyleColor(3);
+        return result;
     }
     
     // Status indicators
     void ShowModifiedStatus() {
-        ImGuiDialogs::TextColored(STATUS_MODIFIED[0], STATUS_MODIFIED[1], STATUS_MODIFIED[2], STATUS_MODIFIED[3], "* Modified *");
+        ImGui::TextColored(ImVec4(STATUS_MODIFIED[0], STATUS_MODIFIED[1], STATUS_MODIFIED[2], STATUS_MODIFIED[3]), "* Modified *");
     }
     
     void ShowSavedStatus() {
-        ImGuiDialogs::TextColored(STATUS_SAVED[0], STATUS_SAVED[1], STATUS_SAVED[2], STATUS_SAVED[3], "Saved");
+        ImGui::TextColored(ImVec4(STATUS_SAVED[0], STATUS_SAVED[1], STATUS_SAVED[2], STATUS_SAVED[3]), "Saved");
     }
     
     void ShowUnchangedStatus() {
-        ImGuiDialogs::TextColored(STATUS_UNCHANGED[0], STATUS_UNCHANGED[1], STATUS_UNCHANGED[2], STATUS_UNCHANGED[3], "No changes");
+        ImGui::TextColored(ImVec4(STATUS_UNCHANGED[0], STATUS_UNCHANGED[1], STATUS_UNCHANGED[2], STATUS_UNCHANGED[3]), "No changes");
     }
     
     // Section helpers
     bool BeginFileInfoSection(const char* title) {
-        ImGuiDialogs::PushStyleColor(IMGUI_COL_CHILD_BG, SECTION_FILE_INFO[0], SECTION_FILE_INFO[1], SECTION_FILE_INFO[2], SECTION_FILE_INFO[3]);
-        bool result = ImGuiDialogs::CollapsingHeader(title, true);
-        if (!result) ImGuiDialogs::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(SECTION_FILE_INFO[0], SECTION_FILE_INFO[1], SECTION_FILE_INFO[2], SECTION_FILE_INFO[3]));
+        bool result = ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen);
+        if (!result) ImGui::PopStyleColor();
         return result;
     }
     
     bool BeginResolutionSection(const char* title) {
-        ImGuiDialogs::PushStyleColor(IMGUI_COL_CHILD_BG, SECTION_RESOLUTION[0], SECTION_RESOLUTION[1], SECTION_RESOLUTION[2], SECTION_RESOLUTION[3]);
-        bool result = ImGuiDialogs::CollapsingHeader(title, true);
-        if (!result) ImGuiDialogs::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(SECTION_RESOLUTION[0], SECTION_RESOLUTION[1], SECTION_RESOLUTION[2], SECTION_RESOLUTION[3]));
+        bool result = ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen);
+        if (!result) ImGui::PopStyleColor();
         return result;
     }
     
     bool BeginCellPropsSection(const char* title) {
-        ImGuiDialogs::PushStyleColor(IMGUI_COL_CHILD_BG, SECTION_CELL_PROPS[0], SECTION_CELL_PROPS[1], SECTION_CELL_PROPS[2], SECTION_CELL_PROPS[3]);
-        bool result = ImGuiDialogs::CollapsingHeader(title);
-        if (!result) ImGuiDialogs::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(SECTION_CELL_PROPS[0], SECTION_CELL_PROPS[1], SECTION_CELL_PROPS[2], SECTION_CELL_PROPS[3]));
+        bool result = ImGui::CollapsingHeader(title);
+        if (!result) ImGui::PopStyleColor();
         return result;
     }
     
     bool BeginManagementSection(const char* title) {
-        ImGuiDialogs::PushStyleColor(IMGUI_COL_CHILD_BG, SECTION_MANAGEMENT[0], SECTION_MANAGEMENT[1], SECTION_MANAGEMENT[2], SECTION_MANAGEMENT[3]);
-        bool result = ImGuiDialogs::CollapsingHeader(title);
-        if (!result) ImGuiDialogs::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(SECTION_MANAGEMENT[0], SECTION_MANAGEMENT[1], SECTION_MANAGEMENT[2], SECTION_MANAGEMENT[3]));
+        bool result = ImGui::CollapsingHeader(title);
+        if (!result) ImGui::PopStyleColor();
         return result;
     }
     
     void EndSection() {
-        ImGuiDialogs::PopStyleColor();
+        ImGui::PopStyleColor();
     }
     
     // Theme selection UI
     void ShowThemeSelector() {
-        using namespace ImGuiDialogs;
-        
-        if (CollapsingHeader("Theme Settings")) {
+        if (ImGui::CollapsingHeader("Theme Settings")) {
             const char* themeNames[] = {
                 "Photoshop Dark",
                 "Photoshop Light", 
@@ -322,7 +380,7 @@ namespace FotoSCIhopStyles {
             };
             
             int currentThemeIndex = (int)g_currentTheme;
-            if (Combo("Theme", &currentThemeIndex, themeNames, 5)) {
+            if (ImGui::Combo("Theme", &currentThemeIndex, themeNames, 5)) {
                 SetTheme((ThemeMode)currentThemeIndex);
             }
             
@@ -345,7 +403,7 @@ namespace FotoSCIhopStyles {
                 break;
             }
             
-            if (Button("Apply Theme")) {
+            if (ImGui::Button("Apply Theme")) {
                 RefreshTheme();
             }
         }
@@ -363,7 +421,7 @@ namespace FotoSCIhopStyles {
     void Shutdown() {
         // Clean up any style stack
         if (g_styleStackDepth > 0) {
-            ImGuiDialogs::PopStyleVar(g_styleStackDepth);
+            ImGui::PopStyleVar(g_styleStackDepth);
             g_styleStackDepth = 0;
         }
     }
@@ -382,18 +440,18 @@ namespace FotoSCIhopStyles {
     }
     
     void SetWindowRounding(float rounding) {
-        ImGuiDialogs::SetWindowRounding(rounding);
+        ImGui::GetStyle().WindowRounding = rounding;
     }
     
     void SetFrameRounding(float rounding) {
-        ImGuiDialogs::SetFrameRounding(rounding);
+        ImGui::GetStyle().FrameRounding = rounding;
     }
     
     void SetSpacing(float x, float y) {
-        // This would need to be implemented to change spacing at runtime
+        ImGui::GetStyle().ItemSpacing = ImVec2(x, y);
     }
     
     void SetPadding(float x, float y) {
-        // This would need to be implemented to change padding at runtime
+        ImGui::GetStyle().WindowPadding = ImVec2(x, y);
     }
 }

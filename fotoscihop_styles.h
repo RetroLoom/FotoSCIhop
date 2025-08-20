@@ -1,5 +1,5 @@
 #pragma once
-#include "imgui_integration.h"
+#include "imgui.h"
 
 // ============================================================================
 // FOTOSCIHOP STYLING SYSTEM
