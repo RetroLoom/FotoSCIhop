@@ -65,6 +65,7 @@
 #define ID_Menu32836                    32836
 #define IDM_REFERENCE                   32837
 #define IDM_CLUTGEN                     32840
+#define IDM_REALMPAL_IMPORT             32841
 #define ID_LINKS                        -200
 #define ID_NOPALETTE                    -121
 #define ID_WRONGPALETTELOC              -120
@@ -80,7 +81,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
 #define _APS_NEXT_RESOURCE_VALUE        142
-#define _APS_NEXT_COMMAND_VALUE         32841
+#define _APS_NEXT_COMMAND_VALUE         32844
 #define _APS_NEXT_CONTROL_VALUE         1043
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
