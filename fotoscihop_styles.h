@@ -151,4 +151,101 @@ namespace FotoSCIhopStyles {
     void SetFrameRounding(float rounding);
     void SetSpacing(float x, float y);
     void SetPadding(float x, float y);
+
+    // ========================================================================
+    // COLOR CONVERSION UTILITIES
+    // ========================================================================
+    
+    // Convert ImGui color to Win32 COLORREF
+    inline COLORREF ImGuiToColorRef(const float color[4]) {
+        return RGB(
+            (BYTE)(color[0] * 255.0f),
+            (BYTE)(color[1] * 255.0f), 
+            (BYTE)(color[2] * 255.0f)
+        );
+    }
+    
+    // Convert Win32 COLORREF to ImGui color
+    inline ImVec4 ColorRefToImGui(COLORREF color) {
+        return ImVec4(
+            GetRValue(color) / 255.0f,
+            GetGValue(color) / 255.0f,
+            GetBValue(color) / 255.0f,
+            1.0f
+        );
+    }
+
+    // ========================================================================
+    // UNIFIED THEME COLORS - SINGLE SOURCE OF TRUTH
+    // ========================================================================
+
+    struct UnifiedColors {
+        // Background colors
+        COLORREF background;
+        COLORREF surface; 
+        COLORREF surfaceHover;
+        
+        // Text colors
+        COLORREF textPrimary;
+        COLORREF textSecondary;
+        COLORREF textDisabled;
+        
+        // Accent colors
+        COLORREF accent;
+        COLORREF accentHover;
+        
+        // Border colors
+        COLORREF border;
+        COLORREF borderLight;
+        
+        // Status colors
+        COLORREF success;
+        COLORREF warning;
+        COLORREF error;
+        COLORREF info;
+        
+        // Button colors
+        COLORREF buttonApply;
+        COLORREF buttonCancel;
+        COLORREF buttonNeutral;
+    };
+
+    // Get current theme colors
+    const UnifiedColors& GetCurrentColors();
+    
+    // ========================================================================
+    // WIN32/GDI DRAWING HELPERS
+    // ========================================================================
+    
+    // Status type enum (must be declared before functions that use it)
+    enum StatusType {
+        STATUS_NORMAL,
+        STATUS_SUCCESS,
+        STATUS_WARNING,
+        STATUS_ERROR,
+        STATUS_INFO
+    };
+    
+    // Drawing helper functions using current theme
+    void DrawRoundedRect(HDC hdc, RECT rect, COLORREF fillColor, COLORREF borderColor = 0, int radius = 4);
+    void DrawThemedButton(HDC hdc, RECT rect, const char* text, bool hovered = false, bool pressed = false, bool enabled = true);
+    void DrawThemedText(HDC hdc, const char* text, int x, int y, int width, int height, bool secondary = false);
+    void DrawThemedFrame(HDC hdc, RECT rect, bool highlighted = false);
+    
+    // Status drawing
+    void DrawStatusText(HDC hdc, const char* text, int x, int y, int width, int height, StatusType type = STATUS_NORMAL);
+    
+    // ========================================================================
+    // THEME-AWARE WIN32 HELPERS
+    // ========================================================================
+    
+    // Create brushes and pens for current theme (remember to delete!)
+    HBRUSH CreateThemeBrush(const char* colorName);
+    HPEN CreateThemePen(const char* colorName, int width = 1);
+    HFONT CreateThemeFont(int size = 16, bool bold = false);
+    
+    // Safe cleanup helpers
+    void SafeDeleteBrush(HBRUSH& brush);
+    void SafeDeletePen(HPEN& pen);
+    void SafeDeleteFont(HFONT& font);
 }

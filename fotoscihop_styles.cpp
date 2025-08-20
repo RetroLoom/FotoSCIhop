@@ -222,6 +222,7 @@ namespace FotoSCIhopStyles {
     void RefreshTheme() {
         if (!g_stylesNeedRefresh) return;
         
+        // Apply ImGui theme
         switch (g_currentTheme) {
         case ThemeMode::PHOTOSHOP_DARK:
             ApplyPhotoshopDarkTheme();
@@ -238,6 +239,12 @@ namespace FotoSCIhopStyles {
         case ThemeMode::CUSTOM:
             ApplyCustomTheme();
             break;
+        }
+        
+        // Force Win32 window redraw to update colors
+        extern HWND hWnd;  // Reference the global hWnd from main application
+        if (::hWnd) {  // Use :: to specify global scope
+            InvalidateRect(::hWnd, NULL, TRUE);
         }
         
         g_stylesNeedRefresh = false;
@@ -453,5 +460,278 @@ namespace FotoSCIhopStyles {
     
     void SetPadding(float x, float y) {
         ImGui::GetStyle().WindowPadding = ImVec2(x, y);
+    }
+
+    // ========================================================================
+    // THEME COLOR DEFINITIONS
+    // ========================================================================
+
+    static UnifiedColors g_photoshopDarkColors = {
+        RGB(45, 45, 48),        // background
+        RGB(60, 60, 65),        // surface
+        RGB(70, 70, 75),        // surfaceHover
+        RGB(241, 241, 241),     // textPrimary
+        RGB(170, 170, 170),     // textSecondary
+        RGB(120, 120, 120),     // textDisabled
+        RGB(0, 122, 204),       // accent
+        RGB(28, 151, 234),      // accentHover
+        RGB(85, 85, 85),        // border
+        RGB(100, 100, 100),     // borderLight
+        RGB(16, 185, 129),      // success
+        RGB(245, 158, 11),      // warning
+        RGB(239, 68, 68),       // error
+        RGB(59, 130, 246),      // info
+        RGB(34, 197, 94),       // buttonApply
+        RGB(239, 68, 68),       // buttonCancel
+        RGB(107, 114, 128)      // buttonNeutral
+    };
+
+    static UnifiedColors g_photoshopLightColors = {
+        RGB(240, 240, 240),     // background
+        RGB(250, 250, 250),     // surface
+        RGB(255, 255, 255),     // surfaceHover
+        RGB(17, 24, 39),        // textPrimary
+        RGB(75, 85, 99),        // textSecondary
+        RGB(156, 163, 175),     // textDisabled
+        RGB(37, 99, 235),       // accent
+        RGB(29, 78, 216),       // accentHover
+        RGB(209, 213, 219),     // border
+        RGB(156, 163, 175),     // borderLight
+        RGB(34, 197, 94),       // success
+        RGB(245, 158, 11),      // warning
+        RGB(239, 68, 68),       // error
+        RGB(59, 130, 246),      // info
+        RGB(34, 197, 94),       // buttonApply
+        RGB(239, 68, 68),       // buttonCancel
+        RGB(107, 114, 128)      // buttonNeutral
+    };
+
+    static UnifiedColors g_highContrastColors = {
+        RGB(0, 0, 0),           // background
+        RGB(32, 32, 32),        // surface
+        RGB(64, 64, 64),        // surfaceHover
+        RGB(255, 255, 255),     // textPrimary
+        RGB(192, 192, 192),     // textSecondary
+        RGB(128, 128, 128),     // textDisabled
+        RGB(0, 255, 255),       // accent
+        RGB(64, 255, 255),      // accentHover
+        RGB(255, 255, 255),     // border
+        RGB(192, 192, 192),     // borderLight
+        RGB(0, 255, 0),         // success
+        RGB(255, 255, 0),       // warning
+        RGB(255, 0, 0),         // error
+        RGB(0, 255, 255),       // info
+        RGB(0, 255, 0),         // buttonApply
+        RGB(255, 0, 0),         // buttonCancel
+        RGB(128, 128, 128)      // buttonNeutral
+    };
+
+    static UnifiedColors g_retroSCIColors = {
+        RGB(0, 0, 51),          // background
+        RGB(13, 13, 64),        // surface
+        RGB(26, 26, 77),        // surfaceHover
+        RGB(192, 192, 255),     // textPrimary
+        RGB(128, 128, 192),     // textSecondary
+        RGB(64, 64, 128),       // textDisabled
+        RGB(51, 153, 255),      // accent
+        RGB(102, 178, 255),     // accentHover
+        RGB(51, 51, 102),       // border
+        RGB(77, 77, 128),       // borderLight
+        RGB(51, 255, 51),       // success
+        RGB(255, 255, 51),      // warning
+        RGB(255, 51, 51),       // error
+        RGB(51, 255, 255),      // info
+        RGB(51, 255, 51),       // buttonApply
+        RGB(255, 51, 51),       // buttonCancel
+        RGB(102, 102, 153)      // buttonNeutral
+    };
+
+    // ========================================================================
+    // CORE FUNCTIONS
+    // ========================================================================
+
+    const UnifiedColors& GetCurrentColors() {
+        switch (GetCurrentTheme()) {
+        case ThemeMode::PHOTOSHOP_LIGHT:
+            return g_photoshopLightColors;
+        case ThemeMode::HIGH_CONTRAST:
+            return g_highContrastColors;
+        case ThemeMode::RETRO_SCI:
+            return g_retroSCIColors;
+        case ThemeMode::CUSTOM:
+            return g_photoshopDarkColors;
+        case ThemeMode::PHOTOSHOP_DARK:
+        default:
+            return g_photoshopDarkColors;
+        }
+    }
+
+    // ========================================================================
+    // DRAWING HELPER IMPLEMENTATIONS
+    // ========================================================================
+
+    void DrawRoundedRect(HDC hdc, RECT rect, COLORREF fillColor, COLORREF borderColor, int radius) {
+        HBRUSH brush = CreateSolidBrush(fillColor);
+        HPEN pen = borderColor ? CreatePen(PS_SOLID, 1, borderColor) : CreatePen(PS_SOLID, 1, GetCurrentColors().border);
+        
+        HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, brush);
+        HPEN oldPen = (HPEN)SelectObject(hdc, pen);
+        
+        if (radius > 0) {
+            RoundRect(hdc, rect.left, rect.top, rect.right, rect.bottom, radius * 2, radius * 2);
+        } else {
+            Rectangle(hdc, rect.left, rect.top, rect.right, rect.bottom);
+        }
+        
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(brush);
+        DeleteObject(pen);
+    }
+
+    void DrawThemedButton(HDC hdc, RECT rect, const char* text, bool hovered, bool pressed, bool enabled) {
+        const UnifiedColors& colors = GetCurrentColors();
+        COLORREF bgColor, textColor;
+        
+        if (!enabled) {
+            bgColor = colors.surface;
+            textColor = colors.textDisabled;
+        } else if (pressed) {
+            bgColor = colors.accentHover;
+            textColor = colors.textPrimary;
+        } else if (hovered) {
+            bgColor = colors.accent;
+            textColor = colors.textPrimary;
+        } else {
+            bgColor = colors.surface;
+            textColor = colors.textPrimary;
+        }
+        
+        DrawRoundedRect(hdc, rect, bgColor, colors.border, 4);
+        
+        COLORREF oldTextColor = SetTextColor(hdc, textColor);
+        int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+        
+        DrawText(hdc, text, -1, &rect, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+        
+        SetTextColor(hdc, oldTextColor);
+        SetBkMode(hdc, oldBkMode);
+    }
+
+    void DrawThemedText(HDC hdc, const char* text, int x, int y, int width, int height, bool secondary) {
+        const UnifiedColors& colors = GetCurrentColors();
+        COLORREF textColor = secondary ? colors.textSecondary : colors.textPrimary;
+        
+        COLORREF oldColor = SetTextColor(hdc, textColor);
+        int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+        
+        RECT textRect = {x, y, x + width, y + height};
+        DrawText(hdc, text, -1, &textRect, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+        
+        SetTextColor(hdc, oldColor);
+        SetBkMode(hdc, oldBkMode);
+    }
+
+    void DrawThemedFrame(HDC hdc, RECT rect, bool highlighted) {
+        const UnifiedColors& colors = GetCurrentColors();
+        COLORREF borderColor = highlighted ? colors.accent : colors.border;
+        DrawRoundedRect(hdc, rect, colors.surface, borderColor, 4);
+    }
+
+    void DrawStatusText(HDC hdc, const char* text, int x, int y, int width, int height, StatusType type) {
+        const UnifiedColors& colors = GetCurrentColors();
+        COLORREF textColor;
+        
+        switch (type) {
+        case STATUS_SUCCESS:
+            textColor = colors.success;
+            break;
+        case STATUS_WARNING:
+            textColor = colors.warning;
+            break;
+        case STATUS_ERROR:
+            textColor = colors.error;
+            break;
+        case STATUS_INFO:
+            textColor = colors.info;
+            break;
+        case STATUS_NORMAL:
+        default:
+            textColor = colors.textPrimary;
+            break;
+        }
+        
+        COLORREF oldColor = SetTextColor(hdc, textColor);
+        int oldBkMode = SetBkMode(hdc, TRANSPARENT);
+        
+        RECT textRect = {x, y, x + width, y + height};
+        DrawText(hdc, text, -1, &textRect, DT_SINGLELINE | DT_LEFT | DT_VCENTER);
+        
+        SetTextColor(hdc, oldColor);
+        SetBkMode(hdc, oldBkMode);
+    }
+
+    // ========================================================================
+    // RESOURCE CREATION HELPERS
+    // ========================================================================
+
+    HBRUSH CreateThemeBrush(const char* colorName) {
+        const UnifiedColors& colors = GetCurrentColors();
+        
+        if (strcmp(colorName, "background") == 0) return CreateSolidBrush(colors.background);
+        if (strcmp(colorName, "surface") == 0) return CreateSolidBrush(colors.surface);
+        if (strcmp(colorName, "accent") == 0) return CreateSolidBrush(colors.accent);
+        if (strcmp(colorName, "success") == 0) return CreateSolidBrush(colors.success);
+        if (strcmp(colorName, "warning") == 0) return CreateSolidBrush(colors.warning);
+        if (strcmp(colorName, "error") == 0) return CreateSolidBrush(colors.error);
+        
+        return CreateSolidBrush(colors.surface);
+    }
+
+    HPEN CreateThemePen(const char* colorName, int width) {
+        const UnifiedColors& colors = GetCurrentColors();
+        
+        if (strcmp(colorName, "border") == 0) return CreatePen(PS_SOLID, width, colors.border);
+        if (strcmp(colorName, "accent") == 0) return CreatePen(PS_SOLID, width, colors.accent);
+        if (strcmp(colorName, "success") == 0) return CreatePen(PS_SOLID, width, colors.success);
+        if (strcmp(colorName, "warning") == 0) return CreatePen(PS_SOLID, width, colors.warning);
+        if (strcmp(colorName, "error") == 0) return CreatePen(PS_SOLID, width, colors.error);
+        
+        return CreatePen(PS_SOLID, width, colors.border);
+    }
+
+    HFONT CreateThemeFont(int size, bool bold) {
+        return CreateFont(
+            size, 0, 0, 0, 
+            bold ? FW_BOLD : FW_NORMAL, 
+            FALSE, FALSE, FALSE, 
+            DEFAULT_CHARSET, 
+            OUT_DEFAULT_PRECIS, 
+            CLIP_DEFAULT_PRECIS, 
+            CLEARTYPE_QUALITY, 
+            VARIABLE_PITCH | FF_SWISS, 
+            TEXT("Segoe UI")
+        );
+    }
+
+    void SafeDeleteBrush(HBRUSH& brush) {
+        if (brush && brush != GetStockObject(NULL_BRUSH)) {
+            DeleteObject(brush);
+            brush = NULL;
+        }
+    }
+
+    void SafeDeletePen(HPEN& pen) {
+        if (pen && pen != GetStockObject(NULL_PEN)) {
+            DeleteObject(pen);
+            pen = NULL;
+        }
+    }
+
+    void SafeDeleteFont(HFONT& font) {
+        if (font && font != GetStockObject(SYSTEM_FONT)) {
+            DeleteObject(font);
+            font = NULL;
+        }
     }
 }
