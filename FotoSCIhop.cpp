@@ -1846,8 +1846,8 @@ void DrawCellInfo(HDC hdc) {
     const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
     CelBase *bCell = (CelBase *)&(*curCell)->Head;
     
-    // Themed info panel background
-    RECT infoPanel = {10, 2, 500, 23};
+    // Themed info panel background - extend to accommodate zoom controls
+    RECT infoPanel = {10, 2, g_clientWidth - 10, 23};
     FotoSCIhopStyles::DrawThemedFrame(hdc, infoPanel);
     
     char textBuffer[128];
@@ -1912,7 +1912,56 @@ void DrawCellInfo(HDC hdc) {
     // Changed indicator with theme color - safe for both file types
     if ((*curCell)->changed) {
         FotoSCIhopStyles::DrawStatusText(hdc, "* Modified", xPos, 5, 80, 15, FotoSCIhopStyles::STATUS_WARNING);
+        xPos += 85;
     }
+
+    // Add some spacing before zoom controls
+    xPos += 20;
+
+    // Draw zoom controls inline after cell info
+    DrawZoomControls(hdc, xPos);
+}
+
+void DrawZoomControls(HDC hdc, int startX) {
+    const FotoSCIhopStyles::UnifiedColors& colors = FotoSCIhopStyles::GetCurrentColors();
+    
+    // Calculate available space for zoom controls
+    int availableSpace = g_clientWidth - startX - 20; // 20px right margin
+    
+    // Only draw if we have enough space (minimum 200px for all controls)
+    if (availableSpace < 200) {
+        return; // Not enough space, skip zoom controls
+    }
+    
+    int xPos = startX;
+    
+    // Zoom percentage text
+    char zoomText[64];
+    sprintf(zoomText, "Zoom: %d%%", MagnifyFactor);
+    FotoSCIhopStyles::DrawThemedText(hdc, zoomText, xPos, 5, 80, 15);
+    xPos += 85;
+    
+    // Compact zoom buttons - smaller than the old floating panel
+    int buttonWidth = 20;
+    int buttonHeight = 15;
+    int buttonY = 4;
+    
+    RECT zoomOutBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+    xPos += buttonWidth + 2;
+    
+    RECT zoomInBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+    xPos += buttonWidth + 5; // Extra space before next group
+    
+    RECT fitBtn = {xPos, buttonY, xPos + buttonWidth + 5, buttonY + buttonHeight}; // Slightly wider for "Fit"
+    xPos += buttonWidth + 7;
+    
+    RECT resetBtn = {xPos, buttonY, xPos + buttonWidth + 10, buttonY + buttonHeight}; // Wider for "100%"
+    
+    // Draw buttons with compact styling
+    FotoSCIhopStyles::DrawThemedButton(hdc, zoomOutBtn, "-", false, false, g_currentZoomIndex > 0);
+    FotoSCIhopStyles::DrawThemedButton(hdc, zoomInBtn, "+", false, false, g_currentZoomIndex < ZOOM_LEVEL_COUNT - 1);
+    FotoSCIhopStyles::DrawThemedButton(hdc, fitBtn, "Fit", false, false, true);
+    FotoSCIhopStyles::DrawThemedButton(hdc, resetBtn, "100%", false, false, true);
 }
 
 void EnsureScrollBarsAfterLoad() {
@@ -2340,17 +2389,61 @@ void DrawZoomControls(HDC hdc) {
 }
 
 bool HandleZoomControlClick(int x, int y) {
-    RECT zoomPanel = {g_clientWidth - 180, 30, g_clientWidth - 10, 80};
-    
-    if (x < zoomPanel.left || x > zoomPanel.right || y < zoomPanel.top || y > zoomPanel.bottom) {
-        return false; // Click not in zoom control area
+    // Only check if click is in the top bar area
+    if (y < 2 || y > 23) {
+        return false; // Click not in top bar
     }
     
-    RECT zoomOutBtn = {zoomPanel.left + 10, zoomPanel.top + 25, zoomPanel.left + 35, zoomPanel.top + 45};
-    RECT zoomInBtn = {zoomPanel.left + 40, zoomPanel.top + 25, zoomPanel.left + 65, zoomPanel.top + 45};
-    RECT fitBtn = {zoomPanel.left + 70, zoomPanel.top + 25, zoomPanel.left + 100, zoomPanel.top + 45};
-    RECT resetBtn = {zoomPanel.left + 105, zoomPanel.top + 25, zoomPanel.left + 135, zoomPanel.top + 45};
+    // Calculate where zoom controls start (same logic as DrawCellInfo)
+    int xPos = 20;
     
+    // Account for cell info width - this matches the xPos calculation in DrawCellInfo
+    if (globalView) {
+        xPos += 85; // Loop info
+        if (curLoop && (*curLoop)) {
+            xPos += 125; // Cell or mirror info
+            if (!(*curLoop)->Head.flags) {
+                xPos += 85; // Skip color info
+            }
+        }
+    }
+    
+    if (globalPicture) {
+        xPos += 85; // Version info
+        xPos += 85; // Cell info
+        xPos += 85; // Skip color info
+    }
+    
+    if (curCell && (*curCell) && (*curCell)->changed) {
+        xPos += 85; // Modified indicator
+    }
+    
+    xPos += 20; // Spacing before zoom controls
+    xPos += 85; // Zoom text width
+    
+    // Check if we have enough space for zoom controls
+    int availableSpace = g_clientWidth - xPos - 20;
+    if (availableSpace < 200) {
+        return false; // Zoom controls not drawn due to space constraints
+    }
+    
+    // Calculate button positions (matches DrawInlineZoomControls)
+    int buttonWidth = 20;
+    int buttonHeight = 15;
+    int buttonY = 4;
+    
+    RECT zoomOutBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+    xPos += buttonWidth + 2;
+    
+    RECT zoomInBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+    xPos += buttonWidth + 5;
+    
+    RECT fitBtn = {xPos, buttonY, xPos + buttonWidth + 5, buttonY + buttonHeight};
+    xPos += buttonWidth + 7;
+    
+    RECT resetBtn = {xPos, buttonY, xPos + buttonWidth + 10, buttonY + buttonHeight};
+    
+    // Check button clicks
     if (PtInRect(&zoomOutBtn, {x, y})) {
         ZoomOut();
         return true;
@@ -3061,9 +3154,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             DrawCellInfo(hdcBuffer);
         }
-
-        // Draw zoom controls
-        DrawZoomControls(hdcBuffer);
 
         // Copy buffer to screen in one operation
         BitBlt(hdcScreen, 0, 0, g_clientWidth, g_clientHeight, hdcBuffer, 0, 0, SRCCOPY);

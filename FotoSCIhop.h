@@ -230,7 +230,7 @@ void UpdatePanning(int x, int y);
 void StopPanning();
 
 // Zoom UI controls
-void DrawZoomControls(HDC hdc);
+void DrawZoomControls(HDC hdc, int startX);
 bool HandleZoomControlClick(int x, int y);
 
 #endif // FOTOSCIHOP_H
