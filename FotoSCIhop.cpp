@@ -108,69 +108,74 @@ HWND hWndTopBar;
 HFONT hfDefault;
 RGBQUAD skipColor;
 
-void ShowLoopCell(unsigned char newloop, unsigned char newcell)
-{
-	// Validate loop index first
-	if (!globalView || newloop >= globalView->Head.view32.loopCount) {
-		return; // Invalid loop index
-	}
-	
-	// Validate that the loop exists
-	if (!globalView->loops[newloop]) {
-		return; // Loop is null
-	}
-	
-	// Validate cell index for this specific loop
-	if (newcell >= globalView->loops[newloop]->Head.numCels) {
-		// If cell index is too high, use the last cell in this loop
-		if (globalView->loops[newloop]->Head.numCels > 0) {
-			newcell = globalView->loops[newloop]->Head.numCels - 1;
-		} else {
-			newcell = 0; // Loop has no cells, use 0
-		}
-	}
-	
-	curLoopIndex = newloop;
-	
-	curLoop = &globalView->loops[newloop];
-	if (curLoop)
-	{		
-		// Additional safety check before accessing cells
-		if (newcell < globalView->loops[newloop]->Head.numCels && globalView->loops[newloop]->cells[newcell]) {
-			curCell = &globalView->loops[newloop]->cells[newcell];
-		} else {
-			curCell = nullptr; // Set to null if cell doesn't exist
-		}
-		
-		if (curCell || (*curLoop)->Head.flags)
-		{					
-			if (curCell && !(*curLoop)->Head.flags)
-				curCellIndex = newcell;
+void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
+    // Validate loop index first
+    if (!globalView || newloop >= globalView->Head.view32.loopCount) {
+        return; // Invalid loop index
+    }
+    
+    // Validate that the loop exists
+    if (!globalView->loops[newloop]) {
+        return; // Loop is null
+    }
+    
+    // Validate cell index for this specific loop
+    if (newcell >= globalView->loops[newloop]->Head.numCels) {
+        // If cell index is too high, use the last cell in this loop
+        if (globalView->loops[newloop]->Head.numCels > 0) {
+            newcell = globalView->loops[newloop]->Head.numCels - 1;
+        } else {
+            newcell = 0; // Loop has no cells, use 0
+        }
+    }
+    
+    curLoopIndex = newloop;
+    
+    curLoop = &globalView->loops[newloop];
+    if (curLoop) {
+        // Additional safety check before accessing cells
+        if (newcell < globalView->loops[newloop]->Head.numCels && globalView->loops[newloop]->cells[newcell]) {
+            curCell = &globalView->loops[newloop]->cells[newcell];
+        } else {
+            curCell = nullptr; // Set to null if cell doesn't exist
+        }
+        
+        if (curCell || (*curLoop)->Head.flags) {
+            if (curCell && !(*curLoop)->Head.flags) {
+                curCellIndex = newcell;
+                
+                // CRITICAL: Ensure image data is loaded before updating scroll bars
+                if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                    (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                }
+            }
 
-			HMENU menu = GetMenu(hWnd); 
-		
-			EnableMenuItem(menu, ID_IMPORTABMP, ((*curLoop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-			EnableMenuItem(menu, ID_ESPORTABMP, ((*curLoop)->Head.flags ?MF_GRAYED :MF_ENABLED));
-			EnableMenuItem(menu, ID_CICLOPRECEDENTE, MF_ENABLED);
-			EnableMenuItem(menu, ID_CICLOSUCCESSIVO, MF_ENABLED);
-			if (newloop == globalView->Head.view32.loopCount - 1)
-				EnableMenuItem(menu, ID_CICLOSUCCESSIVO, MF_GRAYED);
-		
-			if (newloop == 0)
-				EnableMenuItem(menu, ID_CICLOPRECEDENTE, MF_GRAYED);
+            HMENU menu = GetMenu(hWnd); 
+        
+            EnableMenuItem(menu, ID_IMPORTABMP, ((*curLoop)->Head.flags ? MF_GRAYED : MF_ENABLED));
+            EnableMenuItem(menu, ID_ESPORTABMP, ((*curLoop)->Head.flags ? MF_GRAYED : MF_ENABLED));
+            EnableMenuItem(menu, ID_CICLOPRECEDENTE, MF_ENABLED);
+            EnableMenuItem(menu, ID_CICLOSUCCESSIVO, MF_ENABLED);
+            if (newloop == globalView->Head.view32.loopCount - 1)
+                EnableMenuItem(menu, ID_CICLOSUCCESSIVO, MF_GRAYED);
+        
+            if (newloop == 0)
+                EnableMenuItem(menu, ID_CICLOPRECEDENTE, MF_GRAYED);
 
-			EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_ENABLED);
-			EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_ENABLED);
-			if ((newcell == globalView->loops[newloop]->Head.numCels -1) || (globalView->loops[newloop]->Head.numCels==0) )
-				EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
-		
-			if (newcell == 0)
-				EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
+            EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_ENABLED);
+            EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_ENABLED);
+            if ((newcell == globalView->loops[newloop]->Head.numCels - 1) || (globalView->loops[newloop]->Head.numCels == 0))
+                EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
+        
+            if (newcell == 0)
+                EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 
+            // CRITICAL: Update scroll bars after image data is ready
+            UpdateScrollBars();
 
-			InvalidateRgn(hWnd, NULL, true);
-		}
-	}
+            InvalidateRgn(hWnd, NULL, true);
+        }
+    }
 }
 
 void SetMagnify(int value)
@@ -209,53 +214,59 @@ void SetMagnify(int value)
 
 }
 
-void ShowCell(unsigned char newcell)
-{
-	// Validate that we have a picture loaded
-	if (!globalPicture) {
-		return;
-	}
-	
-	// Validate cell index
-	int totalCells = globalPicture->CellsCount();
-	if (newcell >= totalCells) {
-		// If cell index is too high, use the last cell
-		if (totalCells > 0) {
-			newcell = totalCells - 1;
-		} else {
-			newcell = 0; // No cells, use 0
-		}
-	}
-	
-	// Additional bounds check
-	if (newcell < 0) {
-		newcell = 0;
-	}
-	
-	curCellIndex = newcell;
-	
-	// Validate that the cell exists before accessing it
-	if (newcell < globalPicture->CellsCount() && globalPicture->cells[newcell]) {
-		curCell = &globalPicture->cells[curCellIndex];
-	} else {
-		curCell = nullptr; // Set to null if cell doesn't exist
-		return; // Exit early if cell is invalid
-	}
-	
-	if (curCell)
-	{	
-		HMENU menu = GetMenu(hWnd); 
+void ShowCell(unsigned char newcell) {
+    // Validate that we have a picture loaded
+    if (!globalPicture) {
+        return;
+    }
+    
+    // Validate cell index
+    int totalCells = globalPicture->CellsCount();
+    if (newcell >= totalCells) {
+        // If cell index is too high, use the last cell
+        if (totalCells > 0) {
+            newcell = totalCells - 1;
+        } else {
+            newcell = 0; // No cells, use 0
+        }
+    }
+    
+    // Additional bounds check
+    if (newcell < 0) {
+        newcell = 0;
+    }
+    
+    curCellIndex = newcell;
+    
+    // Validate that the cell exists before accessing it
+    if (newcell < globalPicture->CellsCount() && globalPicture->cells[newcell]) {
+        curCell = &globalPicture->cells[curCellIndex];
+    } else {
+        curCell = nullptr; // Set to null if cell doesn't exist
+        return; // Exit early if cell is invalid
+    }
+    
+    if (curCell) {
+        // CRITICAL: Ensure image data is loaded before updating scroll bars
+        if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+        }
+        
+        HMENU menu = GetMenu(hWnd); 
 
-		EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_ENABLED);
-		EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_ENABLED);
-		if (curCellIndex == globalPicture->CellsCount() - 1)
-			EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
-		
-		if (curCellIndex == 0)
-			EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
+        EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_ENABLED);
+        EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_ENABLED);
+        if (curCellIndex == globalPicture->CellsCount() - 1)
+            EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
+        
+        if (curCellIndex == 0)
+            EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 
-		InvalidateRgn(hWnd, NULL, true);
-	}
+        // CRITICAL: Update scroll bars after image data is ready
+        UpdateScrollBars();
+        
+        InvalidateRgn(hWnd, NULL, true);
+    }
 }
 
 BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
@@ -450,7 +461,12 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
       g_clientWidth = clientRect.right;
       g_clientHeight = clientRect.bottom;
 
-      UpdateScrollBars();
+      // IMPORTANT: Don't call UpdateScrollBars here - let ShowCell/ShowLoopCell handle it
+      // after image data is properly loaded
+      
+      // Use a timer to ensure scroll bars are updated after image loading is complete
+      SetTimer(hWnd, 3, 100, NULL); // 100ms delay
+      
       InvalidateRect(hWnd, NULL, FALSE);
 
       return (result==ID_NOERROR);
@@ -1899,6 +1915,28 @@ void DrawCellInfo(HDC hdc) {
     }
 }
 
+void EnsureScrollBarsAfterLoad() {
+    // Small delay to ensure all image data is loaded
+    // This can be called after ShowCell or ShowLoopCell
+    
+    // Force image data to be loaded if not already
+    if (curCell && (*curCell)) {
+        if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+        }
+    }
+    
+    // Update scroll bars with current image data
+    UpdateScrollBars();
+    
+    #ifdef _DEBUG
+    char debugMsg[256];
+    sprintf(debugMsg, "[DEBUG] EnsureScrollBarsAfterLoad: maxScrollX=%d, maxScrollY=%d\n", 
+            g_maxScrollX, g_maxScrollY);
+    OutputDebugStringA(debugMsg);
+    #endif
+}
+
 int FindZoomIndex(int percentage) {
     // Find the first zoom level that's >= the requested percentage
     for (int i = 0; i < ZOOM_LEVEL_COUNT; i++) {
@@ -3236,6 +3274,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         SetWindowText(hWnd, wname);
+    }
+    else if (wParam == 3) { // Scroll bar initialization timer
+        KillTimer(hWnd, 3);
+        EnsureScrollBarsAfterLoad();
     }
     break;
 
