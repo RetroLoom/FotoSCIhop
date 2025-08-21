@@ -1916,14 +1916,14 @@ void DrawCellInfo(HDC hdc) {
 }
 
 void EnsureScrollBarsAfterLoad() {
-    // Small delay to ensure all image data is loaded
-    // This can be called after ShowCell or ShowLoopCell
-    
     // Force image data to be loaded if not already
     if (curCell && (*curCell)) {
         if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
             (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
         }
+        
+        // ADDITIONAL: Force a small delay to ensure image data is fully processed
+        Sleep(50);  // 50ms delay to ensure bitmap data is ready
     }
     
     // Update scroll bars with current image data
@@ -1931,8 +1931,8 @@ void EnsureScrollBarsAfterLoad() {
     
     #ifdef _DEBUG
     char debugMsg[256];
-    sprintf(debugMsg, "[DEBUG] EnsureScrollBarsAfterLoad: maxScrollX=%d, maxScrollY=%d\n", 
-            g_maxScrollX, g_maxScrollY);
+    sprintf(debugMsg, "[DEBUG] EnsureScrollBarsAfterLoad: maxScrollX=%d, maxScrollY=%d, clientW/H=%d/%d\n", 
+            g_maxScrollX, g_maxScrollY, g_clientWidth, g_clientHeight);
     OutputDebugStringA(debugMsg);
     #endif
 }
@@ -2083,19 +2083,14 @@ void UpdateScrollBars() {
             int xHot = ScaleCoordinate(bCell->xHot, MagnifyFactor);
             int yHot = ScaleCoordinate(bCell->yHot, MagnifyFactor);
             
-            // Calculate actual image bounds considering hot spot
-            int imageLeft = imageStartX + xHot;
-            int imageTop = imageStartY + yHot;
-            int imageRight = imageLeft + imageWidth;
-            int imageBottom = imageTop + imageHeight;
+            // FIXED: Simpler, more reliable calculation for views
+            // The image extends from its origin to its full dimensions
+            int imageRight = imageStartX + imageWidth;
+            int imageBottom = imageStartY + imageHeight;
             
-            // Content area needs to include the full image bounds
-            contentWidth = imageRight + 100;   // Right edge + margin
-            contentHeight = imageBottom + 100;  // Bottom edge + margin
-            
-            // Ensure we can scroll to see the full image even if positioned oddly
-            contentWidth = max(contentWidth, imageStartX + imageWidth + xHot + 100);
-            contentHeight = max(contentHeight, imageStartY + imageHeight + yHot + 100);
+            // Add reasonable margins
+            contentWidth = imageRight + 100;
+            contentHeight = imageBottom + 100;
         }
         // PICTURE FILES: Use existing logic
         else if (globalPicture && curCellIndex > 0) {
@@ -2156,21 +2151,47 @@ void UpdateScrollBars() {
     g_scrollX = max(0, min(g_scrollX, g_maxScrollX));
     g_scrollY = max(0, min(g_scrollY, g_maxScrollY));
     
+    // CRITICAL: Add validation for scroll info values
+    #ifdef _DEBUG
+    char debugMsg[512];
+    sprintf(debugMsg, "[DEBUG] ScrollInfo - ClientW/H: %d/%d, ContentW/H: %d/%d, MaxScrollX/Y: %d/%d, ScrollX/Y: %d/%d\n", 
+            g_clientWidth, g_clientHeight, contentWidth, contentHeight, g_maxScrollX, g_maxScrollY, g_scrollX, g_scrollY);
+    OutputDebugStringA(debugMsg);
+    #endif
+    
     // Set up horizontal scroll bar
     SCROLLINFO si = {0};
     si.cbSize = sizeof(si);
     si.fMask = SIF_RANGE | SIF_PAGE | SIF_POS | SIF_DISABLENOSCROLL;
     si.nMin = 0;
-    si.nMax = contentWidth;
+    si.nMax = contentWidth - 1;  // IMPORTANT: Windows expects nMax to be contentWidth - 1
     si.nPage = g_clientWidth;
     si.nPos = g_scrollX;
-    SetScrollInfo(hWnd, SB_HORZ, &si, TRUE); // TRUE = force immediate redraw
     
-    // Set up vertical scroll bar
-    si.nMax = contentHeight;
+    // VALIDATION: Ensure values make sense for horizontal scroll
+    if (si.nPage >= si.nMax) {
+        si.nMax = si.nPage + 1;  // Ensure nMax > nPage for thumb to appear
+    }
+    
+    SetScrollInfo(hWnd, SB_HORZ, &si, TRUE);
+    
+    // Set up vertical scroll bar with same validation
+    si.nMax = contentHeight - 1;  // IMPORTANT: Windows expects nMax to be contentHeight - 1
     si.nPage = g_clientHeight;
     si.nPos = g_scrollY;
-    SetScrollInfo(hWnd, SB_VERT, &si, TRUE); // TRUE = force immediate redraw
+    
+    // CRITICAL: Ensure values make sense for vertical scroll
+    if (si.nPage >= si.nMax) {
+        si.nMax = si.nPage + 1;  // Ensure nMax > nPage for thumb to appear
+    }
+    
+    #ifdef _DEBUG
+    sprintf(debugMsg, "[DEBUG] VerticalScrollInfo - nMin: %d, nMax: %d, nPage: %d, nPos: %d\n", 
+            si.nMin, si.nMax, si.nPage, si.nPos);
+    OutputDebugStringA(debugMsg);
+    #endif
+    
+    SetScrollInfo(hWnd, SB_VERT, &si, TRUE);
     
     // Show/hide scroll bars and force immediate update
     BOOL needsHorzScroll = (g_maxScrollX > 0);
@@ -2183,6 +2204,8 @@ void UpdateScrollBars() {
     SetWindowPos(hWnd, NULL, 0, 0, 0, 0, 
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     
+    // Only invalidate for SCROLL RANGE changes here
+    // Zoom-related invalidation is now handled in SetZoomLevel()
     if (oldMaxScrollX != g_maxScrollX || oldMaxScrollY != g_maxScrollY) {
         #ifdef _DEBUG
         OutputDebugStringA("[DEBUG] UpdateScrollBars: Scroll ranges changed, invalidating\n");
