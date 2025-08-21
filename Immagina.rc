@@ -66,13 +66,6 @@ BEGIN
         MENUITEM "Realmpal Import",             IDM_REALMPAL_IMPORT
         MENUITEM "Clut Generator",              IDM_CLUTGEN
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES
-        POPUP "Magnification"
-        BEGIN
-            MENUITEM "Normal\tCtrl+1",              ID_INGRANDIMENTO_NORMALE, CHECKED
-            MENUITEM "x2\tCtrl+2",                  ID_INGRANDIMENTO_X2
-            MENUITEM "x3\tCtrl+3",                  ID_INGRANDIMENTO_X3
-            MENUITEM "x4\tCtrl+4",                  ID_INGRANDIMENTO_X4
-        END
         MENUITEM SEPARATOR
         MENUITEM "Show Priority Bars",          ID_PRIORITYBARS
     END
@@ -107,10 +100,6 @@ BEGIN
     VK_DOWN,        ID_CICLOSUCCESSIVO,     VIRTKEY, CONTROL, NOINVERT
     "E",            ID_ESPORTABMP,          VIRTKEY, CONTROL, NOINVERT
     "I",            ID_IMPORTABMP,          VIRTKEY, CONTROL, NOINVERT
-    "1",            ID_INGRANDIMENTO_NORMALE, VIRTKEY, CONTROL, NOINVERT
-    "2",            ID_INGRANDIMENTO_X2,    VIRTKEY, CONTROL, NOINVERT
-    "3",            ID_INGRANDIMENTO_X3,    VIRTKEY, CONTROL, NOINVERT
-    "4",            ID_INGRANDIMENTO_X4,    VIRTKEY, CONTROL, NOINVERT
     "S",            ID_SALVACOME,           VIRTKEY, CONTROL, NOINVERT
     "Q",            IDM_EXIT,               VIRTKEY, CONTROL, NOINVERT
     "N",            ID_FILE_NEXTFILE,       VIRTKEY, CONTROL, NOINVERT

@@ -178,42 +178,6 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
     }
 }
 
-void SetMagnify(int value)
-{
-	MagnifyFactor=value;
-
-	HMENU menu = GetMenu(hWnd);
-	CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_UNCHECKED);
-	CheckMenuItem(menu, ID_INGRANDIMENTO_X2, MF_UNCHECKED);
-	CheckMenuItem(menu, ID_INGRANDIMENTO_X3, MF_UNCHECKED);
-	CheckMenuItem(menu, ID_INGRANDIMENTO_X4, MF_UNCHECKED);
-
-	long tID;
-	switch (value)
-	{
-		case 1:
-			tID = ID_INGRANDIMENTO_NORMALE;
-			break;
-		case 2:
-			tID = ID_INGRANDIMENTO_X2;
-			break;
-		case 3:
-			tID = ID_INGRANDIMENTO_X3;
-			break;
-		case 4:
-			tID = ID_INGRANDIMENTO_X4;
-			break;
-		default:
-			tID = ID_INGRANDIMENTO_NORMALE;
-
-	}
-
-	CheckMenuItem(menu, tID, MF_CHECKED);
-
-	InvalidateRgn(hWnd,NULL,true);
-
-}
-
 void ShowCell(unsigned char newcell) {
     // Validate that we have a picture loaded
     if (!globalPicture) {
@@ -2009,28 +1973,7 @@ void SetZoomLevel(int zoomPercentage) {
     
     // CRITICAL: Synchronize the zoom index
     g_currentZoomIndex = FindZoomIndex(zoomPercentage);
-    
-    // Update menu checkmarks WITHOUT expensive operations
-    HMENU menu = GetMenu(hWnd);
-    if (menu) {
-        CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_UNCHECKED);
-        CheckMenuItem(menu, ID_INGRANDIMENTO_X2, MF_UNCHECKED);
-        CheckMenuItem(menu, ID_INGRANDIMENTO_X3, MF_UNCHECKED);
-        CheckMenuItem(menu, ID_INGRANDIMENTO_X4, MF_UNCHECKED);
         
-        // Check appropriate menu item based on zoom level
-        if (zoomPercentage == gBaseMagnify) {
-            CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_CHECKED);
-        } else if (zoomPercentage == gBaseMagnify * 2) {
-            CheckMenuItem(menu, ID_INGRANDIMENTO_X2, MF_CHECKED);
-        } else if (zoomPercentage == gBaseMagnify * 3) {
-            CheckMenuItem(menu, ID_INGRANDIMENTO_X3, MF_CHECKED);
-        } else if (zoomPercentage == gBaseMagnify * 4) {
-            CheckMenuItem(menu, ID_INGRANDIMENTO_X4, MF_CHECKED);
-        }
-    }
-    
-    // OPTIMIZATION: Use PostMessage to defer expensive operations
     // This allows the click to complete immediately while the redraw happens asynchronously
     PostMessage(hWnd, WM_USER + 1, 0, 0); // Custom message for deferred update
     
@@ -3006,23 +2949,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case ID_COLORI_ESPORTACOLORI:
             ExportPaletteUnified(hWnd, NULL);
             break;
-            
-        case ID_INGRANDIMENTO_NORMALE:
-            SetZoomLevel(gBaseMagnify);
-            break;
-            
-        case ID_INGRANDIMENTO_X2:
-            SetZoomLevel(gBaseMagnify * 2);
-            break;
-            
-        case ID_INGRANDIMENTO_X3:
-            SetZoomLevel(gBaseMagnify * 3);
-            break;
-            
-        case ID_INGRANDIMENTO_X4:
-            SetZoomLevel(gBaseMagnify * 4);
-            break;
-            
+
         case ID_PRIORITYBARS:
             {
                 HMENU menu = GetMenu(hWnd);

@@ -47,10 +47,6 @@
 #define ID_CARICAV56VOL                 32793
 #define ID_CARICAP56VOL                 32794
 #define ID_IMMAGINE_INGRANDIMENTO       32801
-#define ID_INGRANDIMENTO_NORMALE        32802
-#define ID_INGRANDIMENTO_X2             32803
-#define ID_INGRANDIMENTO_X3             32804
-#define ID_INGRANDIMENTO_X4             32805
 #define ID_PALETTE                      32816
 #define ID_COLORI_IMPORTACOLORI         32818
 #define ID_COLORI_ESPORTACOLORI         32819
