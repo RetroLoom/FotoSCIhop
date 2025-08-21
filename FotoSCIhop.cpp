@@ -3320,14 +3320,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
     if (wParam == 1) { // ImGui timer
-        // Handle deferred theme changes BEFORE ImGui rendering
         if (g_pendingThemeChange) {
             FotoSCIhopStyles::SetTheme(g_pendingTheme);
             FotoSCIhopStyles::RefreshTheme();
             g_pendingThemeChange = false;
+            
+            // Lightweight redraw - let Windows handle timing
+            InvalidateRect(hWnd, NULL, TRUE);
+            // Don't force immediate update - let it happen naturally
         }
         
-        // Handle file dialogs BEFORE ImGui rendering
         HandleRealmpalFileDialogs();
         
         if (ImGuiDialogs::IsAnyDialogOpen()) {
