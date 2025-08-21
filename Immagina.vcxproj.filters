@@ -63,6 +63,18 @@
     <ClCompile Include="imgui_integration.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="clutGenerator.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="fotoscihop_dialogs.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="librealmpal.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="display.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="language.h">
@@ -102,6 +114,18 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="imgui_integration.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="clutGenerator.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="librealmpal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="display.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

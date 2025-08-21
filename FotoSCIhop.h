@@ -21,6 +21,7 @@
 #include "p56files.h"
 #include "v56files.h"
 #include "english.h"
+#include "display.h"  // Include the new display module
 #include <set>
 #include <string>
 
@@ -97,10 +98,10 @@ extern std::set<int> g_usedColorIndices;
 extern ClutGenerator* g_clutGenerator;
 
 // ============================================================================
-// DISPLAY AND UI STATE
+// UI STATE (NON-DISPLAY)
 // ============================================================================
 
-// Display settings
+// Display settings (accessed by display module)
 extern int MagnifyFactor;
 extern int picX;
 extern int picY;
@@ -118,12 +119,12 @@ extern int colorLimit;
 extern int tolerance;
 
 // ============================================================================
-// FUNCTION DECLARATIONS
+// FUNCTION DECLARATIONS (NON-DISPLAY)
 // ============================================================================
 bool HandleCliCommands(char* cmdLine);
 void ParseAppPath(void);
 
-// CLI and palette functions
+// CLI functions
 int cliExport(char *name);
 
 // Magic wand and color sampling functions
@@ -135,44 +136,11 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
                                WPARAM wParam,
                                LPARAM lParam);
 
-void ForceImageRefresh();
-
-// Function declarations
+// Core application functions
 void ShowLoopCell(unsigned char newloop, unsigned char newcell);
 void ShowCell(unsigned char newcell);
 bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
 bool ImportBMPToCurrentCell(const char* filename, bool applyPalette);
-
-// Display constants
-static const int UI_LEFT_MARGIN = 10;
-static const int UI_TOP_MARGIN = 30;
-static const int UI_PRIORITY_MARGIN = 5;
-static const int UI_INFO_HEIGHT = 20;
-static const int UI_PADDING = 8;
-
-static const int PALETTE_COLORS_PER_ROW = 16;
-static const int PALETTE_TOTAL_COLORS = 256;
-static const int PALETTE_CELL_WIDTH = 11;
-static const int PALETTE_CELL_HEIGHT = 16;
-static const int PALETTE_CELL_DISPLAY_SIZE = 10;
-
-static const int MAX_PRIORITY_LINES = 14;
-static const int MAX_LINK_POINTS = 12;
-
-static const int LINK_POINT_BASE_SIZE = 4;
-static const int LINK_POINT_ACCENT_THICKNESS = 2;
-static const int DOTTED_LINE_THICKNESS = 1;
-
-static const int COLOR_SWATCH_LEFT = 225;
-static const int COLOR_SWATCH_TOP = 2;
-static const int COLOR_SWATCH_RIGHT = 245;
-static const int COLOR_SWATCH_BOTTOM = 18;
-
-// Color constants for better readability
-static const COLORREF COLOR_RED = RGB(255, 0, 0);
-static const COLORREF COLOR_WHITE = RGB(255, 255, 255);
-static const COLORREF COLOR_BLACK = RGB(0, 0, 0);
-static const COLORREF COLOR_CYAN = RGB(0, 255, 255); 
 
 // Dialog functions
 void RenderPropertiesDialog();
@@ -188,50 +156,5 @@ extern std::string g_realmpalExtraFile;
 extern bool g_requestInputDialog;
 extern bool g_requestPaletteDialog;
 extern bool g_requestExtraDialog;
-
-// Scroll and zoom state
-static int g_scrollX = 0;
-static int g_scrollY = 0;
-static int g_maxScrollX = 0;
-static int g_maxScrollY = 0;
-static int g_clientWidth = 0;
-static int g_clientHeight = 0;
-static bool g_isPanning = false;
-static POINT g_lastPanPoint = {0, 0};
-
-// Enhanced magnification levels (percentage)
-static const int ZOOM_LEVELS[] = {
-    25, 50, 75, 100, 125, 150, 200, 300, 400, 600, 800, 1200, 1600
-};
-static const int ZOOM_LEVEL_COUNT = sizeof(ZOOM_LEVELS) / sizeof(ZOOM_LEVELS[0]);
-static int g_currentZoomIndex = 3; // Start at 100%
-
-// Mouse wheel zoom sensitivity
-static const int WHEEL_ZOOM_DELTA = 120;
-
-// Zoom control functions
-void SetZoomLevel(int zoomPercentage);
-void ZoomIn();
-void ZoomOut();
-void ZoomToFit();
-void ZoomTo100();
-
-// Scroll management functions
-void UpdateScrollBars();
-void ScrollBy(int deltaX, int deltaY);
-void ScrollTo(int x, int y);
-
-// Enhanced coordinate functions
-POINT ScreenToImageCoords(int screenX, int screenY);
-POINT ImageToScreenCoords(int imageX, int imageY);
-
-// Panning support
-void StartPanning(int x, int y);
-void UpdatePanning(int x, int y);
-void StopPanning();
-
-// Zoom UI controls
-void DrawZoomControls(HDC hdc, int startX);
-bool HandleZoomControlClick(int x, int y);
 
 #endif // FOTOSCIHOP_H
