@@ -51,6 +51,7 @@ BEGIN
         MENUITEM "&Save",                       ID_SALVA
         MENUITEM "S&ave as...\tCtrl+S",         ID_SALVACOME
         MENUITEM SEPARATOR
+        MENUITEM "Preferences",                 IDM_PREFERENCES
         MENUITEM "&Quit\tCtrl+Q",               IDM_EXIT
     END
     POPUP "&Image"

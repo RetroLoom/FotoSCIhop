@@ -108,6 +108,9 @@ HWND hWndTopBar;
 HFONT hfDefault;
 RGBQUAD skipColor;
 
+bool g_pendingThemeChange = false;
+FotoSCIhopStyles::ThemeMode g_pendingTheme = FotoSCIhopStyles::ThemeMode::PHOTOSHOP_DARK;
+
 void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
     // Validate loop index first
     if (!globalView || newloop >= globalView->Head.view32.loopCount) {
@@ -2767,11 +2770,19 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     FotoSCIhopStyles::Initialize();
 
+    // Load theme setting (add this at the end)
+    int savedTheme = GetPrivateProfileInt("main", "theme", 0, gConfigIni);
+    if (savedTheme >= 0 && savedTheme < 5) { // Validate theme index
+        FotoSCIhopStyles::SetTheme((FotoSCIhopStyles::ThemeMode)savedTheme);
+    }
+    FotoSCIhopStyles::RefreshTheme();
+
     // Set up dialog callbacks
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PROPERTIES, "Properties", &RenderPropertiesDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_ABOUT, "About FotoSCIhop", &RenderAboutDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR, "CLUT Generator", &RenderClutGeneratorDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_REALMPAL, "Realmpal Converter", &RenderRealmpalDialog);
+    ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PREFERENCES, "Preferences", &RenderPreferencesDialog);
 
     SetTimer(hWnd, 1, 16, NULL);
 
@@ -2920,6 +2931,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PROPERTIES:
             ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_PROPERTIES);
+            break;
+
+        case IDM_PREFERENCES:
+            ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_PREFERENCES);
             break;
                 
         case ID_PALETTE:
@@ -3305,6 +3320,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
     if (wParam == 1) { // ImGui timer
+        // Handle deferred theme changes BEFORE ImGui rendering
+        if (g_pendingThemeChange) {
+            FotoSCIhopStyles::SetTheme(g_pendingTheme);
+            FotoSCIhopStyles::RefreshTheme();
+            g_pendingThemeChange = false;
+        }
+        
         // Handle file dialogs BEFORE ImGui rendering
         HandleRealmpalFileDialogs();
         

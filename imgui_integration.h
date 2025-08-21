@@ -22,6 +22,7 @@ namespace ImGuiDialogs {
         DIALOG_ABOUT = 1,
         DIALOG_CLUT_GENERATOR = 2,
         DIALOG_REALMPAL = 3,
+        DIALOG_PREFERENCES,
         DIALOG_COUNT
     };
     
