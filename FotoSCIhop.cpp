@@ -2010,7 +2010,7 @@ void SetZoomLevel(int zoomPercentage) {
     // CRITICAL: Synchronize the zoom index
     g_currentZoomIndex = FindZoomIndex(zoomPercentage);
     
-    // Update menu checkmarks
+    // Update menu checkmarks WITHOUT expensive operations
     HMENU menu = GetMenu(hWnd);
     if (menu) {
         CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_UNCHECKED);
@@ -2030,16 +2030,13 @@ void SetZoomLevel(int zoomPercentage) {
         }
     }
     
-    // Update scroll bars first
-    UpdateScrollBars();
-    
-    // CRITICAL: Always force a complete window redraw after zoom changes
-    // This fixes the issue where zoom changes don't render until window resize
-    InvalidateRect(hWnd, NULL, FALSE);
+    // OPTIMIZATION: Use PostMessage to defer expensive operations
+    // This allows the click to complete immediately while the redraw happens asynchronously
+    PostMessage(hWnd, WM_USER + 1, 0, 0); // Custom message for deferred update
     
     #ifdef _DEBUG
     char debugMsg[128];
-    sprintf(debugMsg, "[DEBUG] SetZoomLevel: %d%% -> Index %d, Forced invalidation\n", 
+    sprintf(debugMsg, "[DEBUG] SetZoomLevel: %d%% -> Index %d, Deferred update\n", 
             zoomPercentage, g_currentZoomIndex);
     OutputDebugStringA(debugMsg);
     #endif
@@ -2389,76 +2386,88 @@ void DrawZoomControls(HDC hdc) {
 }
 
 bool HandleZoomControlClick(int x, int y) {
-    // Only check if click is in the top bar area
+    // Early exit if not in top bar
     if (y < 2 || y > 23) {
-        return false; // Click not in top bar
+        return false;
     }
     
-    // Calculate where zoom controls start (same logic as DrawCellInfo)
-    int xPos = 20;
+    // OPTIMIZATION: Use static variables to cache button positions
+    // Only recalculate when window size changes
+    static int lastClientWidth = 0;
+    static RECT cachedZoomOutBtn = {0};
+    static RECT cachedZoomInBtn = {0};
+    static RECT cachedFitBtn = {0};
+    static RECT cachedResetBtn = {0};
+    static bool validCache = false;
     
-    // Account for cell info width - this matches the xPos calculation in DrawCellInfo
-    if (globalView) {
-        xPos += 85; // Loop info
-        if (curLoop && (*curLoop)) {
-            xPos += 125; // Cell or mirror info
-            if (!(*curLoop)->Head.flags) {
-                xPos += 85; // Skip color info
-            }
+    // Invalidate cache if window width changed
+    if (lastClientWidth != g_clientWidth) {
+        validCache = false;
+        lastClientWidth = g_clientWidth;
+    }
+    
+    // Calculate button positions only if cache is invalid
+    if (!validCache) {
+        int xPos = 20;
+        
+        // Account for cell info width (simplified calculation)
+        if (globalView) {
+            xPos += 295; // Estimated total width for view info
         }
+        if (globalPicture) {
+            xPos += 255; // Estimated total width for picture info
+        }
+        if (curCell && (*curCell) && (*curCell)->changed) {
+            xPos += 85; // Modified indicator
+        }
+        
+        xPos += 20; // Spacing
+        xPos += 85; // Zoom text
+        
+        // Check if we have space
+        int availableSpace = g_clientWidth - xPos - 20;
+        if (availableSpace < 200) {
+            validCache = true; // Cache the "no buttons" state
+            return false;
+        }
+        
+        // Cache button positions
+        int buttonWidth = 20;
+        int buttonHeight = 15;
+        int buttonY = 4;
+        
+        cachedZoomOutBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+        xPos += buttonWidth + 2;
+        
+        cachedZoomInBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
+        xPos += buttonWidth + 5;
+        
+        cachedFitBtn = {xPos, buttonY, xPos + buttonWidth + 5, buttonY + buttonHeight};
+        xPos += buttonWidth + 7;
+        
+        cachedResetBtn = {xPos, buttonY, xPos + buttonWidth + 10, buttonY + buttonHeight};
+        
+        validCache = true;
     }
     
-    if (globalPicture) {
-        xPos += 85; // Version info
-        xPos += 85; // Cell info
-        xPos += 85; // Skip color info
-    }
-    
-    if (curCell && (*curCell) && (*curCell)->changed) {
-        xPos += 85; // Modified indicator
-    }
-    
-    xPos += 20; // Spacing before zoom controls
-    xPos += 85; // Zoom text width
-    
-    // Check if we have enough space for zoom controls
-    int availableSpace = g_clientWidth - xPos - 20;
-    if (availableSpace < 200) {
-        return false; // Zoom controls not drawn due to space constraints
-    }
-    
-    // Calculate button positions (matches DrawInlineZoomControls)
-    int buttonWidth = 20;
-    int buttonHeight = 15;
-    int buttonY = 4;
-    
-    RECT zoomOutBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
-    xPos += buttonWidth + 2;
-    
-    RECT zoomInBtn = {xPos, buttonY, xPos + buttonWidth, buttonY + buttonHeight};
-    xPos += buttonWidth + 5;
-    
-    RECT fitBtn = {xPos, buttonY, xPos + buttonWidth + 5, buttonY + buttonHeight};
-    xPos += buttonWidth + 7;
-    
-    RECT resetBtn = {xPos, buttonY, xPos + buttonWidth + 10, buttonY + buttonHeight};
-    
-    // Check button clicks
-    if (PtInRect(&zoomOutBtn, {x, y})) {
-        ZoomOut();
-        return true;
-    }
-    if (PtInRect(&zoomInBtn, {x, y})) {
-        ZoomIn();
-        return true;
-    }
-    if (PtInRect(&fitBtn, {x, y})) {
-        ZoomToFit();
-        return true;
-    }
-    if (PtInRect(&resetBtn, {x, y})) {
-        ZoomTo100();
-        return true;
+    // Quick button hit testing using cached positions
+    if (validCache) {
+        if (PtInRect(&cachedZoomOutBtn, {x, y}) && g_currentZoomIndex > 0) {
+            ZoomOut();
+            return true;
+        }
+        if (PtInRect(&cachedZoomInBtn, {x, y}) && g_currentZoomIndex < ZOOM_LEVEL_COUNT - 1) {
+            ZoomIn();
+            return true;
+        }
+        if (PtInRect(&cachedFitBtn, {x, y})) {
+            ZoomToFit();
+            return true;
+        }
+        if (PtInRect(&cachedResetBtn, {x, y})) {
+            ZoomTo100();
+            return true;
+        }
     }
     
     return false;
@@ -3360,6 +3369,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 
+    case WM_USER + 1:
+    {
+        UpdateScrollBars();
+        InvalidateRect(hWnd, NULL, FALSE);
+        return 0;
+    }
 
     case WM_TIMER:
     if (wParam == 1) { // ImGui timer
