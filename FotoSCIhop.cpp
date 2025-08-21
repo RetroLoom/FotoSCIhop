@@ -1566,10 +1566,10 @@ void DisplayCurrentViewWithFrame(HDC hdc) {
     int imageHeight = ScaleCoordinate(abs((*curCell)->bmInfo->bmiHeader.biHeight), MagnifyFactor);
     
     RECT frameRect = {
-        origin.x - UI_PADDING,
-        origin.y - UI_PADDING,
-        origin.x + imageWidth + UI_PADDING,
-        origin.y + imageHeight + UI_PADDING
+        origin.x - UI_PADDING + bCell->xHot,
+        origin.y - UI_PADDING + bCell->yHot,
+        origin.x + imageWidth + UI_PADDING + bCell->xHot,
+        origin.y + imageHeight + UI_PADDING + bCell->yHot
     };
     
     // Draw shadow
