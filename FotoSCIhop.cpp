@@ -1899,14 +1899,31 @@ void DrawCellInfo(HDC hdc) {
     }
 }
 
+int FindZoomIndex(int percentage) {
+    // Find the first zoom level that's >= the requested percentage
+    for (int i = 0; i < ZOOM_LEVEL_COUNT; i++) {
+        if (ZOOM_LEVELS[i] >= percentage) {
+            return i;
+        }
+    }
+    // If percentage is higher than max zoom level, return the highest index
+    return ZOOM_LEVEL_COUNT - 1;
+}
+
 void SetZoomLevel(int zoomPercentage) {
     if (MagnifyFactor == zoomPercentage) {
         return; // No change needed
     }
     
+    // Clamp to valid range
+    zoomPercentage = max(ZOOM_LEVELS[0], min(ZOOM_LEVELS[ZOOM_LEVEL_COUNT - 1], zoomPercentage));
+    
     MagnifyFactor = zoomPercentage;
     
-    // Update menu checkmarks without causing redraws
+    // CRITICAL: Synchronize the zoom index
+    g_currentZoomIndex = FindZoomIndex(zoomPercentage);
+    
+    // Update menu checkmarks
     HMENU menu = GetMenu(hWnd);
     if (menu) {
         CheckMenuItem(menu, ID_INGRANDIMENTO_NORMALE, MF_UNCHECKED);
@@ -1926,7 +1943,19 @@ void SetZoomLevel(int zoomPercentage) {
         }
     }
     
-    UpdateScrollBars(); // This handles its own invalidation efficiently
+    // Update scroll bars first
+    UpdateScrollBars();
+    
+    // CRITICAL: Always force a complete window redraw after zoom changes
+    // This fixes the issue where zoom changes don't render until window resize
+    InvalidateRect(hWnd, NULL, FALSE);
+    
+    #ifdef _DEBUG
+    char debugMsg[128];
+    sprintf(debugMsg, "[DEBUG] SetZoomLevel: %d%% -> Index %d, Forced invalidation\n", 
+            zoomPercentage, g_currentZoomIndex);
+    OutputDebugStringA(debugMsg);
+    #endif
 }
 
 void ZoomIn() {
@@ -2116,8 +2145,10 @@ void UpdateScrollBars() {
     SetWindowPos(hWnd, NULL, 0, 0, 0, 0, 
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     
-    // Only invalidate content if scroll ranges actually changed
     if (oldMaxScrollX != g_maxScrollX || oldMaxScrollY != g_maxScrollY) {
+        #ifdef _DEBUG
+        OutputDebugStringA("[DEBUG] UpdateScrollBars: Scroll ranges changed, invalidating\n");
+        #endif
         InvalidateRect(hWnd, NULL, FALSE);
     }
 }
