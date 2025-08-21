@@ -168,6 +168,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="clutGenerator.cpp" />
+    <ClCompile Include="config.cpp" />
     <ClCompile Include="display.cpp" />
     <ClCompile Include="fileio.cpp" />
     <ClCompile Include="FotoSCIhop.cpp" />
@@ -240,6 +241,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="clutGenerator.h" />
+    <ClInclude Include="config.h" />
     <ClInclude Include="display.h" />
     <ClInclude Include="fileio.h" />
     <ClInclude Include="FotoSCIhop.h" />

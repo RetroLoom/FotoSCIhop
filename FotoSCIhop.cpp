@@ -21,6 +21,7 @@
 #include <set>
 #include "display.h"
 #include "fileio.h"
+#include "config.h"
 
 // Global Variables:
 HINSTANCE hInst;								// current instance
@@ -34,38 +35,6 @@ ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
 LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK	About(HWND, UINT, WPARAM, LPARAM);
-
-// ============================================================================
-// COMMAND LINE AND CONFIGURATION
-// ============================================================================
-char *argv[MAX_ARG];
-char propstr[10240] = "";
-char gAppPath[MAX_PATH];
-
-// Configuration file and settings
-char gConfigIni[_MAX_PATH];
-int gAppResX = 700;
-int gAppResY = 500;
-int zScale = 100;
-int gPosCells = 0;
-int gCliMode = 0;
-int gBaseMagnify = 100;
-int gCliEnabled = 0;
-
-// ============================================================================
-// REFERENCE IMAGE SETTINGS
-// ============================================================================
-HWND hReferenceDialog;
-float gReferenceScaleX = 100;
-float gReferenceScaleY = 100;
-char gReferenceBM[_MAX_PATH] = "reference.bmp";
-int gReferenceXHot = 0;
-int gReferenceYHot = 0;
-int gReferenceLinkPoint = 0;
-int gReferenceLinkPointX = 0;
-int gReferenceLinkPointY = 0;
-int gReferencePriority = 0;
-int gReferenceTransparentIndex = 255;
 
 // ============================================================================
 // GLOBAL APPLICATION STATE
@@ -237,155 +206,11 @@ void ShowCell(unsigned char newcell) {
     }
 }
 
-void LoadConfig ()
-{
-	// get ini settings
-	sprintf(gConfigIni, "%s\\config.ini", gAppPath);
-
-	gAppResX = GetPrivateProfileInt("main", "resX", gAppResX, gConfigIni);
-	gAppResY = GetPrivateProfileInt("main", "resY", gAppResY, gConfigIni);
-	zScale = GetPrivateProfileInt("main", "zScale", zScale, gConfigIni);
-	gPosCells = GetPrivateProfileInt("main", "posCells", gPosCells, gConfigIni);
-	gBaseMagnify = GetPrivateProfileInt("main", "magScale", gBaseMagnify, gConfigIni);
-	gCliEnabled = GetPrivateProfileInt("main", "cliStartup", gCliEnabled, gConfigIni);
-
-	// image references
-	gReferenceScaleX = GetPrivateProfileInt("reference", "referenceScaleX", gReferenceScaleX, gConfigIni);
-	gReferenceScaleY = GetPrivateProfileInt("reference", "referenceScaleY", gReferenceScaleY, gConfigIni);
-	GetPrivateProfileString("reference", "referenceBM", gReferenceBM, gReferenceBM, _MAX_PATH, gConfigIni);
-	gReferenceXHot = GetPrivateProfileInt("reference", "referenceXHot", gReferenceXHot, gConfigIni);
-	gReferenceYHot = GetPrivateProfileInt("reference", "referenceYHot", gReferenceYHot, gConfigIni);
-	gReferenceLinkPoint = GetPrivateProfileInt("reference", "referenceLinkPoint", gReferenceLinkPoint, gConfigIni);
-	gReferenceLinkPointX = GetPrivateProfileInt("reference", "referenceLinkPointX", gReferenceLinkPointX, gConfigIni);
-	gReferenceLinkPointY = GetPrivateProfileInt("reference", "referenceLinkPointY", gReferenceLinkPointY, gConfigIni);
-	gReferencePriority = GetPrivateProfileInt("reference", "referencePriority", gReferencePriority, gConfigIni);
-
-	MagnifyFactor = gBaseMagnify;
-}
-
 #pragma warning(push)
 #pragma warning(disable: 4996)  // Disable deprecation warnings for legacy functions
 
 typedef BOOL (WINAPI*Func)(HWND, const char*, unsigned char, const char*, char*);
 Func ExtractFromVolume;
-
-void ParseAppPath(void)
-{
-    GetModuleFileName(NULL, gAppPath, MAX_PATH);
-    char* lastBackslash = strrchr(gAppPath, '\\');
-    if (lastBackslash)
-        *lastBackslash = '\0';
-}
-
-typedef void (*CliHandler)(int argc, char** argv);
-
-typedef struct {
-    const char* name;
-    int minArgs;
-    CliHandler handler;
-    const char* description;
-} CliCommand;
-
-// === Command Handlers ===
-
-void HandleExport(int argc, char** argv) {
-    if (!ExportCurrentCellBMP(argv[2]))
-        fprintf(stderr, "[export] Failed to export to: %s\n", argv[2]);
-}
-
-void HandleImport(int argc, char** argv) {
-    if (!ImportBMPToCurrentCell(argv[2], true)) {
-        fprintf(stderr, "[import] Failed to import BMP: %s\n", argv[2]);
-        return;
-    }
-
-    if (argc >= 5)
-        cliScale(atoi(argv[3]), atoi(argv[4]));
-
-    if (argc >= 7)
-        cliSetHeader(atoi(argv[5]), atoi(argv[6]));
-
-    DoFileSave(hWnd);
-}
-
-void HandleScale(int argc, char** argv) {
-    cliScale(atoi(argv[2]), atoi(argv[3]));
-    DoFileSave(hWnd);
-}
-
-void HandleHeader(int argc, char** argv) {
-    cliSetHeader(atoi(argv[2]), atoi(argv[3]));
-    DoFileSave(hWnd);
-}
-
-void HandleAddCells(int argc, char** argv) {
-    DoAddCells(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]));
-    DoFileSave(hWnd);
-}
-
-void HandleAddLoops(int argc, char** argv) {
-    DoAddLoops(atoi(argv[2]), atoi(argv[3]));
-    DoFileSave(hWnd);
-}
-
-// === Command Table ===
-
-CliCommand cliCommands[] = {
-    { "export",   3, HandleExport,   "Export file to output path" },
-    { "import",   3, HandleImport,   "Import BMP with optional scale/header" },
-    { "scale",    4, HandleScale,    "Scale then save" },
-    { "header",   4, HandleHeader,   "Set header then save" },
-    { "addCells", 5, HandleAddCells, "Add animation cells" },
-    { "addLoops", 4, HandleAddLoops, "Add animation loops" },
-    { NULL, 0, NULL, NULL }
-};
-
-bool HandleCliCommands(char* cmdLine)
-{
-    const int MAX_ARGS = 16;
-    char* argv[MAX_ARGS] = {0};
-    int argc = 0;
-
-    char* token = strtok(cmdLine, " ");
-    while (token && argc < MAX_ARGS) {
-        argv[argc++] = token;
-        token = strtok(NULL, " ");
-    }
-
-    if (argc < 1) return false;
-
-    // Parse startup file
-    char startupfile[_MAX_PATH] = {0};
-    if (argv[0][0] == '"' && argv[0][strlen(argv[0]) - 1] == '"') {
-        strncpy(startupfile, argv[0] + 1, strlen(argv[0]) - 2);
-        startupfile[strlen(argv[0]) - 2] = '\0';
-    } else {
-        strncpy(startupfile, argv[0], sizeof(startupfile) - 1);
-    }
-
-    if (argc == 1) {
-        DoFileOpen(hWnd, startupfile, startupfile + strlen(startupfile) - 3);
-        fprintf(stderr, "[CLI] No command given. Opened file only.\n");
-        return true;
-    }
-
-    DoFileOpen(hWnd, startupfile, startupfile + strlen(startupfile) - 3);
-
-    const char* command = argv[1];
-    for (int i = 0; cliCommands[i].name; ++i) {
-        if (strcmp(cliCommands[i].name, command) == 0) {
-            if (argc < cliCommands[i].minArgs) {
-                fprintf(stderr, "[%s] Not enough args (have %d, need %d)\n", command, argc, cliCommands[i].minArgs);
-                return true;
-            }
-            cliCommands[i].handler(argc, argv);
-            return true;
-        }
-    }
-
-    fprintf(stderr, "[CLI Error] Unknown command: %s\n", command);
-    return true;
-}
 
 void HandleRealmpalFileDialogs() {
     if (g_requestInputDialog) {
