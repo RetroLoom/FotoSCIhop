@@ -3221,53 +3221,6 @@ void RenderRealmpalDialog() {
                     ImGui::Spacing();
                     ImGui::TextWrapped("Enable to specify multiple ranges and single indices for precise palette control.");
                     ImGui::PopStyleVar();
-                    
-                    // Show legacy compatibility section
-                    ImGui::Spacing();
-                    ImGui::Separator();
-                    ImGui::Spacing();
-                    
-                    if (ImGui::TreeNode("Legacy Single-Range Mode")) {
-                        ImGui::Text("For compatibility, you can still use the old single-range mode:");
-                        
-                        bool legacyEnabled = (config.enforce_mapping_range != 0);
-                        if (ImGui::Checkbox("Enable Legacy Range", &legacyEnabled)) {
-                            config.enforce_mapping_range = legacyEnabled ? 1 : 0;
-                            selectedPreset = 0;
-                        }
-                        
-                        if (config.enforce_mapping_range) {
-                            ImGui::PushItemWidth(80);
-                            
-                            ImGui::Text("Start:");
-                            ImGui::SameLine();
-                            if (ImGui::InputInt("##legacy_start", &config.mapping_min_index)) {
-                                config.mapping_min_index = realmpal_clamp_int(config.mapping_min_index, 0, 255);
-                                selectedPreset = 0;
-                            }
-                            
-                            ImGui::Text("End:");
-                            ImGui::SameLine();
-                            if (ImGui::InputInt("##legacy_end", &config.mapping_max_index)) {
-                                config.mapping_max_index = realmpal_clamp_int(config.mapping_max_index, 0, 255);
-                                selectedPreset = 0;
-                            }
-                            
-                            ImGui::PopItemWidth();
-                            
-                            // Convert to new format button
-                            if (ImGui::Button("Convert to Multi-Range Format", ImVec2(-1, 0))) {
-                                if (config.mapping_min_index >= 0 && config.mapping_max_index >= 0) {
-                                    sprintf(constraintInputBuffer, "%d-%d", config.mapping_min_index, config.mapping_max_index);
-                                    config.index_constraints.enabled = 1;
-                                    config.enforce_mapping_range = 0;
-                                    constraintBufferChanged = true;
-                                }
-                            }
-                        }
-                        
-                        ImGui::TreePop();
-                    }
                 }
             }
             

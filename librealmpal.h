@@ -762,11 +762,6 @@ typedef struct {
 
     // Enhanced Index Mapping Constraints
     RealmpalIndexConstraints index_constraints;  /**< Multi-range index constraints */
-    
-    // Legacy single-range support (deprecated but kept for compatibility)
-    int mapping_min_index;            /**< Minimum index for color mapping (-1 = no constraint) */
-    int mapping_max_index;            /**< Maximum index for color mapping (-1 = no constraint) */
-    int enforce_mapping_range;        /**< Whether to enforce the legacy mapping range (0=false, 1=true) */
 } RealmpalConfig;
 
 /**
@@ -856,32 +851,6 @@ static inline double realmpal_clamp_double(double value, double min, double max)
     return value < min ? min : (value > max ? max : value);
 }
 
-/**
- * Enhanced color mapping with index constraints
- * 
- * @param src Source RGBA8 pixel array
- * @param w Image width
- * @param h Image height
- * @param palette Color palette (256 entries)
- * @param out Output index array (w*h size, caller allocates)
- * @param transparency_index Index to use for transparent pixels (-1 to disable)
- * @param alpha_threshold Alpha threshold for transparency (0-255)
- * @param min_index Minimum index for mapping (-1 = no constraint)
- * @param max_index Maximum index for mapping (-1 = no constraint)
- */
-void realmpal_map_nearest_neighbor_constrained(const RGBA8* src, int w, int h, const RGB8* palette, 
-                                              uint8_t *out, int transparency_index, int alpha_threshold,
-                                              int min_index, int max_index);
-
-void realmpal_map_floyd_steinberg_constrained(const RGBA8* src, int w, int h, const RGB8* palette, 
-                                             uint8_t *out, bool serpentine, double strength,
-                                             int transparency_index, int alpha_threshold,
-                                             int min_index, int max_index);
-
-void realmpal_map_perceptual_constrained(const RGBA8* src, int w, int h, const RGB8* palette,
-                                        uint8_t *out, int transparency_index, int alpha_threshold,
-                                        int min_index, int max_index);
-                                                                                
 // ----------------------------- Error Codes -----------------------------
 
 #define REALMPAL_SUCCESS                0   /**< Operation successful */
