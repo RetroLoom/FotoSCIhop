@@ -3265,6 +3265,14 @@ void RenderRealmpalDialog() {
             isConverting = false;
             
             if (result == REALMPAL_SUCCESS) {
+                // Check if temp file exists
+                if (GetFileAttributes(tempFile) == INVALID_FILE_ATTRIBUTES) {
+                    conversionStatus = "ERROR: Temp file was not created";
+                    showStatus = true;
+                    DeleteFile(tempFile);
+                    return;
+                }
+                
                 // Import the converted BMP into current cell
                 BOOL importResult = ImportBMPToCurrentCell(tempFile, TRUE);
                 
@@ -3273,12 +3281,20 @@ void RenderRealmpalDialog() {
                     Palette* globalPal = isPicture ? globalPicture->palSCI : globalView->palSCI;
                     if (globalPal && ImportPaletteFromBMP(tempFile, globalPal)) {
                         conversionStatus = "SUCCESS: Image and palette imported successfully!";
-                        ForceImageRefresh();
                     } else {
                         conversionStatus = "WARNING: Image imported, palette import failed";
                     }
+                    
+                    // CRITICAL: Refresh the current cell/loop to update display
+                    if (isPicture) {
+                        ShowCell(curCellIndex);
+                    } else {
+                        ShowLoopCell(curLoopIndex, curCellIndex);
+                    }
+                    
                     datasaved = false;
                     InvalidateRect(hWnd, NULL, TRUE);
+                    
                 } else {
                     conversionStatus = "ERROR: Conversion succeeded but import failed";
                 }
