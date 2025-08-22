@@ -2590,13 +2590,17 @@ bool UpdatePalettePreview(const RealmpalConfig& config) {
     return g_palettePreviewValid;
 }
 
-
-
-// Function to render palette preview grid
-void RenderPalettePreview(const RealmpalConfig& config) {
+// Function to render palette preview grid with optional constraint editing
+void RenderPalettePreview(const RealmpalConfig& config, bool visualEditMode = false, 
+                         std::vector<bool>* selectedIndices = nullptr, 
+                         bool* isDragging = nullptr, int* dragStart = nullptr) {
     using namespace FotoSCIhopStyles;
     
     HeaderText("Palette Preview");
+    if (visualEditMode) {
+        ImGui::SameLine();
+        WarningText("(EDIT MODE)");
+    }
     ImGui::Separator();
     ImGui::Spacing();
     
@@ -2626,15 +2630,22 @@ void RenderPalettePreview(const RealmpalConfig& config) {
     if (ImGui::BeginChild("PalettePreviewGrid", ImVec2(0, 0), true)) {
         
         if (g_palettePreviewValid) {
-            // Draw cleaner legend
-            InfoText("Legend:");
+            // Show legend
+            if (visualEditMode) {
+                InfoText("Legend: Yellow = selected, Red = transparency, Click/drag to select");
+            } else if (config.index_constraints.enabled && config.index_constraints.count > 0) {
+                InfoText("Legend: Green border = allowed by constraints, Dimmed = blocked");
+            }
             ImGui::Spacing();
             
-            // Draw 16x16 palette grid with cleaner design
+            // Draw 16x16 palette grid
             const int COLORS_PER_ROW = 16;
             const float BUTTON_SIZE = 18.0f;
             const float SPACING_VAL = 2.0f;
             const float CORNER_ROUNDING = 3.0f;
+            
+            ImGuiIO& io = ImGui::GetIO();
+            bool ctrlPressed = io.KeyCtrl;
             
             for (int row = 0; row < 16; row++) {
                 for (int col = 0; col < 16; col++) {
@@ -2643,51 +2654,111 @@ void RenderPalettePreview(const RealmpalConfig& config) {
                     char buttonId[16];
                     sprintf(buttonId, "##pal%d", colorIndex);
                     
-                    // Determine color state - but only show important ones
+                    // Determine color state
                     bool isTransparencyIndex = (colorIndex == config.transparency_index);
-                    bool isInBaseRange = (colorIndex >= config.index_offset && 
-                                        colorIndex < config.index_offset + config.num_colors);
-                    bool isInInjectionRange = (config.extra_offset >= 0 && 
-                                             colorIndex >= config.extra_offset &&
-                                             colorIndex < config.extra_offset + config.extra_colors);
+                    bool isSelected = visualEditMode && selectedIndices && (*selectedIndices)[colorIndex];
+                    bool isConstraintAllowed = !visualEditMode && realmpal_index_allowed_by_constraints(
+                        colorIndex, &config.index_constraints, config.transparency_index);
                     
-                    RGBQUAD& color = g_previewPalette[colorIndex];
+                    // Get color for display
+                    RGBQUAD color;
+                    if (g_palettePreviewValid) {
+                        color = g_previewPalette[colorIndex];
+                    } else {
+                        color = {128, 128, 128, 255}; // Fallback gray color
+                    }
+                    
                     float r = color.rgbRed / 255.0f;
                     float g = color.rgbGreen / 255.0f;
                     float b = color.rgbBlue / 255.0f;
                     
-                    // Use cleaner color scheme
+                    // Apply mode-specific color modifications
+                    if (visualEditMode) {
+                        // Brighten selected colors
+                        if (isSelected) {
+                            r = fmin(r + 0.3f, 1.0f);
+                            g = fmin(g + 0.3f, 1.0f);
+                            b = fmin(b + 0.3f, 1.0f);
+                        }
+                    } else {
+                        // Dim colors that aren't allowed by constraints
+                        if (!isConstraintAllowed && config.index_constraints.count > 0) {
+                            r *= 0.4f; g *= 0.4f; b *= 0.4f;
+                        }
+                    }
+                    
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r, g, b, 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(
                         fmin(r * 1.3f, 1.0f), fmin(g * 1.3f, 1.0f), fmin(b * 1.3f, 1.0f), 1.0f));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(r * 0.7f, g * 0.7f, b * 0.7f, 1.0f));
                     
-                    // Add rounded corners
                     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, CORNER_ROUNDING);
                     
                     ImVec2 buttonPos = ImGui::GetCursorScreenPos();
-                    ImGui::Button(buttonId, ImVec2(BUTTON_SIZE, BUTTON_SIZE));
+                    bool buttonClicked = ImGui::Button(buttonId, ImVec2(BUTTON_SIZE, BUTTON_SIZE));
                     
                     ImGui::PopStyleVar();
                     ImGui::PopStyleColor(3);
                     
-                    // Only draw important borders, and make them cleaner
+                    // Handle selection in edit mode
+                    if (visualEditMode && selectedIndices && isDragging && dragStart) {
+                        if (buttonClicked) {
+                            if (ctrlPressed) {
+                                // Toggle individual selection
+                                (*selectedIndices)[colorIndex] = !(*selectedIndices)[colorIndex];
+                            } else {
+                                // Start new selection
+                                if (!(*isDragging)) {
+                                    std::fill(selectedIndices->begin(), selectedIndices->end(), false);
+                                    (*selectedIndices)[colorIndex] = true;
+                                }
+                            }
+                        }
+                        
+                        // Handle drag selection
+                        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
+                            if (!(*isDragging)) {
+                                *isDragging = true;
+                                *dragStart = colorIndex;
+                                if (!ctrlPressed) {
+                                    std::fill(selectedIndices->begin(), selectedIndices->end(), false);
+                                }
+                            }
+                            
+                            // Select range from dragStart to current
+                            int start = min(*dragStart, colorIndex);
+                            int end = max(*dragStart, colorIndex);
+                            for (int i = start; i <= end; i++) {
+                                (*selectedIndices)[i] = true;
+                            }
+                        }
+                        
+                        if (ImGui::IsMouseReleased(0)) {
+                            *isDragging = false;
+                        }
+                    }
+                    
+                    // Draw borders
                     ImDrawList* drawList = ImGui::GetWindowDrawList();
                     ImVec2 buttonMin = buttonPos;
                     ImVec2 buttonMax = ImVec2(buttonPos.x + BUTTON_SIZE, buttonPos.y + BUTTON_SIZE);
                     
-                    if (isTransparencyIndex) {
-                        // Bright border for transparency index only
-                        drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 255, 0, 255), CORNER_ROUNDING, 0, 2.0f);
-                    } else if (isInInjectionRange && isInBaseRange) {
-                        // Special case: overlapping ranges (purple)
-                        drawList->AddRect(buttonMin, buttonMax, IM_COL32(200, 100, 255, 180), CORNER_ROUNDING, 0, 1.5f);
-                    } else if (isInInjectionRange) {
-                        // Subtle border for injection range
-                        drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 165, 0, 120), CORNER_ROUNDING, 0, 1.0f);
-                    } else if (isInBaseRange) {
-                        // Very subtle border for base range
-                        drawList->AddRect(buttonMin, buttonMax, IM_COL32(100, 150, 255, 80), CORNER_ROUNDING, 0, 1.0f);
+                    if (visualEditMode) {
+                        if (isSelected) {
+                            // Yellow border for selected
+                            drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 255, 0, 255), CORNER_ROUNDING, 0, 2.0f);
+                        } else if (isTransparencyIndex) {
+                            // Red border for transparency
+                            drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 0, 0, 180), CORNER_ROUNDING, 0, 1.0f);
+                        }
+                    } else {
+                        if (isTransparencyIndex) {
+                            // Yellow border for transparency index
+                            drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 255, 0, 255), CORNER_ROUNDING, 0, 2.0f);
+                        } else if (isConstraintAllowed && config.index_constraints.count > 0) {
+                            // Green border for constraint-allowed indices
+                            drawList->AddRect(buttonMin, buttonMax, IM_COL32(0, 255, 0, 180), CORNER_ROUNDING, 0, 1.5f);
+                        }
                     }
                     
                     // Tooltip
@@ -2696,15 +2767,16 @@ void RenderPalettePreview(const RealmpalConfig& config) {
                         sprintf(tooltip, "Index %d\nRGB(%d, %d, %d)", 
                                colorIndex, color.rgbRed, color.rgbGreen, color.rgbBlue);
                         
-                        if (isTransparencyIndex) {
-                            strcat(tooltip, "\n[TRANSPARENCY]");
-                        }
-                        if (isInBaseRange && isInInjectionRange) {
-                            strcat(tooltip, "\n[BASE + INJECTION]");
-                        } else if (isInBaseRange) {
-                            strcat(tooltip, "\n[BASE RANGE]");
-                        } else if (isInInjectionRange) {
-                            strcat(tooltip, "\n[INJECTION RANGE]");
+                        if (visualEditMode) {
+                            if (isSelected) strcat(tooltip, "\n[SELECTED]");
+                            if (isTransparencyIndex) strcat(tooltip, "\n[TRANSPARENCY]");
+                            strcat(tooltip, "\nClick = select, Ctrl+click = multi-select, Drag = range");
+                        } else {
+                            if (isTransparencyIndex) {
+                                strcat(tooltip, "\n[TRANSPARENCY]");
+                            } else if (config.index_constraints.count > 0) {
+                                strcat(tooltip, isConstraintAllowed ? "\n[ALLOWED BY CONSTRAINTS]" : "\n[BLOCKED BY CONSTRAINTS]");
+                            }
                         }
                         
                         ImGui::SetTooltip("%s", tooltip);
@@ -2716,7 +2788,7 @@ void RenderPalettePreview(const RealmpalConfig& config) {
                 }
             }
             
-            // Show compact range information
+            // Show range information
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
@@ -2727,7 +2799,6 @@ void RenderPalettePreview(const RealmpalConfig& config) {
                    config.index_offset + config.num_colors - 1,
                    config.num_colors);
             
-            // Use smaller text for compact display
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.9f, 1.0f, 1.0f));
             ImGui::Text("%s", rangeInfo);
             
@@ -2743,6 +2814,13 @@ void RenderPalettePreview(const RealmpalConfig& config) {
                 sprintf(rangeInfo, "Transparent: %d", config.transparency_index);
                 ImGui::Text("%s", rangeInfo);
             }
+            
+            if (config.index_constraints.count > 0) {
+                int totalConstrainedIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
+                sprintf(rangeInfo, "Constraint: %d indices allowed", totalConstrainedIndices);
+                ImGui::Text("%s", rangeInfo);
+            }
+            
             ImGui::PopStyleColor();
             
         } else {
@@ -2775,6 +2853,14 @@ void RenderRealmpalDialog() {
     static std::string conversionStatus = "";
     static bool showStatus = false;
     static bool isConverting = false;
+
+    static bool visualEditMode = false;
+    static std::vector<bool> selectedIndices(256, false);
+    static std::vector<std::pair<int, int>> selectedRanges;
+    static bool isDragging = false;
+    static int dragStart = -1;
+    static std::string statusMessage = "";
+    static bool showStatusMessage = false;
     
     // Preset system
     static int selectedPreset = 0;
@@ -3050,133 +3136,225 @@ void RenderRealmpalDialog() {
             ImGui::Spacing();
 
             // =====================================================================
-            // ENHANCED INDEX MAPPING CONSTRAINTS SECTION
+            // ENHANCED INDEX MAPPING CONSTRAINTS SECTION (VISUAL SELECTION)
             // =====================================================================
             if (ImGui::CollapsingHeader("Index Mapping Constraints")) {
                 
-                // Static variables for constraint input
-                static char constraintInputBuffer[512] = "";
-                static std::string constraintStatus = "";
-                static bool constraintStatusIsError = false;
-                static bool constraintBufferChanged = false;
-                static RealmpalIndexConstraints previewConstraints;
-                
-                // Enable/disable checkbox (convert int to bool for UI)
+                // Enable/disable checkbox
                 bool tempEnforce = (config.index_constraints.enabled != 0);
                 if (ImGui::Checkbox("Enable Multi-Range Index Constraints", &tempEnforce)) {
                     config.index_constraints.enabled = tempEnforce ? 1 : 0;
                     selectedPreset = 0;
+                    statusMessage = tempEnforce ? "Constraints enabled" : "Constraints disabled";
+                    showStatusMessage = true;
                     
-                    // Clear status when toggling
-                    constraintStatus = "";
-                    constraintStatusIsError = false;
+                    // Clear visual selection when disabling
+                    if (!tempEnforce) {
+                        visualEditMode = false;
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                        selectedRanges.clear();
+                    }
                 }
                 
                 ImGui::Spacing();
                 
                 if (config.index_constraints.enabled) {
-                    // Show enabled controls
-                    ImGui::Text("Constraint Specification:");
-                    InfoText("Format: single indices and ranges separated by commas");
-                    InfoText("Examples: \"12, 13, 20-40, 56, 60-65\" or \"0-127, 200, 240-254\"");
                     
-                    ImGui::Spacing();
+                    // Mode toggle
+                    HeaderText("Visual Constraint Editor:");
                     
-                    // Constraint input field
-                    ImGui::PushItemWidth(-1);
-                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.9f));
-                    
-                    // Initialize buffer from current constraints if empty
-                    if (strlen(constraintInputBuffer) == 0 && config.index_constraints.count > 0) {
-                        realmpal_constraints_to_string(&config.index_constraints, constraintInputBuffer, sizeof(constraintInputBuffer));
+                    if (ImGui::RadioButton("View Current Constraints", !visualEditMode)) {
+                        visualEditMode = false;
                     }
-                    
-                    if (ImGui::InputText("##constraint_input", constraintInputBuffer, sizeof(constraintInputBuffer))) {
-                        constraintBufferChanged = true;
-                    }
-                    ImGui::PopStyleColor();
-                    ImGui::PopItemWidth();
-                    
-                    ImGui::Spacing();
-                    
-                    // Parse and validate button
-                    if (ImGui::Button("Parse & Validate", ImVec2(150, 0)) || constraintBufferChanged) {
-                        constraintBufferChanged = false;
-                        
-                        // Parse the input
-                        if (realmpal_parse_index_constraints(constraintInputBuffer, &previewConstraints)) {
-                            // Success - update config
-                            config.index_constraints = previewConstraints;
-                            
-                            int totalIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
-                            char statusMsg[256];
-                            sprintf(statusMsg, "Valid: %d ranges/indices, %d total available indices", 
-                                config.index_constraints.count, totalIndices);
-                            constraintStatus = statusMsg;
-                            constraintStatusIsError = false;
-                            selectedPreset = 0;
-                        } else {
-                            // Parse error
-                            const char* error = realmpal_get_last_error();
-                            char errorMsg[256];
-                            sprintf(errorMsg, "Parse Error: %s", error ? error : "Invalid format");
-                            constraintStatus = errorMsg;
-                            constraintStatusIsError = true;
-                        }
-                    }
-                    
                     ImGui::SameLine();
-                    
-                    if (ImGui::Button("Clear", ImVec2(80, 0))) {
-                        constraintInputBuffer[0] = '\0';
-                        memset(&config.index_constraints, 0, sizeof(RealmpalIndexConstraints));
-                        config.index_constraints.enabled = 1; // Keep enabled but with no constraints
-                        constraintStatus = "Constraints cleared";
-                        constraintStatusIsError = false;
-                        selectedPreset = 0;
-                    }
-                    
-                    ImGui::Spacing();
-                    
-                    // Status display
-                    if (!constraintStatus.empty()) {
-                        if (constraintStatusIsError) {
-                            ErrorText(constraintStatus.c_str());
-                        } else {
-                            SuccessText(constraintStatus.c_str());
-                        }
-                    }
-                    
-                    ImGui::Spacing();
-                    
-                    // Current constraints preview
-                    if (config.index_constraints.count > 0) {
-                        if (ImGui::TreeNode("Current Constraints Details")) {
-                            
-                            for (int i = 0; i < config.index_constraints.count; i++) {
-                                char rangeText[64];
-                                if (config.index_constraints.ranges[i].start == config.index_constraints.ranges[i].end) {
-                                    sprintf(rangeText, "Index %d", config.index_constraints.ranges[i].start);
-                                } else {
-                                    sprintf(rangeText, "Range %d-%d (%d indices)", 
-                                        config.index_constraints.ranges[i].start,
-                                        config.index_constraints.ranges[i].end,
-                                        config.index_constraints.ranges[i].end - config.index_constraints.ranges[i].start + 1);
-                                }
-                                ImGui::BulletText("%s", rangeText);
+                    if (ImGui::RadioButton("Edit Constraints Visually", visualEditMode)) {
+                        visualEditMode = true;
+                        // Sync current constraints to selection when entering edit mode
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                        selectedRanges.clear();
+                        for (int i = 0; i < config.index_constraints.count; i++) {
+                            int start = config.index_constraints.ranges[i].start;
+                            int end = config.index_constraints.ranges[i].end;
+                            for (int idx = start; idx <= end && idx < 256; idx++) {
+                                selectedIndices[idx] = true;
                             }
+                        }
+                        statusMessage = "Visual edit mode activated - select ranges on palette grid below";
+                        showStatusMessage = true;
+                    }
+                    
+                    ImGui::Spacing();
+                    
+                    if (visualEditMode) {
+                        // VISUAL EDITING MODE
+                        WarningText("EDIT MODE: Click and drag on the palette grid below to select constraint ranges");
+                        
+                        ImGui::Spacing();
+                        
+                        // Update selectedRanges from selectedIndices
+                        selectedRanges.clear();
+                        for (int i = 0; i < 256; i++) {
+                            if (selectedIndices[i]) {
+                                int start = i;
+                                int end = i;
+                                while (end + 1 < 256 && selectedIndices[end + 1]) {
+                                    end++;
+                                }
+                                selectedRanges.push_back({start, end});
+                                i = end;
+                            }
+                        }
+                        
+                        // Show selected ranges
+                        if (!selectedRanges.empty()) {
+                            char summaryText[128];
+                            int totalIndices = 0;
+                            for (const auto& range : selectedRanges) {
+                                totalIndices += range.second - range.first + 1;
+                            }
+                            sprintf(summaryText, "Selected: %d ranges (%d total indices)", (int)selectedRanges.size(), totalIndices);
+                            SuccessText(summaryText);
                             
                             ImGui::Spacing();
                             
-                            int totalIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
-                            char summaryText[128];
-                            sprintf(summaryText, "Total available for mapping: %d indices", totalIndices);
-                            if (config.transparency_index >= 0) {
-                                strcat(summaryText, " (excludes transparency)");
+                            // Range list with remove buttons
+                            HeaderText("Selected Ranges:");
+                            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.08f, 0.12f, 0.8f));
+                            if (ImGui::BeginChild("SelectedRanges", ImVec2(0, 120), true)) {
+                                for (int i = 0; i < selectedRanges.size(); i++) {
+                                    int start = selectedRanges[i].first;
+                                    int end = selectedRanges[i].second;
+                                    
+                                    char rangeText[64];
+                                    if (start == end) {
+                                        sprintf(rangeText, "Index %d", start);
+                                    } else {
+                                        sprintf(rangeText, "Range %d-%d (%d indices)", start, end, end - start + 1);
+                                    }
+                                    
+                                    ImGui::BulletText("%s", rangeText);
+                                    ImGui::SameLine();
+                                    
+                                    char removeId[32];
+                                    sprintf(removeId, "Remove##%d", i);
+                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.3f, 0.3f, 0.7f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.4f, 0.4f, 0.8f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.7f, 0.2f, 0.2f, 0.9f));
+                                    
+                                    if (ImGui::Button(removeId, ImVec2(60, 0))) {
+                                        // Remove this range from selection
+                                        for (int idx = start; idx <= end; idx++) {
+                                            selectedIndices[idx] = false;
+                                        }
+                                    }
+                                    ImGui::PopStyleColor(3);
+                                }
                             }
-                            InfoText(summaryText);
+                            ImGui::EndChild();
+                            ImGui::PopStyleColor();
+                        } else {
+                            DisabledText("No ranges selected - click and drag on the palette grid below");
+                        }
+                        
+                        ImGui::Spacing();
+                        
+                        // Action buttons
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.2f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.24f, 0.84f, 0.24f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.16f, 0.56f, 0.16f, 1.0f));
+                        if (ImGui::Button("Apply Constraints", ImVec2(140, 0))) {
+                            // Convert selection to constraints
+                            config.index_constraints.count = 0;
+                            for (const auto& range : selectedRanges) {
+                                if (config.index_constraints.count < 32) {
+                                    config.index_constraints.ranges[config.index_constraints.count].start = range.first;
+                                    config.index_constraints.ranges[config.index_constraints.count].end = range.second;
+                                    config.index_constraints.count++;
+                                }
+                            }
                             
-                            ImGui::TreePop();
+                            statusMessage = "Constraints applied successfully!";
+                            showStatusMessage = true;
+                            visualEditMode = false;
+                            selectedPreset = 0;
+                        }
+                        ImGui::PopStyleColor(3);
+                        
+                        ImGui::SameLine();
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.4f, 0.2f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.96f, 0.48f, 0.24f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.32f, 0.16f, 1.0f));
+                        if (ImGui::Button("Clear Selection", ImVec2(120, 0))) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            selectedRanges.clear();
+                            statusMessage = "Selection cleared";
+                            showStatusMessage = true;
+                        }
+                        ImGui::PopStyleColor(3);
+                        
+                        ImGui::SameLine();
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.6f, 0.8f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.72f, 0.72f, 0.96f, 1.0f));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.48f, 0.48f, 0.64f, 1.0f));
+                        if (ImGui::Button("Cancel", ImVec2(80, 0))) {
+                            visualEditMode = false;
+                            // Reset selection to current constraints
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            selectedRanges.clear();
+                            for (int i = 0; i < config.index_constraints.count; i++) {
+                                int start = config.index_constraints.ranges[i].start;
+                                int end = config.index_constraints.ranges[i].end;
+                                for (int idx = start; idx <= end && idx < 256; idx++) {
+                                    selectedIndices[idx] = true;
+                                }
+                            }
+                            statusMessage = "Edit cancelled";
+                            showStatusMessage = true;
+                        }
+                        ImGui::PopStyleColor(3);
+                        
+                    } else {
+                        // VIEW MODE - Show current constraints
+                        InfoText("Current constraints are applied to palette mapping below");
+                        
+                        if (config.index_constraints.count > 0) {
+                            char summaryText[256];
+                            int totalIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
+                            sprintf(summaryText, "%d ranges/indices defined, %d total available for mapping", 
+                                config.index_constraints.count, totalIndices);
+                            SuccessText(summaryText);
+                            
+                            ImGui::Spacing();
+                            
+                            // Current constraints list
+                            if (ImGui::TreeNode("View Current Constraints")) {
+                                for (int i = 0; i < config.index_constraints.count; i++) {
+                                    char rangeText[64];
+                                    if (config.index_constraints.ranges[i].start == config.index_constraints.ranges[i].end) {
+                                        sprintf(rangeText, "Index %d", config.index_constraints.ranges[i].start);
+                                    } else {
+                                        sprintf(rangeText, "Range %d-%d (%d indices)", 
+                                            config.index_constraints.ranges[i].start,
+                                            config.index_constraints.ranges[i].end,
+                                            config.index_constraints.ranges[i].end - config.index_constraints.ranges[i].start + 1);
+                                    }
+                                    ImGui::BulletText("%s", rangeText);
+                                }
+                                
+                                ImGui::Spacing();
+                                
+                                if (config.transparency_index >= 0) {
+                                    char transparencyNote[128];
+                                    sprintf(transparencyNote, "Note: Transparency index %d is excluded from mapping", config.transparency_index);
+                                    InfoText(transparencyNote);
+                                }
+                                
+                                ImGui::TreePop();
+                            }
+                        } else {
+                            DisabledText("No constraints defined - all indices available for mapping");
                         }
                     }
                     
@@ -3184,32 +3362,91 @@ void RenderRealmpalDialog() {
                     ImGui::Separator();
                     ImGui::Spacing();
                     
-                    // Quick preset buttons for common SCI ranges
-                    HeaderText("Quick Presets:");
+                    // Quick preset buttons (available in both modes)
+                    HeaderText("Quick Constraint Presets:");
                     
                     if (ImGui::Button("SCI Upper Half (128-254)", ImVec2(-1, 0))) {
-                        strcpy(constraintInputBuffer, "128-254");
-                        constraintBufferChanged = true;
+                        // Apply preset
+                        config.index_constraints.count = 1;
+                        config.index_constraints.ranges[0].start = 128;
+                        config.index_constraints.ranges[0].end = 254;
+                        selectedPreset = 0;
+                        statusMessage = "Applied SCI Upper Half preset";
+                        showStatusMessage = true;
+                        
+                        // Update visual selection if in edit mode
+                        if (visualEditMode) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            for (int i = 128; i <= 254; i++) {
+                                selectedIndices[i] = true;
+                            }
+                        }
                     }
                     
                     if (ImGui::Button("SCI Lower Half (0-127)", ImVec2(-1, 0))) {
-                        strcpy(constraintInputBuffer, "0-127");
-                        constraintBufferChanged = true;
+                        config.index_constraints.count = 1;
+                        config.index_constraints.ranges[0].start = 0;
+                        config.index_constraints.ranges[0].end = 127;
+                        selectedPreset = 0;
+                        statusMessage = "Applied SCI Lower Half preset";
+                        showStatusMessage = true;
+                        
+                        if (visualEditMode) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            for (int i = 0; i <= 127; i++) {
+                                selectedIndices[i] = true;
+                            }
+                        }
                     }
                     
                     if (ImGui::Button("SCI Safe Range (16-239)", ImVec2(-1, 0))) {
-                        strcpy(constraintInputBuffer, "16-239");
-                        constraintBufferChanged = true;
+                        config.index_constraints.count = 1;
+                        config.index_constraints.ranges[0].start = 16;
+                        config.index_constraints.ranges[0].end = 239;
+                        selectedPreset = 0;
+                        statusMessage = "Applied SCI Safe Range preset";
+                        showStatusMessage = true;
+                        
+                        if (visualEditMode) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            for (int i = 16; i <= 239; i++) {
+                                selectedIndices[i] = true;
+                            }
+                        }
                     }
                     
                     if (ImGui::Button("SCI Hybrid (0-63, 128-191)", ImVec2(-1, 0))) {
-                        strcpy(constraintInputBuffer, "0-63, 128-191");
-                        constraintBufferChanged = true;
+                        config.index_constraints.count = 2;
+                        config.index_constraints.ranges[0].start = 0;
+                        config.index_constraints.ranges[0].end = 63;
+                        config.index_constraints.ranges[1].start = 128;
+                        config.index_constraints.ranges[1].end = 191;
+                        selectedPreset = 0;
+                        statusMessage = "Applied SCI Hybrid preset";
+                        showStatusMessage = true;
+                        
+                        if (visualEditMode) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            for (int i = 0; i <= 63; i++) {
+                                selectedIndices[i] = true;
+                            }
+                            for (int i = 128; i <= 191; i++) {
+                                selectedIndices[i] = true;
+                            }
+                        }
                     }
                     
-                    if (ImGui::Button("Custom Game Palette (0-15, 32-127, 200-254)", ImVec2(-1, 0))) {
-                        strcpy(constraintInputBuffer, "0-15, 32-127, 200-254");
-                        constraintBufferChanged = true;
+                    if (ImGui::Button("Clear All Constraints", ImVec2(-1, 0))) {
+                        config.index_constraints.count = 0;
+                        memset(&config.index_constraints.ranges, 0, sizeof(config.index_constraints.ranges));
+                        selectedPreset = 0;
+                        statusMessage = "All constraints cleared";
+                        showStatusMessage = true;
+                        
+                        if (visualEditMode) {
+                            std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            selectedRanges.clear();
+                        }
                     }
                     
                 } else {
@@ -3219,56 +3456,34 @@ void RenderRealmpalDialog() {
                     ImGui::Spacing();
                     ImGui::TextWrapped("When disabled, all indices (0-255) are available for mapping except the transparency index.");
                     ImGui::Spacing();
-                    ImGui::TextWrapped("Enable to specify multiple ranges and single indices for precise palette control.");
+                    ImGui::TextWrapped("Enable the checkbox above to use visual constraint editing with the palette grid.");
                     ImGui::PopStyleVar();
                 }
-            }
-            
-            // =====================================================================
-            // DITHERING SETTINGS
-            // =====================================================================
-            if (ImGui::CollapsingHeader("Dithering")) {
                 
-                ImGui::Text("Mode:");
-                int ditherIndex = (int)config.dither;
-                const char* ditherItems[] = { 
-                    "None", 
-                    "Floyd-Steinberg", 
-                    "FS Serpentine", 
-                    "Ordered",
-                    "Perceptual"
-                };
-                
-                ImGui::PushItemWidth(-20);
-                if (ImGui::Combo("##dither_mode", &ditherIndex, ditherItems, 5)) {
-                    config.dither = (RealmpalDitherMode)ditherIndex;
-                    selectedPreset = 0;
-                }
-                
-                if (config.dither == REALMPAL_DITHER_FS || config.dither == REALMPAL_DITHER_FS_SERP) {
-                    ImGui::Text("Strength:");
-                    float tempStrength = (float)config.fs_strength;
-                    if (ImGui::SliderFloat("##fs_strength", &tempStrength, 0.0f, 2.0f, "%.1f")) {
-                        config.fs_strength = (double)tempStrength;
-                        selectedPreset = 0;
+                // Status message display
+                if (showStatusMessage && !statusMessage.empty()) {
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    
+                    if (statusMessage.find("success") != std::string::npos || statusMessage.find("Applied") != std::string::npos) {
+                        SuccessText(statusMessage.c_str());
+                    } else if (statusMessage.find("cleared") != std::string::npos || statusMessage.find("cancelled") != std::string::npos) {
+                        WarningText(statusMessage.c_str());
+                    } else {
+                        InfoText(statusMessage.c_str());
+                    }
+                    
+                    // Auto-hide status after showing for a while
+                    static int statusCounter = 0;
+                    statusCounter++;
+                    if (statusCounter > 120) { // ~2 seconds at 60fps
+                        showStatusMessage = false;
+                        statusMessage = "";
+                        statusCounter = 0;
                     }
                 }
-                
-                if (config.dither == REALMPAL_DITHER_ORDERED) {
-                    ImGui::Text("Matrix:");
-                    int tempMatrix = config.ordered_matrix_size;
-                    const char* matrixItems[] = { "2x2", "4x4", "8x8" };
-                    int matrixIndex = (tempMatrix == 2) ? 0 : (tempMatrix == 8) ? 2 : 1;
-                    if (ImGui::Combo("##matrix_size", &matrixIndex, matrixItems, 3)) {
-                        config.ordered_matrix_size = (matrixIndex == 0) ? 2 : (matrixIndex == 2) ? 8 : 4;
-                        selectedPreset = 0;
-                    }
-                }
-                
-                ImGui::PopItemWidth();
             }
-            
-            ImGui::Spacing();
             
             // =====================================================================
             // TRANSPARENCY SETTINGS
@@ -3341,7 +3556,7 @@ void RenderRealmpalDialog() {
         
         // Right Column: Palette Preview (50% width - narrower than before)
         if (ImGui::BeginChild("PaletteColumn", ImVec2(0, 0), true)) {
-            RenderPalettePreview(config);
+            RenderPalettePreview(config, visualEditMode, &selectedIndices, &isDragging, &dragStart);
         }
         ImGui::EndChild();
         
