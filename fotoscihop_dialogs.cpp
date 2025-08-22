@@ -3048,6 +3048,98 @@ void RenderRealmpalDialog() {
             }
             
             ImGui::Spacing();
+
+            // =====================================================================
+            // NEW: INDEX MAPPING CONSTRAINTS - Add this entire section
+            // =====================================================================
+            if (ImGui::CollapsingHeader("Index Mapping Constraints")) {
+                
+                // Enable/disable checkbox
+                bool tempEnforce = config.enforce_mapping_range;
+                if (ImGui::Checkbox("Enable Index Range Constraints", &tempEnforce)) {
+                    config.enforce_mapping_range = tempEnforce;
+                    selectedPreset = 0;
+                }
+                
+                ImGui::Spacing();
+                
+                if (config.enforce_mapping_range) {
+                    // Show enabled controls
+                    ImGui::Text("Allowed Mapping Range:");
+                    
+                    ImGui::PushItemWidth(80);
+                    
+                    // Start index
+                    ImGui::Text("Start Index:");
+                    ImGui::SameLine();
+                    int tempStartIndex = config.mapping_min_index;
+                    if (ImGui::InputInt("##map_start", &tempStartIndex)) {
+                        config.mapping_min_index = realmpal_clamp_int(tempStartIndex, 0, 255);
+                        selectedPreset = 0;
+                    }
+                    
+                    // End index  
+                    ImGui::Text("End Index:");
+                    ImGui::SameLine();
+                    int tempEndIndex = config.mapping_max_index;
+                    if (ImGui::InputInt("##map_end", &tempEndIndex)) {
+                        config.mapping_max_index = realmpal_clamp_int(tempEndIndex, 0, 255);
+                        selectedPreset = 0;
+                    }
+                    
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::Spacing();
+                    
+                    // Validate and show info
+                    int start_copy = config.mapping_min_index;
+                    int end_copy = config.mapping_max_index;
+                    int available = realmpal_count_available_indices(start_copy, end_copy, config.transparency_index);
+                    
+                    if (config.mapping_min_index > config.mapping_max_index) {
+                        WarningText("Warning: Start index > End index");
+                    } else if (available <= 0) {
+                        ErrorText("Error: No available indices in range");
+                    } else {
+                        char infoText[128];
+                        sprintf(infoText, "Available indices: %d (range %d-%d)", 
+                            available, start_copy, end_copy);
+                        if (config.transparency_index >= start_copy && config.transparency_index <= end_copy) {
+                            strcat(infoText, " [excludes transparency]");
+                        }
+                        SuccessText(infoText);
+                    }
+                    
+                    ImGui::Spacing();
+                    
+                    // Quick preset buttons for common SCI ranges
+                    if (ImGui::Button("SCI Upper Half (128-254)", ImVec2(-1, 0))) {
+                        config.mapping_min_index = 128;
+                        config.mapping_max_index = 254;
+                        selectedPreset = 0;
+                    }
+                    
+                    if (ImGui::Button("SCI Lower Half (0-127)", ImVec2(-1, 0))) {
+                        config.mapping_min_index = 0;
+                        config.mapping_max_index = 127;
+                        selectedPreset = 0;
+                    }
+                    
+                    if (ImGui::Button("SCI Safe Range (16-239)", ImVec2(-1, 0))) {
+                        config.mapping_min_index = 16;
+                        config.mapping_max_index = 239;
+                        selectedPreset = 0;
+                    }
+                    
+                } else {
+                    // Show disabled state
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    ImGui::Text("Range constraints disabled");
+                    ImGui::Text("All indices (0-255) available for mapping");
+                    ImGui::Text("(except transparency index)");
+                    ImGui::PopStyleVar();
+                }
+            }
             
             // =====================================================================
             // DITHERING SETTINGS

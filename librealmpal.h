@@ -712,6 +712,11 @@ typedef struct {
     // Dithering Parameters
     double fs_strength;               /**< Floyd-Steinberg strength (0.0-2.0) */
     int ordered_matrix_size;          /**< Ordered dither matrix size (2,4,8) */
+
+    // Index Mapping Constraints
+    int mapping_min_index;          /**< Minimum index for color mapping (-1 = no constraint) */
+    int mapping_max_index;            /**< Maximum index for color mapping (-1 = no constraint) */
+    bool enforce_mapping_range;       /**< Whether to enforce the mapping range */
 } RealmpalConfig;
 
 /**
@@ -800,6 +805,52 @@ static inline int realmpal_clamp_int(int value, int min, int max) {
 static inline double realmpal_clamp_double(double value, double min, double max) {
     return value < min ? min : (value > max ? max : value);
 }
+
+/**
+ * Enhanced color mapping with index constraints
+ * 
+ * @param src Source RGBA8 pixel array
+ * @param w Image width
+ * @param h Image height
+ * @param palette Color palette (256 entries)
+ * @param out Output index array (w*h size, caller allocates)
+ * @param transparency_index Index to use for transparent pixels (-1 to disable)
+ * @param alpha_threshold Alpha threshold for transparency (0-255)
+ * @param min_index Minimum index for mapping (-1 = no constraint)
+ * @param max_index Maximum index for mapping (-1 = no constraint)
+ */
+void realmpal_map_nearest_neighbor_constrained(const RGBA8* src, int w, int h, const RGB8* palette, 
+                                              uint8_t *out, int transparency_index, int alpha_threshold,
+                                              int min_index, int max_index);
+
+void realmpal_map_floyd_steinberg_constrained(const RGBA8* src, int w, int h, const RGB8* palette, 
+                                             uint8_t *out, bool serpentine, double strength,
+                                             int transparency_index, int alpha_threshold,
+                                             int min_index, int max_index);
+
+void realmpal_map_perceptual_constrained(const RGBA8* src, int w, int h, const RGB8* palette,
+                                        uint8_t *out, int transparency_index, int alpha_threshold,
+                                        int min_index, int max_index);
+
+/**
+ * Validate index constraints and adjust if necessary
+ * 
+ * @param min_index Pointer to start index (will be modified if invalid)
+ * @param end_index Pointer to end index (will be modified if invalid)
+ * @param transparency_index Transparency index to avoid (-1 = none)
+ * @return 1 if constraints are valid, 0 if they were adjusted
+ */
+int realmpal_validate_index_constraints(int *min_index, int *max_index, int transparency_index);
+
+/**
+ * Count available indices in a constrained range
+ * 
+ * @param min_index Minimum index (-1 = no constraint)
+ * @param max_index Maximum index (-1 = no constraint)
+ * @param transparency_index Index to exclude (-1 = none)
+ * @return Number of available indices
+ */
+int realmpal_count_available_indices(int min_index, int max_index, int transparency_index);
 
 // ----------------------------- Error Codes -----------------------------
 
