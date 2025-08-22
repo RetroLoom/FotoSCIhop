@@ -73,6 +73,23 @@ typedef struct {
 } RGB8;
 
 /**
+ * Single index range or constraint
+ */
+typedef struct {
+    int start;              /**< Start index (for single index, start == end) */
+    int end;                /**< End index (for single index, start == end) */
+} RealmpalIndexRange;
+
+/**
+ * Collection of index constraints for quantization
+ */
+typedef struct {
+    RealmpalIndexRange ranges[32];  /**< Array of allowed ranges/indices (max 32) */
+    int count;                      /**< Number of ranges/indices specified */
+    bool enabled;                   /**< Whether constraints are active */
+} RealmpalIndexConstraints;
+
+/**
  * Dithering algorithms supported by the library
  */
 typedef enum { 
@@ -564,19 +581,43 @@ int realmpal_quantize_median_cut(const RGBA8 *pixels, int count, int max_colors,
 // ----------------------------- Color Mapping and Dithering -----------------------------
 
 /**
- * Map image to palette indices using nearest neighbor.
- * Fast but can show banding artifacts without dithering.
+ * Parse constraint string into IndexConstraints structure
+ * Format: "12, 13, 20-40, 56, 60-65" (spaces optional)
  * 
- * @param src Source RGBA8 pixel array
- * @param w Image width
- * @param h Image height  
- * @param palette Color palette (256 entries)
- * @param out Output index array (w*h size, caller allocates)
- * @param transparency_index Index to use for transparent pixels (-1 to disable)
- * @param alpha_threshold Alpha threshold for transparency (0-255)
+ * @param constraint_string Input string with ranges and single indices
+ * @param constraints Output constraints structure
+ * @return 1 on success, 0 on parse error
  */
-void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* palette, 
-                                  uint8_t *out, int transparency_index, int alpha_threshold);
+int realmpal_parse_index_constraints(const char* constraint_string, RealmpalIndexConstraints* constraints);
+
+/**
+ * Check if an index is allowed by the constraints
+ * 
+ * @param index Index to check (0-255)
+ * @param constraints Constraints structure (NULL = no constraints)
+ * @param transparency_index Transparency index to exclude (-1 = none)
+ * @return 1 if allowed, 0 if not allowed
+ */
+int realmpal_index_allowed_by_constraints(int index, const RealmpalIndexConstraints* constraints, int transparency_index);
+
+/**
+ * Count total available indices in constraints
+ * 
+ * @param constraints Constraints structure (NULL = all indices)
+ * @param transparency_index Transparency index to exclude (-1 = none)
+ * @return Number of available indices
+ */
+int realmpal_count_constraint_indices(const RealmpalIndexConstraints* constraints, int transparency_index);
+
+/**
+ * Convert constraints to string representation
+ * 
+ * @param constraints Constraints structure
+ * @param output_buffer Output buffer for string
+ * @param buffer_size Size of output buffer
+ * @return 1 on success, 0 if buffer too small
+ */
+int realmpal_constraints_to_string(const RealmpalIndexConstraints* constraints, char* output_buffer, int buffer_size);
 
 /**
  * Map image to palette indices using Floyd-Steinberg error diffusion.
@@ -591,13 +632,15 @@ void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* p
  * @param strength Error diffusion strength (0.0-2.0, typically 1.0)
  * @param transparency_index Index to use for transparent pixels (-1 to disable)
  * @param alpha_threshold Alpha threshold for transparency (0-255)
+ * @param constraints Index constraints (NULL = no constraints)
  */
 void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* palette, 
                                  uint8_t *out, bool serpentine, double strength,
-                                 int transparency_index, int alpha_threshold);
+                                 int transparency_index, int alpha_threshold,
+                                 const RealmpalIndexConstraints* constraints);
 
 /**
- * Map image to palette using ordered (Bayer matrix) dithering.
+ * Map image using ordered (Bayer matrix) dithering.
  * Creates a characteristic crosshatch pattern. Good for print applications.
  * 
  * @param src Source RGBA8 pixel array
@@ -608,12 +651,14 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
  * @param matrix_size Size of Bayer matrix (2, 4, or 8)
  * @param transparency_index Index to use for transparent pixels (-1 to disable)
  * @param alpha_threshold Alpha threshold for transparency (0-255)
+ * @param constraints Index constraints (NULL = no constraints)
  */
 void realmpal_map_ordered_dither(const RGBA8* src, int w, int h, const RGB8* palette,
                                 uint8_t *out, int matrix_size,
-                                int transparency_index, int alpha_threshold);
+                                int transparency_index, int alpha_threshold,
+                                const RealmpalIndexConstraints* constraints);
 
-/**
+ /**
  * Map image using perceptually weighted nearest neighbor.
  * Uses human visual perception weights for better color matching.
  * 
@@ -624,9 +669,11 @@ void realmpal_map_ordered_dither(const RGBA8* src, int w, int h, const RGB8* pal
  * @param out Output index array (w*h size, caller allocates)
  * @param transparency_index Index to use for transparent pixels (-1 to disable)
  * @param alpha_threshold Alpha threshold for transparency (0-255)
+ * @param constraints Index constraints (NULL = no constraints)
  */
 void realmpal_map_perceptual(const RGBA8* src, int w, int h, const RGB8* palette,
-                            uint8_t *out, int transparency_index, int alpha_threshold);
+                            uint8_t *out, int transparency_index, int alpha_threshold,
+                            const RealmpalIndexConstraints* constraints);
 
 // ----------------------------- File Output -----------------------------
 
@@ -713,10 +760,13 @@ typedef struct {
     double fs_strength;               /**< Floyd-Steinberg strength (0.0-2.0) */
     int ordered_matrix_size;          /**< Ordered dither matrix size (2,4,8) */
 
-    // Index Mapping Constraints
-    int mapping_min_index;          /**< Minimum index for color mapping (-1 = no constraint) */
+    // Enhanced Index Mapping Constraints
+    RealmpalIndexConstraints index_constraints;  /**< Multi-range index constraints */
+    
+    // Legacy single-range support (deprecated but kept for compatibility)
+    int mapping_min_index;            /**< Minimum index for color mapping (-1 = no constraint) */
     int mapping_max_index;            /**< Maximum index for color mapping (-1 = no constraint) */
-    bool enforce_mapping_range;       /**< Whether to enforce the mapping range */
+    int enforce_mapping_range;        /**< Whether to enforce the legacy mapping range (0=false, 1=true) */
 } RealmpalConfig;
 
 /**
@@ -831,27 +881,7 @@ void realmpal_map_floyd_steinberg_constrained(const RGBA8* src, int w, int h, co
 void realmpal_map_perceptual_constrained(const RGBA8* src, int w, int h, const RGB8* palette,
                                         uint8_t *out, int transparency_index, int alpha_threshold,
                                         int min_index, int max_index);
-
-/**
- * Validate index constraints and adjust if necessary
- * 
- * @param min_index Pointer to start index (will be modified if invalid)
- * @param end_index Pointer to end index (will be modified if invalid)
- * @param transparency_index Transparency index to avoid (-1 = none)
- * @return 1 if constraints are valid, 0 if they were adjusted
- */
-int realmpal_validate_index_constraints(int *min_index, int *max_index, int transparency_index);
-
-/**
- * Count available indices in a constrained range
- * 
- * @param min_index Minimum index (-1 = no constraint)
- * @param max_index Maximum index (-1 = no constraint)
- * @param transparency_index Index to exclude (-1 = none)
- * @return Number of available indices
- */
-int realmpal_count_available_indices(int min_index, int max_index, int transparency_index);
-
+                                                                                
 // ----------------------------- Error Codes -----------------------------
 
 #define REALMPAL_SUCCESS                0   /**< Operation successful */

@@ -3050,94 +3050,224 @@ void RenderRealmpalDialog() {
             ImGui::Spacing();
 
             // =====================================================================
-            // NEW: INDEX MAPPING CONSTRAINTS - Add this entire section
+            // ENHANCED INDEX MAPPING CONSTRAINTS SECTION
             // =====================================================================
             if (ImGui::CollapsingHeader("Index Mapping Constraints")) {
                 
-                // Enable/disable checkbox
-                bool tempEnforce = config.enforce_mapping_range;
-                if (ImGui::Checkbox("Enable Index Range Constraints", &tempEnforce)) {
-                    config.enforce_mapping_range = tempEnforce;
+                // Static variables for constraint input
+                static char constraintInputBuffer[512] = "";
+                static std::string constraintStatus = "";
+                static bool constraintStatusIsError = false;
+                static bool constraintBufferChanged = false;
+                static RealmpalIndexConstraints previewConstraints;
+                
+                // Enable/disable checkbox (convert int to bool for UI)
+                bool tempEnforce = (config.index_constraints.enabled != 0);
+                if (ImGui::Checkbox("Enable Multi-Range Index Constraints", &tempEnforce)) {
+                    config.index_constraints.enabled = tempEnforce ? 1 : 0;
                     selectedPreset = 0;
+                    
+                    // Clear status when toggling
+                    constraintStatus = "";
+                    constraintStatusIsError = false;
                 }
                 
                 ImGui::Spacing();
                 
-                if (config.enforce_mapping_range) {
+                if (config.index_constraints.enabled) {
                     // Show enabled controls
-                    ImGui::Text("Allowed Mapping Range:");
+                    ImGui::Text("Constraint Specification:");
+                    InfoText("Format: single indices and ranges separated by commas");
+                    InfoText("Examples: \"12, 13, 20-40, 56, 60-65\" or \"0-127, 200, 240-254\"");
                     
-                    ImGui::PushItemWidth(80);
+                    ImGui::Spacing();
                     
-                    // Start index
-                    ImGui::Text("Start Index:");
-                    ImGui::SameLine();
-                    int tempStartIndex = config.mapping_min_index;
-                    if (ImGui::InputInt("##map_start", &tempStartIndex)) {
-                        config.mapping_min_index = realmpal_clamp_int(tempStartIndex, 0, 255);
-                        selectedPreset = 0;
+                    // Constraint input field
+                    ImGui::PushItemWidth(-1);
+                    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.2f, 0.9f));
+                    
+                    // Initialize buffer from current constraints if empty
+                    if (strlen(constraintInputBuffer) == 0 && config.index_constraints.count > 0) {
+                        realmpal_constraints_to_string(&config.index_constraints, constraintInputBuffer, sizeof(constraintInputBuffer));
                     }
                     
-                    // End index  
-                    ImGui::Text("End Index:");
-                    ImGui::SameLine();
-                    int tempEndIndex = config.mapping_max_index;
-                    if (ImGui::InputInt("##map_end", &tempEndIndex)) {
-                        config.mapping_max_index = realmpal_clamp_int(tempEndIndex, 0, 255);
-                        selectedPreset = 0;
+                    if (ImGui::InputText("##constraint_input", constraintInputBuffer, sizeof(constraintInputBuffer))) {
+                        constraintBufferChanged = true;
                     }
-                    
+                    ImGui::PopStyleColor();
                     ImGui::PopItemWidth();
                     
                     ImGui::Spacing();
                     
-                    // Validate and show info
-                    int start_copy = config.mapping_min_index;
-                    int end_copy = config.mapping_max_index;
-                    int available = realmpal_count_available_indices(start_copy, end_copy, config.transparency_index);
-                    
-                    if (config.mapping_min_index > config.mapping_max_index) {
-                        WarningText("Warning: Start index > End index");
-                    } else if (available <= 0) {
-                        ErrorText("Error: No available indices in range");
-                    } else {
-                        char infoText[128];
-                        sprintf(infoText, "Available indices: %d (range %d-%d)", 
-                            available, start_copy, end_copy);
-                        if (config.transparency_index >= start_copy && config.transparency_index <= end_copy) {
-                            strcat(infoText, " [excludes transparency]");
+                    // Parse and validate button
+                    if (ImGui::Button("Parse & Validate", ImVec2(150, 0)) || constraintBufferChanged) {
+                        constraintBufferChanged = false;
+                        
+                        // Parse the input
+                        if (realmpal_parse_index_constraints(constraintInputBuffer, &previewConstraints)) {
+                            // Success - update config
+                            config.index_constraints = previewConstraints;
+                            
+                            int totalIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
+                            char statusMsg[256];
+                            sprintf(statusMsg, "Valid: %d ranges/indices, %d total available indices", 
+                                config.index_constraints.count, totalIndices);
+                            constraintStatus = statusMsg;
+                            constraintStatusIsError = false;
+                            selectedPreset = 0;
+                        } else {
+                            // Parse error
+                            const char* error = realmpal_get_last_error();
+                            char errorMsg[256];
+                            sprintf(errorMsg, "Parse Error: %s", error ? error : "Invalid format");
+                            constraintStatus = errorMsg;
+                            constraintStatusIsError = true;
                         }
-                        SuccessText(infoText);
+                    }
+                    
+                    ImGui::SameLine();
+                    
+                    if (ImGui::Button("Clear", ImVec2(80, 0))) {
+                        constraintInputBuffer[0] = '\0';
+                        memset(&config.index_constraints, 0, sizeof(RealmpalIndexConstraints));
+                        config.index_constraints.enabled = 1; // Keep enabled but with no constraints
+                        constraintStatus = "Constraints cleared";
+                        constraintStatusIsError = false;
+                        selectedPreset = 0;
                     }
                     
                     ImGui::Spacing();
                     
+                    // Status display
+                    if (!constraintStatus.empty()) {
+                        if (constraintStatusIsError) {
+                            ErrorText(constraintStatus.c_str());
+                        } else {
+                            SuccessText(constraintStatus.c_str());
+                        }
+                    }
+                    
+                    ImGui::Spacing();
+                    
+                    // Current constraints preview
+                    if (config.index_constraints.count > 0) {
+                        if (ImGui::TreeNode("Current Constraints Details")) {
+                            
+                            for (int i = 0; i < config.index_constraints.count; i++) {
+                                char rangeText[64];
+                                if (config.index_constraints.ranges[i].start == config.index_constraints.ranges[i].end) {
+                                    sprintf(rangeText, "Index %d", config.index_constraints.ranges[i].start);
+                                } else {
+                                    sprintf(rangeText, "Range %d-%d (%d indices)", 
+                                        config.index_constraints.ranges[i].start,
+                                        config.index_constraints.ranges[i].end,
+                                        config.index_constraints.ranges[i].end - config.index_constraints.ranges[i].start + 1);
+                                }
+                                ImGui::BulletText("%s", rangeText);
+                            }
+                            
+                            ImGui::Spacing();
+                            
+                            int totalIndices = realmpal_count_constraint_indices(&config.index_constraints, config.transparency_index);
+                            char summaryText[128];
+                            sprintf(summaryText, "Total available for mapping: %d indices", totalIndices);
+                            if (config.transparency_index >= 0) {
+                                strcat(summaryText, " (excludes transparency)");
+                            }
+                            InfoText(summaryText);
+                            
+                            ImGui::TreePop();
+                        }
+                    }
+                    
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    
                     // Quick preset buttons for common SCI ranges
+                    HeaderText("Quick Presets:");
+                    
                     if (ImGui::Button("SCI Upper Half (128-254)", ImVec2(-1, 0))) {
-                        config.mapping_min_index = 128;
-                        config.mapping_max_index = 254;
-                        selectedPreset = 0;
+                        strcpy(constraintInputBuffer, "128-254");
+                        constraintBufferChanged = true;
                     }
                     
                     if (ImGui::Button("SCI Lower Half (0-127)", ImVec2(-1, 0))) {
-                        config.mapping_min_index = 0;
-                        config.mapping_max_index = 127;
-                        selectedPreset = 0;
+                        strcpy(constraintInputBuffer, "0-127");
+                        constraintBufferChanged = true;
                     }
                     
                     if (ImGui::Button("SCI Safe Range (16-239)", ImVec2(-1, 0))) {
-                        config.mapping_min_index = 16;
-                        config.mapping_max_index = 239;
-                        selectedPreset = 0;
+                        strcpy(constraintInputBuffer, "16-239");
+                        constraintBufferChanged = true;
+                    }
+                    
+                    if (ImGui::Button("SCI Hybrid (0-63, 128-191)", ImVec2(-1, 0))) {
+                        strcpy(constraintInputBuffer, "0-63, 128-191");
+                        constraintBufferChanged = true;
+                    }
+                    
+                    if (ImGui::Button("Custom Game Palette (0-15, 32-127, 200-254)", ImVec2(-1, 0))) {
+                        strcpy(constraintInputBuffer, "0-15, 32-127, 200-254");
+                        constraintBufferChanged = true;
                     }
                     
                 } else {
                     // Show disabled state
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Text("Range constraints disabled");
-                    ImGui::Text("All indices (0-255) available for mapping");
-                    ImGui::Text("(except transparency index)");
+                    ImGui::Text("Multi-range constraints disabled");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("When disabled, all indices (0-255) are available for mapping except the transparency index.");
+                    ImGui::Spacing();
+                    ImGui::TextWrapped("Enable to specify multiple ranges and single indices for precise palette control.");
                     ImGui::PopStyleVar();
+                    
+                    // Show legacy compatibility section
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    
+                    if (ImGui::TreeNode("Legacy Single-Range Mode")) {
+                        ImGui::Text("For compatibility, you can still use the old single-range mode:");
+                        
+                        bool legacyEnabled = (config.enforce_mapping_range != 0);
+                        if (ImGui::Checkbox("Enable Legacy Range", &legacyEnabled)) {
+                            config.enforce_mapping_range = legacyEnabled ? 1 : 0;
+                            selectedPreset = 0;
+                        }
+                        
+                        if (config.enforce_mapping_range) {
+                            ImGui::PushItemWidth(80);
+                            
+                            ImGui::Text("Start:");
+                            ImGui::SameLine();
+                            if (ImGui::InputInt("##legacy_start", &config.mapping_min_index)) {
+                                config.mapping_min_index = realmpal_clamp_int(config.mapping_min_index, 0, 255);
+                                selectedPreset = 0;
+                            }
+                            
+                            ImGui::Text("End:");
+                            ImGui::SameLine();
+                            if (ImGui::InputInt("##legacy_end", &config.mapping_max_index)) {
+                                config.mapping_max_index = realmpal_clamp_int(config.mapping_max_index, 0, 255);
+                                selectedPreset = 0;
+                            }
+                            
+                            ImGui::PopItemWidth();
+                            
+                            // Convert to new format button
+                            if (ImGui::Button("Convert to Multi-Range Format", ImVec2(-1, 0))) {
+                                if (config.mapping_min_index >= 0 && config.mapping_max_index >= 0) {
+                                    sprintf(constraintInputBuffer, "%d-%d", config.mapping_min_index, config.mapping_max_index);
+                                    config.index_constraints.enabled = 1;
+                                    config.enforce_mapping_range = 0;
+                                    constraintBufferChanged = true;
+                                }
+                            }
+                        }
+                        
+                        ImGui::TreePop();
+                    }
                 }
             }
             

@@ -969,10 +969,288 @@ static int best_index_perceptual_optimized(uint8_t r, uint8_t g, uint8_t b,
     return best;
 }
 
+// ----------------------------- Index Constraints -----------------------------
+
+int realmpal_parse_index_constraints(const char* constraint_string, RealmpalIndexConstraints* constraints) {
+    if (!constraint_string || !constraints) {
+        return 0;
+    }
+    
+    // Initialize constraints
+    memset(constraints, 0, sizeof(RealmpalIndexConstraints));
+    constraints->enabled = 0;
+    constraints->count = 0;
+    
+    // Skip empty strings
+    while (*constraint_string && isspace(*constraint_string)) {
+        constraint_string++;
+    }
+    if (!*constraint_string) {
+        return 1; // Empty string is valid (no constraints)
+    }
+    
+    constraints->enabled = 1;
+    
+    // Create a working copy of the string
+    char* work_string = (char*)malloc(strlen(constraint_string) + 1);
+    if (!work_string) {
+        set_error("Out of memory parsing constraints");
+        return 0;
+    }
+    strcpy(work_string, constraint_string);
+    
+    // Parse comma-separated tokens
+    char* token = strtok(work_string, ",");
+    while (token && constraints->count < 32) {
+        // Trim whitespace
+        while (*token && isspace(*token)) token++;
+        char* end = token + strlen(token) - 1;
+        while (end > token && isspace(*end)) *end-- = '\0';
+        
+        if (strlen(token) == 0) {
+            token = strtok(NULL, ",");
+            continue;
+        }
+        
+        // Check for range (contains '-')
+        char* dash = strchr(token, '-');
+        if (dash) {
+            // Range format: "start-end"
+            *dash = '\0';
+            dash++;
+            
+            // Trim whitespace around dash
+            char* start_str = token;
+            char* end_str = dash;
+            while (*start_str && isspace(*start_str)) start_str++;
+            while (*end_str && isspace(*end_str)) end_str++;
+            
+            char* start_end = start_str + strlen(start_str) - 1;
+            while (start_end > start_str && isspace(*start_end)) *start_end-- = '\0';
+            char* end_end = end_str + strlen(end_str) - 1;
+            while (end_end > end_str && isspace(*end_end)) *end_end-- = '\0';
+            
+            int start_idx = atoi(start_str);
+            int end_idx = atoi(end_str);
+            
+            // Validate range
+            if (start_idx < 0 || start_idx > 255 || end_idx < 0 || end_idx > 255) {
+                free(work_string);
+                set_error("Index out of range (must be 0-255)");
+                return 0;
+            }
+            
+            // Ensure start <= end
+            if (start_idx > end_idx) {
+                int temp = start_idx;
+                start_idx = end_idx;
+                end_idx = temp;
+            }
+            
+            constraints->ranges[constraints->count].start = start_idx;
+            constraints->ranges[constraints->count].end = end_idx;
+        } else {
+            // Single index
+            int index = atoi(token);
+            if (index < 0 || index > 255) {
+                free(work_string);
+                set_error("Index out of range (must be 0-255)");
+                return 0;
+            }
+            
+            constraints->ranges[constraints->count].start = index;
+            constraints->ranges[constraints->count].end = index;
+        }
+        
+        constraints->count++;
+        token = strtok(NULL, ",");
+    }
+    
+    free(work_string);
+    
+    if (constraints->count == 0) {
+        constraints->enabled = 0;
+    }
+    
+    clear_error_internal();
+    return 1;
+}
+
+int realmpal_index_allowed_by_constraints(int index, const RealmpalIndexConstraints* constraints, int transparency_index) {
+    // Check if index is transparency index first
+    if (transparency_index >= 0 && index == transparency_index) {
+        return 0;
+    }
+    
+    if (!constraints || !constraints->enabled || constraints->count == 0) {
+        // No constraints = all indices allowed (except transparency)
+        return 1;
+    }
+    
+    // Check if index falls within any of the allowed ranges
+    for (int i = 0; i < constraints->count; i++) {
+        if (index >= constraints->ranges[i].start && index <= constraints->ranges[i].end) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+int realmpal_count_constraint_indices(const RealmpalIndexConstraints* constraints, int transparency_index) {
+    if (!constraints || !constraints->enabled || constraints->count == 0) {
+        // No constraints = all indices available
+        int total = 256;
+        if (transparency_index >= 0 && transparency_index <= 255) {
+            total--;
+        }
+        return total;
+    }
+    
+    int total = 0;
+    for (int i = 0; i < constraints->count; i++) {
+        int range_size = constraints->ranges[i].end - constraints->ranges[i].start + 1;
+        
+        // Check if transparency index is in this range
+        if (transparency_index >= 0 && 
+            transparency_index >= constraints->ranges[i].start && 
+            transparency_index <= constraints->ranges[i].end) {
+            range_size--;
+        }
+        
+        total += range_size;
+    }
+    
+    return total;
+}
+
+int realmpal_constraints_to_string(const RealmpalIndexConstraints* constraints, char* output_buffer, int buffer_size) {
+    if (!constraints || !output_buffer || buffer_size <= 0) {
+        return 0;
+    }
+    
+    if (!constraints->enabled || constraints->count == 0) {
+        if (buffer_size >= 1) {
+            output_buffer[0] = '\0';
+            return 1;
+        }
+        return 0;
+    }
+    
+    int pos = 0;
+    for (int i = 0; i < constraints->count && pos < buffer_size - 1; i++) {
+        if (i > 0) {
+            // Add comma separator
+            if (pos + 2 >= buffer_size) break;
+            output_buffer[pos++] = ',';
+            output_buffer[pos++] = ' ';
+        }
+        
+        if (constraints->ranges[i].start == constraints->ranges[i].end) {
+            // Single index
+            int written = snprintf(output_buffer + pos, buffer_size - pos, "%d", constraints->ranges[i].start);
+            if (written >= buffer_size - pos) break;
+            pos += written;
+        } else {
+            // Range
+            int written = snprintf(output_buffer + pos, buffer_size - pos, "%d-%d", 
+                                 constraints->ranges[i].start, constraints->ranges[i].end);
+            if (written >= buffer_size - pos) break;
+            pos += written;
+        }
+    }
+    
+    output_buffer[pos] = '\0';
+    return 1;
+}
+
+// Helper function to convert legacy range to new constraints format
+static void convert_legacy_constraints_internal(RealmpalConfig* config) {
+    if (config->enforce_mapping_range && 
+        config->mapping_min_index >= 0 && config->mapping_max_index >= 0) {
+        
+        // Convert legacy single range to new format
+        config->index_constraints.enabled = 1;
+        config->index_constraints.count = 1;
+        config->index_constraints.ranges[0].start = config->mapping_min_index;
+        config->index_constraints.ranges[0].end = config->mapping_max_index;
+        
+        // Disable legacy format
+        config->enforce_mapping_range = 0;
+    }
+}
+
+static int realmpal_find_best_color_match(uint8_t r, uint8_t g, uint8_t b,
+                                         const RGB8 *pal, int transparency_index,
+                                         const RealmpalIndexConstraints* constraints,
+                                         bool use_perceptual) {
+    int best = -1;
+    double best_distance = 1e99;
+    
+    if (use_perceptual) {
+        init_perceptual_lut();
+        double R = perceptual_lut[r];
+        double G = perceptual_lut[g];
+        double B = perceptual_lut[b];
+        
+        for (int i = 0; i < 256; i++) {
+            if (!realmpal_index_allowed_by_constraints(i, constraints, transparency_index)) {
+                continue;
+            }
+            
+            double pr = perceptual_lut[pal[i].r];
+            double pg = perceptual_lut[pal[i].g];
+            double pb = perceptual_lut[pal[i].b];
+            double dr = R - pr, dg = G - pg, db = B - pb;
+            double d = 0.2126*dr*dr + 0.7152*dg*dg + 0.0722*db*db;
+            
+            if (best == -1 || d < best_distance) {
+                best_distance = d;
+                best = i;
+            }
+        }
+    } else {
+        for (int i = 0; i < 256; i++) {
+            if (!realmpal_index_allowed_by_constraints(i, constraints, transparency_index)) {
+                continue;
+            }
+            
+            int dr = (int)r - pal[i].r;
+            int dg = (int)g - pal[i].g;
+            int db = (int)b - pal[i].b;
+            double d = dr*dr + dg*dg + db*db;
+            
+            if (best == -1 || d < best_distance) {
+                best_distance = d;
+                best = i;
+            }
+        }
+    }
+    
+    // Fallback if no valid index found
+    if (best == -1) {
+        // Find any allowed index
+        for (int i = 0; i < 256; i++) {
+            if (realmpal_index_allowed_by_constraints(i, constraints, transparency_index)) {
+                best = i;
+                break;
+            }
+        }
+        
+        // Ultimate fallback
+        if (best == -1) {
+            best = (transparency_index == 0) ? 1 : 0;
+        }
+    }
+    
+    return best;
+}
+
 // ----------------------------- Dithering Implementation -----------------------------
 
 void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* palette, 
-                                   uint8_t *out, int transparency_index, int alpha_threshold) {
+                                  uint8_t *out, int transparency_index, int alpha_threshold,
+                                  const RealmpalIndexConstraints* constraints) {
     if (!src || !palette || !out || w <= 0 || h <= 0) {
         set_error("Invalid arguments to realmpal_map_nearest_neighbor");
         return;
@@ -985,7 +1263,8 @@ void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* p
             if (transparency_index >= 0 && s[x].a < alpha_threshold) {
                 d[x] = (uint8_t)transparency_index;
             } else {
-                d[x] = (uint8_t)best_index_linear_cached(s[x].r, s[x].g, s[x].b, palette, transparency_index);
+                d[x] = (uint8_t)realmpal_find_best_color_match(s[x].r, s[x].g, s[x].b, palette, 
+                                                             transparency_index, constraints, false);
             }
         }
     }
@@ -994,13 +1273,14 @@ void realmpal_map_nearest_neighbor(const RGBA8* src, int w, int h, const RGB8* p
 
 void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* palette, 
                                  uint8_t *out, bool serpentine, double strength,
-                                 int transparency_index, int alpha_threshold) {
+                                 int transparency_index, int alpha_threshold,
+                                 const RealmpalIndexConstraints* constraints) {
     if (!src || !palette || !out || w <= 0 || h <= 0) {
         set_error("Invalid arguments to realmpal_map_floyd_steinberg");
         return;
     }
     
-    // Allocate error buffers once
+    // Allocate error buffers
     double *er = (double*)calloc((size_t)(w + 2), sizeof(double));
     double *eg = (double*)calloc((size_t)(w + 2), sizeof(double));
     double *eb = (double*)calloc((size_t)(w + 2), sizeof(double));
@@ -1041,24 +1321,22 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
                 double G = s[x].g + eg[x];
                 double B = s[x].b + eb[x];
                 
-                // Clamp values
                 R = realmpal_clamp_double(R, 0.0, 255.0);
                 G = realmpal_clamp_double(G, 0.0, 255.0);
                 B = realmpal_clamp_double(B, 0.0, 255.0);
 
-                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, transparency_index);
+                int idx = realmpal_find_best_color_match((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, 
+                                                       transparency_index, constraints, true);
                 d[x] = (uint8_t)idx;
 
                 double dr = R - palette[idx].r;
                 double dg = G - palette[idx].g;
                 double db = B - palette[idx].b;
 
-                // Clamp errors
                 dr = realmpal_clamp_double(dr, -ERR_CLAMP, ERR_CLAMP);
                 dg = realmpal_clamp_double(dg, -ERR_CLAMP, ERR_CLAMP);
                 db = realmpal_clamp_double(db, -ERR_CLAMP, ERR_CLAMP);
 
-                // Distribute errors
                 er[x + 1] += dr * fs_7_16; eg[x + 1] += dg * fs_7_16; eb[x + 1] += db * fs_7_16;
                 
                 int xm1 = (x > 0) ? x - 1 : x;
@@ -1078,24 +1356,22 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
                 double G = s[x].g + eg[x];
                 double B = s[x].b + eb[x];
                 
-                // Clamp values
                 R = realmpal_clamp_double(R, 0.0, 255.0);
                 G = realmpal_clamp_double(G, 0.0, 255.0);
                 B = realmpal_clamp_double(B, 0.0, 255.0);
 
-                int idx = best_index_perceptual_optimized((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, transparency_index);
+                int idx = realmpal_find_best_color_match((uint8_t)R, (uint8_t)G, (uint8_t)B, palette, 
+                                                       transparency_index, constraints, true);
                 d[x] = (uint8_t)idx;
 
                 double dr = R - palette[idx].r;
                 double dg = G - palette[idx].g;
                 double db = B - palette[idx].b;
 
-                // Clamp errors
                 dr = realmpal_clamp_double(dr, -ERR_CLAMP, ERR_CLAMP);
                 dg = realmpal_clamp_double(dg, -ERR_CLAMP, ERR_CLAMP);
                 db = realmpal_clamp_double(db, -ERR_CLAMP, ERR_CLAMP);
 
-                // Distribute errors (reversed direction)
                 if (x - 1 >= 0) {
                     er[x - 1] += dr * fs_7_16; eg[x - 1] += dg * fs_7_16; eb[x - 1] += db * fs_7_16;
                 } else {
@@ -1122,13 +1398,14 @@ void realmpal_map_floyd_steinberg(const RGBA8* src, int w, int h, const RGB8* pa
 
 void realmpal_map_ordered_dither(const RGBA8* src, int w, int h, const RGB8* palette,
                                 uint8_t *out, int matrix_size,
-                                int transparency_index, int alpha_threshold) {
+                                int transparency_index, int alpha_threshold,
+                                const RealmpalIndexConstraints* constraints) {
     if (!src || !palette || !out || w <= 0 || h <= 0) {
         set_error("Invalid arguments to realmpal_map_ordered_dither");
         return;
     }
     
-    // Simple 4x4 Bayer matrix for now
+    // Simple 4x4 Bayer matrix
     static const int bayer4[4][4] = {
         { 0,  8,  2, 10},
         {12,  4, 14,  6},
@@ -1156,14 +1433,16 @@ void realmpal_map_ordered_dither(const RGBA8* src, int w, int h, const RGB8* pal
             int g = realmpal_clamp_int((int)(s[x].g + factor), 0, 255);
             int b = realmpal_clamp_int((int)(s[x].b + factor), 0, 255);
             
-            d[x] = (uint8_t)best_index_linear_cached((uint8_t)r, (uint8_t)g, (uint8_t)b, palette, transparency_index);
+            d[x] = (uint8_t)realmpal_find_best_color_match((uint8_t)r, (uint8_t)g, (uint8_t)b, palette, 
+                                                         transparency_index, constraints, false);
         }
     }
     clear_error_internal();
 }
 
 void realmpal_map_perceptual(const RGBA8* src, int w, int h, const RGB8* palette,
-                            uint8_t *out, int transparency_index, int alpha_threshold) {
+                            uint8_t *out, int transparency_index, int alpha_threshold,
+                            const RealmpalIndexConstraints* constraints) {
     if (!src || !palette || !out || w <= 0 || h <= 0) {
         set_error("Invalid arguments to realmpal_map_perceptual");
         return;
@@ -1176,7 +1455,8 @@ void realmpal_map_perceptual(const RGBA8* src, int w, int h, const RGB8* palette
             if (transparency_index >= 0 && s[x].a < alpha_threshold) {
                 d[x] = (uint8_t)transparency_index;
             } else {
-                d[x] = (uint8_t)best_index_perceptual_optimized(s[x].r, s[x].g, s[x].b, palette, transparency_index);
+                d[x] = (uint8_t)realmpal_find_best_color_match(s[x].r, s[x].g, s[x].b, palette, 
+                                                             transparency_index, constraints, true);
             }
         }
     }
@@ -1473,6 +1753,13 @@ void realmpal_config_init(RealmpalConfig *config) {
     config->use_alpha_color = false;
     config->fs_strength = 1.0;
     config->ordered_matrix_size = 4;
+    
+    // Initialize constraints
+    memset(&config->index_constraints, 0, sizeof(RealmpalIndexConstraints));
+    config->index_constraints.enabled = false;
+    config->index_constraints.count = 0;
+    
+    // Legacy compatibility (deprecated)
     config->mapping_min_index = -1;
     config->mapping_max_index = -1;
     config->enforce_mapping_range = false;
@@ -1484,16 +1771,20 @@ int realmpal_convert_image(const RealmpalConfig *config) {
         return REALMPAL_ERROR_INVALID_ARGS;
     }
     
+    // Create a working copy of config to handle legacy conversion
+    RealmpalConfig working_config = *config;
+    convert_legacy_constraints_internal(&working_config);
+    
     // Load input image
     RGBA8 *pixels = NULL;
     int w, h;
-    if (!realmpal_load_image(config->input_file, &pixels, &w, &h)) {
+    if (!realmpal_load_image(working_config.input_file, &pixels, &w, &h)) {
         return REALMPAL_ERROR_FILE_NOT_FOUND;
     }
 
     // Apply transparency handling if enabled
-    if (config->transparency_index >= 0) {
-        realmpal_apply_transparency(pixels, w * h, config->matte_color, config->alpha_threshold);
+    if (working_config.transparency_index >= 0) {
+        realmpal_apply_transparency(pixels, w * h, working_config.matte_color, working_config.alpha_threshold);
     }
 
     // Build base palette
@@ -1501,52 +1792,52 @@ int realmpal_convert_image(const RealmpalConfig *config) {
     memset(palette, 0, sizeof(palette));
     int have_colors = 0;
 
-    if (config->mode == REALMPAL_MODE_PALETTE && config->palette_file) {
-        have_colors = realmpal_read_any_palette(config->palette_file, palette, 256);
+    if (working_config.mode == REALMPAL_MODE_PALETTE && working_config.palette_file) {
+        have_colors = realmpal_read_any_palette(working_config.palette_file, palette, 256);
         if (have_colors <= 0) {
             realmpal_free_image(pixels);
             return REALMPAL_ERROR_INVALID_PALETTE;
         }
         
         // Shift palette if offset specified
-        if (config->index_offset > 0) {
+        if (working_config.index_offset > 0) {
             RGB8 tmp[256];
             memset(tmp, 0, sizeof(tmp));
-            for (int i = 0; i < have_colors && (config->index_offset + i) < 256; i++) {
-                tmp[config->index_offset + i] = palette[i];
+            for (int i = 0; i < have_colors && (working_config.index_offset + i) < 256; i++) {
+                tmp[working_config.index_offset + i] = palette[i];
             }
             memcpy(palette, tmp, sizeof(tmp));
         }
     } else {
         // Auto quantization
-        int want = config->num_colors;
+        int want = working_config.num_colors;
         if (want < 1) want = 1;
         if (want > 256) want = 256;
         
-        if (config->quantizer == REALMPAL_QUANT_WU) {
-            have_colors = realmpal_quantize_wu(pixels, w * h, want, config->index_offset, palette);
+        if (working_config.quantizer == REALMPAL_QUANT_WU) {
+            have_colors = realmpal_quantize_wu(pixels, w * h, want, working_config.index_offset, palette);
         } else {
-            have_colors = realmpal_quantize_median_cut(pixels, w * h, want, config->index_offset, palette);
+            have_colors = realmpal_quantize_median_cut(pixels, w * h, want, working_config.index_offset, palette);
         }
     }
 
     // Optional extra palette injection
-    if (config->extra_palette_file && config->extra_offset >= 0) {
+    if (working_config.extra_palette_file && working_config.extra_offset >= 0) {
         RGB8 extra[256];
-        int ec = realmpal_read_any_palette(config->extra_palette_file, extra, 
-                                          config->extra_colors > 0 ? config->extra_colors : 16);
+        int ec = realmpal_read_any_palette(working_config.extra_palette_file, extra, 
+                                          working_config.extra_colors > 0 ? working_config.extra_colors : 16);
         if (ec > 0) {
-            if (config->extra_colors > 0 && config->extra_colors < ec) ec = config->extra_colors;
+            if (working_config.extra_colors > 0 && working_config.extra_colors < ec) ec = working_config.extra_colors;
             for (int i = 0; i < ec; i++) {
-                int idx = config->extra_offset + i;
+                int idx = working_config.extra_offset + i;
                 if (idx >= 0 && idx < 256) palette[idx] = extra[i];
             }
         }
     }
 
     // Apply alpha color assignment if specified
-    if (config->use_alpha_color && config->transparency_index >= 0 && config->transparency_index < 256) {
-        palette[config->transparency_index] = config->alpha_color;
+    if (working_config.use_alpha_color && working_config.transparency_index >= 0 && working_config.transparency_index < 256) {
+        palette[working_config.transparency_index] = working_config.alpha_color;
     }
 
     // Map pixels to indices
@@ -1557,69 +1848,45 @@ int realmpal_convert_image(const RealmpalConfig *config) {
         return REALMPAL_ERROR_OUT_OF_MEMORY;
     }
 
-    // Apply dithering with optional constraints
-    if (config->enforce_mapping_range) {
-        // Use constrained mapping functions
-        switch (config->dither) {
-            case REALMPAL_DITHER_NONE:
-                realmpal_map_nearest_neighbor_constrained(pixels, w, h, palette, indices, 
-                                                         config->transparency_index, config->alpha_threshold,
-                                                         config->mapping_min_index, config->mapping_max_index);
-                break;
-            case REALMPAL_DITHER_FS_SERP:
-                realmpal_map_floyd_steinberg_constrained(pixels, w, h, palette, indices, true, config->fs_strength,
-                                                        config->transparency_index, config->alpha_threshold,
-                                                        config->mapping_min_index, config->mapping_max_index);
-                break;
-            case REALMPAL_DITHER_FS:
-                realmpal_map_floyd_steinberg_constrained(pixels, w, h, palette, indices, false, config->fs_strength,
-                                                        config->transparency_index, config->alpha_threshold,
-                                                        config->mapping_min_index, config->mapping_max_index);
-                break;
-            case REALMPAL_DITHER_PERCEPTUAL:
-                realmpal_map_perceptual_constrained(pixels, w, h, palette, indices,
-                                                   config->transparency_index, config->alpha_threshold,
-                                                   config->mapping_min_index, config->mapping_max_index);
-                break;
-            default:
-                // Fallback to nearest neighbor with constraints
-                realmpal_map_nearest_neighbor_constrained(pixels, w, h, palette, indices, 
-                                                         config->transparency_index, config->alpha_threshold,
-                                                         config->mapping_min_index, config->mapping_max_index);
-                break;
-        }
-    } else {
-        // Use standard mapping functions (KEEP ALL EXISTING CODE HERE - don't change anything)
-        switch (config->dither) {
-            case REALMPAL_DITHER_NONE:
-                realmpal_map_nearest_neighbor(pixels, w, h, palette, indices, 
-                                             config->transparency_index, config->alpha_threshold);
-                break;
-            case REALMPAL_DITHER_FS_SERP:
-                realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, true, config->fs_strength,
-                                            config->transparency_index, config->alpha_threshold);
-                break;
-            case REALMPAL_DITHER_FS:
-                realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, false, config->fs_strength,
-                                            config->transparency_index, config->alpha_threshold);
-                break;
-            case REALMPAL_DITHER_ORDERED:
-                realmpal_map_ordered_dither(pixels, w, h, palette, indices, config->ordered_matrix_size,
-                                           config->transparency_index, config->alpha_threshold);
-                break;
-            case REALMPAL_DITHER_PERCEPTUAL:
-                realmpal_map_perceptual(pixels, w, h, palette, indices,
-                                       config->transparency_index, config->alpha_threshold);
-                break;
-            default:
-                realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, false, config->fs_strength,
-                                            config->transparency_index, config->alpha_threshold);
-                break;
-        }
+    // Apply dithering with enhanced constraints
+    const RealmpalIndexConstraints* constraints = working_config.index_constraints.enabled ? 
+                                                  &working_config.index_constraints : NULL;
+    
+    switch (working_config.dither) {
+        case REALMPAL_DITHER_NONE:
+            realmpal_map_nearest_neighbor(pixels, w, h, palette, indices, 
+                                         working_config.transparency_index, working_config.alpha_threshold,
+                                         constraints);
+            break;
+        case REALMPAL_DITHER_FS_SERP:
+            realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, true, working_config.fs_strength,
+                                        working_config.transparency_index, working_config.alpha_threshold,
+                                        constraints);
+            break;
+        case REALMPAL_DITHER_FS:
+            realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, false, working_config.fs_strength,
+                                        working_config.transparency_index, working_config.alpha_threshold,
+                                        constraints);
+            break;
+        case REALMPAL_DITHER_ORDERED:
+            realmpal_map_ordered_dither(pixels, w, h, palette, indices, working_config.ordered_matrix_size,
+                                       working_config.transparency_index, working_config.alpha_threshold,
+                                       constraints);
+            break;
+        case REALMPAL_DITHER_PERCEPTUAL:
+            realmpal_map_perceptual(pixels, w, h, palette, indices,
+                                   working_config.transparency_index, working_config.alpha_threshold,
+                                   constraints);
+            break;
+        default:
+            realmpal_map_floyd_steinberg(pixels, w, h, palette, indices, false, working_config.fs_strength,
+                                        working_config.transparency_index, working_config.alpha_threshold,
+                                        constraints);
+            break;
     }
 
     // Save output
-    int ok = realmpal_write_auto(config->output_file, w, h, indices, palette);
+    int ok = realmpal_write_auto(working_config.output_file, w, h, indices, palette);
 
     // Cleanup
     free(indices);
