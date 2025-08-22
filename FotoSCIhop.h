@@ -24,6 +24,11 @@
 #include "display.h"  // Include the new display module
 #include <set>
 #include <string>
+#include <vector>
+#include "librealmpal.h"
+#include "imgui_integration.h"
+#include "imgui.h"
+#include "fotoscihop_styles.h"
 
 // ============================================================================
 // FORWARD DECLARATIONS

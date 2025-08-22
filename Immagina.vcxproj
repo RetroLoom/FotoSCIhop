@@ -170,9 +170,13 @@
     <ClCompile Include="clutGenerator.cpp" />
     <ClCompile Include="config.cpp" />
     <ClCompile Include="display.cpp" />
+    <ClCompile Include="dlgAbout.cpp" />
+    <ClCompile Include="dlgClutGen.cpp" />
+    <ClCompile Include="dlgPaletteMgr.cpp" />
+    <ClCompile Include="dlgPreferences.cpp" />
+    <ClCompile Include="dlgRealmpal.cpp" />
     <ClCompile Include="fileio.cpp" />
     <ClCompile Include="FotoSCIhop.cpp" />
-    <ClCompile Include="fotoscihop_dialogs.cpp" />
     <ClCompile Include="fotoscihop_styles.cpp" />
     <ClCompile Include="imgui\backends\imgui_impl_opengl3.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
@@ -229,6 +233,7 @@
     </ClCompile>
     <ClCompile Include="p56files.cpp" />
     <ClCompile Include="palette.cpp" />
+    <ClCompile Include="dlgProperties.cpp" />
     <ClCompile Include="scicell.cpp" />
     <ClCompile Include="sciloop.cpp" />
     <ClCompile Include="stdafx.cpp">

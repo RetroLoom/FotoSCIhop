@@ -2,10 +2,7 @@
 #define CLUT_GENERATOR_H
 
 #include "stdafx.h"
-#include "palette.h"
-#include <vector>
-#include <string>
-#include <set>
+#include "FotoSCIhop.h"
 
 // Simple color remap entry
 struct ColorRemapEntry {
