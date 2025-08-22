@@ -148,6 +148,7 @@ void RenderAboutDialog();
 void RenderClutGeneratorDialog();
 void RenderRealmpalDialog();
 void RenderPreferencesDialog();
+void RenderPaletteManagerDialog();
 
 // Realmpal dialog state variables
 extern std::string g_realmpalInputFile;

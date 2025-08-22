@@ -426,6 +426,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_CLUT_GENERATOR, "CLUT Generator", &RenderClutGeneratorDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_REALMPAL, "Realmpal Converter", &RenderRealmpalDialog);
     ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PREFERENCES, "Preferences", &RenderPreferencesDialog);
+    ImGuiDialogs::RegisterDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER, "Palette Manager", &RenderPaletteManagerDialog);
 
     SetTimer(hWnd, 1, 16, NULL);
 
@@ -578,6 +579,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PREFERENCES:
             ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_PREFERENCES);
+            break;
+        
+        case IDM_PALETTE_MANAGER:
+            if ((globalView && globalView->palSCI) || (globalPicture && globalPicture->palSCI))
+            {
+                ImGuiDialogs::ShowDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
+            }
+            else
+            {
+                MessageBox(hWnd, "Please load a .v56 or .p56 file before using the Palette Manager.",
+                        "No File Loaded", MB_OK | MB_ICONINFORMATION);
+            }
             break;
                 
         case ID_PALETTE:

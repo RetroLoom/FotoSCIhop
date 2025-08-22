@@ -65,6 +65,7 @@ BEGIN
         MENUITEM "Export Palette...",           ID_COLORI_ESPORTACOLORI
         MENUITEM SEPARATOR
         MENUITEM "Realmpal Import",             IDM_REALMPAL_IMPORT
+        MENUITEM "Palette Manager",             IDM_PALETTE_MANAGER
         MENUITEM "Clut Generator",              IDM_CLUTGEN
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES
         MENUITEM SEPARATOR
