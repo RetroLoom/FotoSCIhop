@@ -225,7 +225,7 @@ void HandleRealmpalFileDialogs() {
         ofn.lpstrFilter = "Image files (*.png, *.bmp *.jpg)\0*.png;*.bmp;*.jpg\0All files (*.*)\0*.*\0\0";
         ofn.lpstrFile = fileName;
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         
         if (GetOpenFileName(&ofn)) {
             g_realmpalInputFile = fileName;
@@ -244,7 +244,7 @@ void HandleRealmpalFileDialogs() {
         ofn.lpstrFilter = INTERFACE_PALINFILTER;
         ofn.lpstrFile = fileName;
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         
         if (GetOpenFileName(&ofn)) {
             g_realmpalPaletteFile = fileName;
@@ -263,7 +263,7 @@ void HandleRealmpalFileDialogs() {
         ofn.lpstrFilter = INTERFACE_PALINFILTER;
         ofn.lpstrFile = fileName;
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         
         if (GetOpenFileName(&ofn)) {
             g_realmpalExtraFile = fileName;
@@ -282,7 +282,7 @@ void HandleRealmpalFileDialogs() {
         ofn.lpstrFilter = "Palette files (*.bmp;*.png;*.pcx)\0*.bmp;*.png;*.pcx\0All files (*.*)\0*.*\0\0";
         ofn.lpstrFile = fileName;
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         ofn.lpstrTitle = "Import Palette From File";
         
         if (GetOpenFileName(&ofn)) {
@@ -302,7 +302,7 @@ void HandleRealmpalFileDialogs() {
         ofn.lpstrFilter = "BMP Palette (*.bmp)\0*.bmp\0PCX Palette (*.pcx)\0*.pcx\0\0";
         ofn.lpstrFile = fileName;
         ofn.nMaxFile = MAX_PATH;
-        ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT;
+        ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
         ofn.lpstrTitle = "Export Palette To File";
         
         if (GetSaveFileName(&ofn)) {

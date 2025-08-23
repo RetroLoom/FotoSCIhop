@@ -63,7 +63,7 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
    ofn.lpstrFile = szFileName;
    ofn.nMaxFile = MAX_PATH;
 
-   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST;
+   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
    proceed = (GetOpenFileName(&ofn) != 0);
 
    if(proceed)
@@ -588,7 +588,7 @@ BOOL ImportBitmapUnified(HWND hwnd, const char* path, BOOL applyPalette)
         ofn.lpstrFilter  = INTERFACE_BMPFILTER;
         ofn.lpstrFile    = filePath;
         ofn.nMaxFile     = MAX_PATH;
-        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         if (!GetOpenFileName(&ofn)) return FALSE; // cancel
     }
 
@@ -617,7 +617,7 @@ BOOL ImportPaletteUnified(HWND hwnd, const char* path)
         ofn.lpstrFilter  = INTERFACE_PALINFILTER;
         ofn.lpstrFile    = filePath;
         ofn.nMaxFile     = MAX_PATH;
-        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.Flags        = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
         if (!GetOpenFileName(&ofn)) return FALSE; // cancel
     }
 
