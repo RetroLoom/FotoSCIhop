@@ -46,6 +46,12 @@ void RenderPaletteManagerDialog() {
     static int clipboardStart = -1;
     static int clipboardSize = 0;
     
+    // Swap buffer for two-step swapping
+    static std::vector<RGB8> swapBuffer;
+    static int swapStart = -1;
+    static int swapEnd = -1;
+    static bool hasSwapSelection = false;
+    
     // Initialize working palette on first run or when dialog is reopened
     if (!configInitialized) {
         // Copy current palette to working copy
@@ -75,9 +81,23 @@ void RenderPaletteManagerDialog() {
         std::fill(selectedIndices.begin(), selectedIndices.end(), false);
         selectionStart = selectionEnd = -1;
         clipboardColors.clear();
-        clipboardStart = -1;
-        clipboardSize = 0;
+        clipboardStart = clipboardSize = -1;
+        swapBuffer.clear();
+        hasSwapSelection = false;
     }
+    
+    // Calculate selection range once for the entire dialog
+    int firstSel = -1, lastSel = -1;
+    int selectedCount = 0;
+    for (int i = 0; i < 256; i++) {
+        if (selectedIndices[i]) {
+            selectedCount++;
+            if (firstSel == -1) firstSel = i;
+            lastSel = i;
+        }
+    }
+    bool hasSelection = (firstSel != -1);
+    bool hasClipboard = !clipboardColors.empty();
     
     bool open = true;
     SetNextWindowSize(1200, 800);
@@ -186,6 +206,8 @@ void RenderPaletteManagerDialog() {
                     selectionStart = selectionEnd = -1;
                     clipboardColors.clear();
                     clipboardStart = clipboardSize = -1;
+                    swapBuffer.clear();
+                    hasSwapSelection = false;
                     statusMessage = "Palette reset to original";
                     showStatus = true;
                 } else {
@@ -216,28 +238,15 @@ void RenderPaletteManagerDialog() {
             // =================================================================
             if (ImGui::CollapsingHeader("Selection", ImGuiTreeNodeFlags_DefaultOpen)) {
                 
-                // Count selected indices
-                int selectedCount = 0;
-                int firstSelected = -1;
-                int lastSelected = -1;
-                
-                for (int i = 0; i < 256; i++) {
-                    if (selectedIndices[i]) {
-                        selectedCount++;
-                        if (firstSelected == -1) firstSelected = i;
-                        lastSelected = i;
-                    }
-                }
-                
                 if (selectedCount == 0) {
                     DisabledText("No indices selected - click palette grid to select");
                 } else if (selectedCount == 1) {
                     char selText[64];
-                    sprintf(selText, "Selected: Index %d", firstSelected);
+                    sprintf(selText, "Selected: Index %d", firstSel);
                     SuccessText(selText);
                 } else {
                     char selText[128];
-                    sprintf(selText, "Selected: %d indices (%d-%d)", selectedCount, firstSelected, lastSelected);
+                    sprintf(selText, "Selected: %d indices (%d-%d)", selectedCount, firstSel, lastSel);
                     SuccessText(selText);
                 }
                 
@@ -288,25 +297,15 @@ void RenderPaletteManagerDialog() {
             ImGui::Spacing();
             
             // =================================================================
-            // COPY/PASTE OPERATIONS
+            // COPY/PASTE AND SWAP OPERATIONS
             // =================================================================
-            if (ImGui::CollapsingHeader("Copy & Paste", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::CollapsingHeader("Copy, Paste & Swap", ImGuiTreeNodeFlags_DefaultOpen)) {
                 
-                // Get selection range for operations
-                int firstSel = -1, lastSel = -1;
-                for (int i = 0; i < 256; i++) {
-                    if (selectedIndices[i]) {
-                        if (firstSel == -1) firstSel = i;
-                        lastSel = i;
-                    }
-                }
-                
-                bool hasSelection = (firstSel != -1);
-                bool hasClipboard = !clipboardColors.empty();
+                HeaderText("Copy & Paste:");
                 
                 // Copy to clipboard
                 if (hasSelection) {
-                    if (ImGui::Button("Copy Selected", ImVec2(120, 0))) {
+                    if (ImGui::Button("Copy Selected##clipboard", ImVec2(120, 0))) {
                         clipboardColors.clear();
                         clipboardStart = firstSel;
                         clipboardSize = 0;
@@ -325,7 +324,7 @@ void RenderPaletteManagerDialog() {
                     }
                 } else {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Copy Selected", ImVec2(120, 0));
+                    ImGui::Button("Copy Selected##clipboard", ImVec2(120, 0));
                     ImGui::PopStyleVar();
                 }
                 
@@ -333,14 +332,7 @@ void RenderPaletteManagerDialog() {
                 
                 // Paste from clipboard
                 if (hasClipboard && hasSelection) {
-                    if (ImGui::Button("Paste Here", ImVec2(120, 0))) {
-                        RealmpalPaletteContext ctx;
-                        ctx.palette = workingPalette;
-                        ctx.indices = updatePixels ? (curCell && (*curCell) && (*curCell)->bmImage) ? (*curCell)->bmImage : nullptr : nullptr;
-                        ctx.width = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? (*curCell)->bmInfo->bmiHeader.biWidth : 0 : 0;
-                        ctx.height = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? abs((*curCell)->bmInfo->bmiHeader.biHeight) : 0 : 0;
-                        ctx.update_indices = updatePixels;
-                        
+                    if (ImGui::Button("Paste Here##clipboard", ImVec2(120, 0))) {
                         // Paste colors starting at first selected index
                         int pasteCount = 0;
                         for (int i = 0; i < clipboardSize && (firstSel + i) < 256; i++) {
@@ -355,20 +347,10 @@ void RenderPaletteManagerDialog() {
                         sprintf(msg, "Pasted %d colors at index %d", pasteCount, firstSel);
                         statusMessage = msg;
                         showStatus = true;
-                        
-                        if (updatePixels && ctx.indices) {
-                            // Refresh display if pixels were updated
-                            if (isPicture) {
-                                ShowCell(curCellIndex);
-                            } else {
-                                ShowLoopCell(curLoopIndex, curCellIndex);
-                            }
-                            InvalidateRect(hWnd, NULL, TRUE);
-                        }
                     }
                 } else {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Paste Here", ImVec2(120, 0));
+                    ImGui::Button("Paste Here##clipboard", ImVec2(120, 0));
                     ImGui::PopStyleVar();
                 }
                 
@@ -377,10 +359,108 @@ void RenderPaletteManagerDialog() {
                 // Clipboard info
                 if (hasClipboard) {
                     char clipInfo[128];
-                    sprintf(clipInfo, "Clipboard: %d colors from index %d", clipboardSize, clipboardStart);
+                    sprintf(clipInfo, "Clipboard: %d colors from %d-%d", clipboardSize, clipboardStart, clipboardStart + clipboardSize - 1);
                     InfoText(clipInfo);
                 } else {
                     DisabledText("Clipboard empty");
+                }
+                
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+                
+                HeaderText("Two-Step Swap:");
+                
+                // Mark for swap (step 1)
+                if (hasSelection) {
+                    if (ImGui::Button("Mark for Swap##twoStep", ImVec2(120, 0))) {
+                        // Store current selection for swapping
+                        swapBuffer.clear();
+                        swapStart = firstSel;
+                        swapEnd = lastSel;
+                        
+                        for (int i = firstSel; i <= lastSel; i++) {
+                            if (selectedIndices[i]) {
+                                swapBuffer.push_back(workingPalette[i]);
+                            }
+                        }
+                        
+                        hasSwapSelection = true;
+                        
+                        char msg[128];
+                        sprintf(msg, "Marked range %d-%d for swapping", firstSel, lastSel);
+                        statusMessage = msg;
+                        showStatus = true;
+                    }
+                } else {
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    ImGui::Button("Mark for Swap##twoStep", ImVec2(120, 0));
+                    ImGui::PopStyleVar();
+                }
+                
+                ImGui::SameLine();
+                
+                // Swap with marked range (step 2)
+                if (hasSwapSelection && hasSelection) {
+                    if (ImGui::Button("Swap Here##twoStep", ImVec2(120, 0))) {
+                        RealmpalPaletteContext ctx;
+                        ctx.palette = workingPalette;
+                        ctx.width = ctx.height = 0;
+                        ctx.indices = nullptr;
+                        ctx.update_indices = updatePixels;
+                        
+                        // Ensure image data is loaded if we need to update pixels
+                        if (updatePixels && curCell && (*curCell)) {
+                            // CRITICAL: Ensure image data is loaded before accessing
+                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                            }
+                            
+                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                                ctx.indices = (*curCell)->bmImage;
+                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
+                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                                
+                                // IMPORTANT: Mark cell as changed so the modified data gets saved
+                                (*curCell)->changed = true;
+                            }
+                        }
+                        
+                        if (realmpal_palette_swap_ranges(&ctx, swapStart, swapEnd, firstSel, lastSel)) {
+                            paletteModified = true;
+                            statsValid = false;
+                            hasSwapSelection = false; // Clear swap buffer after use
+                            swapBuffer.clear();
+                            
+                            char msg[128];
+                            sprintf(msg, "Swapped ranges %d-%d with %d-%d", swapStart, swapEnd, firstSel, lastSel);
+                            statusMessage = msg;
+                            showStatus = true;
+                            
+                            if (updatePixels && ctx.indices) {
+                                // Force bitmap refresh to show pixel index changes
+                                ForceImageRefresh();
+                            }
+                        } else {
+                            statusMessage = "ERROR: Failed to swap ranges";
+                            showStatus = true;
+                        }
+                    }
+                } else {
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    ImGui::Button("Swap Here##twoStep", ImVec2(120, 0));
+                    ImGui::PopStyleVar();
+                }
+                
+                ImGui::Spacing();
+                
+                // Swap status info
+                if (hasSwapSelection) {
+                    char swapInfo[128];
+                    sprintf(swapInfo, "Marked for swap: %d-%d (%d colors)", swapStart, swapEnd, (int)swapBuffer.size());
+                    WarningText(swapInfo);
+                } else {
+                    DisabledText("No range marked for swapping");
                 }
             }
             
@@ -390,17 +470,6 @@ void RenderPaletteManagerDialog() {
             // RANGE OPERATIONS
             // =================================================================
             if (ImGui::CollapsingHeader("Range Operations", ImGuiTreeNodeFlags_DefaultOpen)) {
-                
-                // Get selection range for operations
-                int firstSel = -1, lastSel = -1;
-                for (int i = 0; i < 256; i++) {
-                    if (selectedIndices[i]) {
-                        if (firstSel == -1) firstSel = i;
-                        lastSel = i;
-                    }
-                }
-                
-                bool hasSelection = (firstSel != -1);
                 
                 if (!hasSelection) {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
@@ -413,18 +482,31 @@ void RenderPaletteManagerDialog() {
                     
                     static int shiftTo = 0;
                     ImGui::PushItemWidth(100);
-                    ImGui::InputInt("Move to index", &shiftTo);
+                    ImGui::InputInt("Move to index##shift", &shiftTo);
                     shiftTo = realmpal_clamp_int(shiftTo, 0, 255);
                     ImGui::PopItemWidth();
                     
-                    if (ImGui::Button("Move Range", ImVec2(-1, 0))) {
+                    if (ImGui::Button("Move Range##shift", ImVec2(-1, 0))) {
                         if (firstSel != -1 && lastSel != -1 && shiftTo != firstSel) {
                             RealmpalPaletteContext ctx;
                             ctx.palette = workingPalette;
-                            ctx.indices = updatePixels ? (curCell && (*curCell) && (*curCell)->bmImage) ? (*curCell)->bmImage : nullptr : nullptr;
-                            ctx.width = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? (*curCell)->bmInfo->bmiHeader.biWidth : 0 : 0;
-                            ctx.height = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? abs((*curCell)->bmInfo->bmiHeader.biHeight) : 0 : 0;
+                            ctx.width = ctx.height = 0;
+                            ctx.indices = nullptr;
                             ctx.update_indices = updatePixels;
+                            
+                            // Ensure image data is loaded if we need to update pixels
+                            if (updatePixels && curCell && (*curCell)) {
+                                // CRITICAL: Ensure image data is loaded before accessing
+                                if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                                    (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                                }
+                                
+                                if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                                    ctx.indices = (*curCell)->bmImage;
+                                    ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
+                                    ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                                }
+                            }
                             
                             if (realmpal_palette_shift_range(&ctx, firstSel, lastSel, shiftTo)) {
                                 paletteModified = true;
@@ -458,60 +540,32 @@ void RenderPaletteManagerDialog() {
                     
                     ImGui::Spacing();
                     
-                    // Swap operations
-                    HeaderText("Swap Ranges:");
-                    
-                    static int swapWith = 0;
-                    static int swapSize = 1;
-                    ImGui::PushItemWidth(100);
-                    ImGui::InputInt("Swap with index", &swapWith);
-                    swapWith = realmpal_clamp_int(swapWith, 0, 255);
-                    ImGui::InputInt("Swap size", &swapSize);
-                    swapSize = realmpal_clamp_int(swapSize, 1, lastSel - firstSel + 1);
-                    ImGui::PopItemWidth();
-                    
-                    if (ImGui::Button("Swap Ranges", ImVec2(-1, 0))) {
-                        RealmpalPaletteContext ctx;
-                        ctx.palette = workingPalette;
-                        ctx.indices = updatePixels ? (curCell && (*curCell) && (*curCell)->bmImage) ? (*curCell)->bmImage : nullptr : nullptr;
-                        ctx.width = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? (*curCell)->bmInfo->bmiHeader.biWidth : 0 : 0;
-                        ctx.height = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? abs((*curCell)->bmInfo->bmiHeader.biHeight) : 0 : 0;
-                        ctx.update_indices = updatePixels;
-                        
-                        if (realmpal_palette_swap_ranges(&ctx, firstSel, firstSel + swapSize - 1, 
-                                                        swapWith, swapWith + swapSize - 1)) {
-                            paletteModified = true;
-                            statsValid = false;
-                            statusMessage = "Ranges swapped successfully";
-                            showStatus = true;
-                            
-                            if (updatePixels && ctx.indices) {
-                                // Refresh display if pixels were updated
-                                if (isPicture) {
-                                    ShowCell(curCellIndex);
-                                } else {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
-                            }
-                        } else {
-                            statusMessage = "ERROR: Failed to swap ranges";
-                            showStatus = true;
-                        }
-                    }
-                    
-                    ImGui::Spacing();
-                    
                     // Reverse operation
                     HeaderText("Other Operations:");
                     
-                    if (ImGui::Button("Reverse Order", ImVec2(-1, 0))) {
+                    if (ImGui::Button("Reverse Order##range", ImVec2(-1, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
-                        ctx.indices = updatePixels ? (curCell && (*curCell) && (*curCell)->bmImage) ? (*curCell)->bmImage : nullptr : nullptr;
-                        ctx.width = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? (*curCell)->bmInfo->bmiHeader.biWidth : 0 : 0;
-                        ctx.height = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? abs((*curCell)->bmInfo->bmiHeader.biHeight) : 0 : 0;
+                        ctx.width = ctx.height = 0;
+                        ctx.indices = nullptr;
                         ctx.update_indices = updatePixels;
+                        
+                        // Ensure image data is loaded if we need to update pixels
+                        if (updatePixels && curCell && (*curCell)) {
+                            // CRITICAL: Ensure image data is loaded before accessing
+                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                            }
+                            
+                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                                ctx.indices = (*curCell)->bmImage;
+                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
+                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                                
+                                // IMPORTANT: Mark cell as changed so the modified data gets saved
+                                (*curCell)->changed = true;
+                            }
+                        }
                         
                         if (realmpal_palette_reverse_range(&ctx, firstSel, lastSel)) {
                             paletteModified = true;
@@ -520,13 +574,8 @@ void RenderPaletteManagerDialog() {
                             showStatus = true;
                             
                             if (updatePixels && ctx.indices) {
-                                // Refresh display if pixels were updated
-                                if (isPicture) {
-                                    ShowCell(curCellIndex);
-                                } else {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
+                                // Force bitmap refresh to show pixel index changes
+                                ForceImageRefresh();
                             }
                         } else {
                             statusMessage = "ERROR: Failed to reverse range";
@@ -542,17 +591,6 @@ void RenderPaletteManagerDialog() {
             // SORTING AND ARRANGEMENT
             // =================================================================
             if (ImGui::CollapsingHeader("Sorting & Arrangement")) {
-                
-                // Get selection range for operations
-                int firstSel = -1, lastSel = -1;
-                for (int i = 0; i < 256; i++) {
-                    if (selectedIndices[i]) {
-                        if (firstSel == -1) firstSel = i;
-                        lastSel = i;
-                    }
-                }
-                
-                bool hasSelection = (firstSel != -1);
                 
                 if (!hasSelection) {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
@@ -573,13 +611,26 @@ void RenderPaletteManagerDialog() {
                     ImGui::SameLine();
                     ImGui::Checkbox("Ascending", &sortAscending);
                     
-                    if (ImGui::Button("Sort Range", ImVec2(-1, 0))) {
+                    if (ImGui::Button("Sort Range##sorting", ImVec2(-1, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
-                        ctx.indices = updatePixels ? (curCell && (*curCell) && (*curCell)->bmImage) ? (*curCell)->bmImage : nullptr : nullptr;
-                        ctx.width = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? (*curCell)->bmInfo->bmiHeader.biWidth : 0 : 0;
-                        ctx.height = updatePixels ? ((*curCell) && (*curCell)->bmInfo) ? abs((*curCell)->bmInfo->bmiHeader.biHeight) : 0 : 0;
+                        ctx.width = ctx.height = 0;
+                        ctx.indices = nullptr;
                         ctx.update_indices = updatePixels;
+                        
+                        // Ensure image data is loaded if we need to update pixels
+                        if (updatePixels && curCell && (*curCell)) {
+                            // CRITICAL: Ensure image data is loaded before accessing
+                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                            }
+                            
+                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                                ctx.indices = (*curCell)->bmImage;
+                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
+                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                            }
+                        }
                         
                         RealmpalSortCriteria criteria = (RealmpalSortCriteria)sortCriteria;
                         
@@ -590,12 +641,8 @@ void RenderPaletteManagerDialog() {
                             showStatus = true;
                             
                             if (updatePixels && ctx.indices) {
-                                if (isPicture) {
-                                    ShowCell(curCellIndex);
-                                } else {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
+                                // Force bitmap refresh to show pixel index changes
+                                ForceImageRefresh();
                             }
                         } else {
                             statusMessage = "ERROR: Failed to sort range";
@@ -611,7 +658,7 @@ void RenderPaletteManagerDialog() {
                     static bool useHSL = true;
                     ImGui::Checkbox("Use HSL interpolation", &useHSL);
                     
-                    if (ImGui::Button("Create Gradient", ImVec2(-1, 0))) {
+                    if (ImGui::Button("Create Gradient##gradient", ImVec2(-1, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
                         ctx.indices = nullptr; // Gradients don't need pixel updates
@@ -638,17 +685,6 @@ void RenderPaletteManagerDialog() {
             // =================================================================
             if (ImGui::CollapsingHeader("Color Effects")) {
                 
-                // Get selection range for operations
-                int firstSel = -1, lastSel = -1;
-                for (int i = 0; i < 256; i++) {
-                    if (selectedIndices[i]) {
-                        if (firstSel == -1) firstSel = i;
-                        lastSel = i;
-                    }
-                }
-                
-                bool hasSelection = (firstSel != -1);
-                
                 if (!hasSelection) {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
                     DisabledText("Select indices to apply effects");
@@ -674,7 +710,7 @@ void RenderPaletteManagerDialog() {
                     ImGui::Spacing();
                     
                     // Apply adjustments buttons
-                    if (ImGui::Button("Apply Adjustments", ImVec2(120, 0))) {
+                    if (ImGui::Button("Apply Adjustments##effects", ImVec2(120, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
                         ctx.indices = nullptr; // Color adjustments don't need pixel updates
@@ -715,7 +751,7 @@ void RenderPaletteManagerDialog() {
                     
                     ImGui::SameLine();
                     
-                    if (ImGui::Button("Grayscale", ImVec2(90, 0))) {
+                    if (ImGui::Button("Grayscale##effects", ImVec2(90, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
                         ctx.indices = nullptr;
@@ -730,7 +766,7 @@ void RenderPaletteManagerDialog() {
                         }
                     }
                     
-                    if (ImGui::Button("Apply Sepia", ImVec2(120, 0))) {
+                    if (ImGui::Button("Apply Sepia##effects", ImVec2(120, 0))) {
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
                         ctx.indices = nullptr;
@@ -769,7 +805,7 @@ void RenderPaletteManagerDialog() {
                     DisabledText("No file selected");
                 }
                 
-                if (ImGui::Button("Browse File...", ImVec2(-1, 0))) {
+                if (ImGui::Button("Browse File...##import", ImVec2(-1, 0))) {
                     g_requestPalMgrInputDialog = true;
                 }
                 
@@ -777,7 +813,7 @@ void RenderPaletteManagerDialog() {
                 
                 // Import button
                 if (!g_palMgrInputFile.empty()) {
-                    if (ImGui::Button("Import Palette", ImVec2(-1, 0))) {
+                    if (ImGui::Button("Import Palette##import", ImVec2(-1, 0))) {
                         // Clear error state
                         realmpal_clear_error();
                         
@@ -800,7 +836,7 @@ void RenderPaletteManagerDialog() {
                     }
                 } else {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Import Palette", ImVec2(-1, 0));
+                    ImGui::Button("Import Palette##import", ImVec2(-1, 0));
                     ImGui::PopStyleVar();
                 }
                 
@@ -810,7 +846,7 @@ void RenderPaletteManagerDialog() {
                 
                 ImGui::Text("Export Palette To:");
                 
-                if (ImGui::Button("Export Palette...", ImVec2(-1, 0))) {
+                if (ImGui::Button("Export Palette...##export", ImVec2(-1, 0))) {
                     g_requestPalMgrOutputDialog = true;
                 }
                 
@@ -823,7 +859,7 @@ void RenderPaletteManagerDialog() {
                         displayName[60] = '\0';
                         InfoText(displayName);
                         
-                        if (ImGui::Button("Export Now", ImVec2(-1, 0))) {
+                        if (ImGui::Button("Export Now##export", ImVec2(-1, 0))) {
                             // Create a simple 16x16 palette image for export
                             uint8_t indices[256];
                             for (int i = 0; i < 256; i++) {
@@ -855,14 +891,19 @@ void RenderPaletteManagerDialog() {
             // =================================================================
             if (ImGui::CollapsingHeader("Palette Analysis")) {
                 
-                if (ImGui::Button("Analyze Palette", ImVec2(-1, 0))) {
+                if (ImGui::Button("Analyze Palette##analysis", ImVec2(-1, 0))) {
                     uint8_t* indices = nullptr;
                     int pixelCount = 0;
                     
                     // Get pixel data if available for usage analysis
-                    if (curCell && (*curCell) && (*curCell)->bmImage) {
-                        indices = (*curCell)->bmImage;
-                        if ((*curCell)->bmInfo) {
+                    if (curCell && (*curCell)) {
+                        // Ensure image data is loaded
+                        if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
+                            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                        }
+                        
+                        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                            indices = (*curCell)->bmImage;
                             pixelCount = (*curCell)->bmInfo->bmiHeader.biWidth * 
                                         abs((*curCell)->bmInfo->bmiHeader.biHeight);
                         }
@@ -1037,8 +1078,6 @@ void RenderPaletteManagerDialog() {
     
     ImGui::Separator();
     ImGui::Spacing();
-    
-    float buttonWidth = availableWidth * 0.22f;
     
     if (ApplyButton("Apply & Close")) {
         // Apply working palette and close
