@@ -738,28 +738,43 @@ void RenderPaletteManagerDialog() {
             // =================================================================
             // COLOR EFFECTS
             // =================================================================
-            if (ImGui::CollapsingHeader("Color Effects")) {
-                
+            if (ImGui::CollapsingHeader("Atmospheric Effects##main_section")) {
+    
                 if (!hasSelection) {
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
                     DisabledText("Select indices to apply effects");
                     ImGui::PopStyleVar();
                 } else {
                     
+                    // Existing effect variables
                     static float brightness = 0.0f;
                     static float contrast = 0.0f;
                     static float hueShift = 0.0f;
                     static float satFactor = 1.0f;
-                    static float sepiaIntensity = 0.5f;
+                    static float sepiaIntensity = 0.0f;
                     static float temperature = 0.0f;
-                    static RGB8 effectsBackupPalette[256]; // Backup for real-time effects
+                    
+                    // New atmospheric effect variables
+                    static float gamma = 1.0f;
+                    static float exposure = 0.0f;
+                    static float shadows = 0.0f;
+                    static float highlights = 0.0f;
+                    static float fogIntensity = 0.0f;
+                    static float colorTintR = 0.0f;
+                    static float colorTintG = 0.0f;
+                    static float colorTintB = 0.0f;
+                    static float vibrance = 0.0f;
+                    static float blackPoint = 0.0f;
+                    static float whitePoint = 1.0f;
+                    
+                    static RGB8 effectsBackupPalette[256];
                     static bool effectsBackupValid = false;
                     
-                    // Create backup of selection when first adjusting
+                    // Create backup when first adjusting
                     if (!effectsBackupValid && hasSelection) {
                         for (int i = firstSel; i <= lastSel; i++) {
                             if (selectedIndices[i]) {
-                                effectsBackupPalette[i] = originalPalette[i]; // Use original as base
+                                effectsBackupPalette[i] = originalPalette[i];
                             }
                         }
                         effectsBackupValid = true;
@@ -767,102 +782,121 @@ void RenderPaletteManagerDialog() {
                     
                     bool anyEffectChanged = false;
                     
-                    ImGui::PushItemWidth(150);
-                    if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                    if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                    if (ImGui::SliderFloat("Hue Shift", &hueShift, -180.0f, 180.0f, "%.0f°")) anyEffectChanged = true;
-                    if (ImGui::SliderFloat("Saturation", &satFactor, 0.0f, 2.0f, "%.2f")) anyEffectChanged = true;
-                    if (ImGui::SliderFloat("Temperature", &temperature, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                    if (ImGui::SliderFloat("Sepia", &sepiaIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                    ImGui::PopItemWidth();
+                    // Organize effects into collapsible sections
+                    if (ImGui::TreeNodeEx("Basic Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::PushItemWidth(150);
+                        if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Gamma", &gamma, 0.1f, 3.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Exposure", &exposure, -3.0f, 3.0f, "%.2f")) anyEffectChanged = true;
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                    }
                     
-                    // Apply effects in real-time
-                    if (anyEffectChanged && hasSelection && effectsBackupValid) {
-                        // Start from backup and apply all effects
-                        for (int i = firstSel; i <= lastSel; i++) {
-                            if (selectedIndices[i]) {
-                                RGB8 baseColor = effectsBackupPalette[i];
-                                
-                                float r = baseColor.r / 255.0f;
-                                float g = baseColor.g / 255.0f;
-                                float b = baseColor.b / 255.0f;
-                                
-                                // Apply temperature shift
-                                if (temperature > 0) { // Warmer
-                                    r *= 1.0f + (temperature * 0.3f);
-                                    g *= 1.0f + (temperature * 0.1f);
-                                    b *= 1.0f - (temperature * 0.2f);
-                                } else if (temperature < 0) { // Cooler
-                                    r *= 1.0f + (temperature * 0.2f);
-                                    g *= 1.0f + (temperature * 0.1f);
-                                    b *= 1.0f - (temperature * 0.3f);
-                                }
-                                
-                                // Apply brightness
-                                r *= (1.0f + brightness);
-                                g *= (1.0f + brightness);
-                                b *= (1.0f + brightness);
-                                
-                                // Apply contrast
-                                if (contrast != 0.0f) {
-                                    r = ((r - 0.5f) * (1.0f + contrast)) + 0.5f;
-                                    g = ((g - 0.5f) * (1.0f + contrast)) + 0.5f;
-                                    b = ((b - 0.5f) * (1.0f + contrast)) + 0.5f;
-                                }
-                                
-                                // Apply saturation
-                                if (satFactor != 1.0f) {
-                                    float gray = 0.299f * r + 0.587f * g + 0.114f * b;
-                                    r = gray + (r - gray) * satFactor;
-                                    g = gray + (g - gray) * satFactor;
-                                    b = gray + (b - gray) * satFactor;
-                                }
-                                
-                                // Apply hue shift (simplified HSV approach)
-                                if (hueShift != 0.0f) {
-                                    float hueRad = hueShift * 3.14159f / 180.0f;
-                                    float cosHue = cos(hueRad);
-                                    float sinHue = sin(hueRad);
-                                    
-                                    float rNew = r * cosHue - g * sinHue;
-                                    float gNew = r * sinHue + g * cosHue;
-                                    r = rNew; g = gNew;
-                                }
-                                
-                                // Apply sepia tone
-                                if (sepiaIntensity > 0.0f) {
-                                    float sepiaR = (r * 0.393f + g * 0.769f + b * 0.189f);
-                                    float sepiaG = (r * 0.349f + g * 0.686f + b * 0.168f);
-                                    float sepiaB = (r * 0.272f + g * 0.534f + b * 0.131f);
-                                    
-                                    r = r * (1.0f - sepiaIntensity) + sepiaR * sepiaIntensity;
-                                    g = g * (1.0f - sepiaIntensity) + sepiaG * sepiaIntensity;
-                                    b = b * (1.0f - sepiaIntensity) + sepiaB * sepiaIntensity;
-                                }
-                                
-                                workingPalette[i].r = (uint8_t)realmpal_clamp_int((int)(r * 255), 0, 255);
-                                workingPalette[i].g = (uint8_t)realmpal_clamp_int((int)(g * 255), 0, 255);
-                                workingPalette[i].b = (uint8_t)realmpal_clamp_int((int)(b * 255), 0, 255);
-                            }
+                    if (ImGui::TreeNodeEx("Shadow & Highlight", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::PushItemWidth(150);
+                        if (ImGui::SliderFloat("Shadows", &shadows, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjust dark areas only");
+                        
+                        if (ImGui::SliderFloat("Highlights", &highlights, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjust bright areas only");
+                        
+                        if (ImGui::SliderFloat("Black Point", &blackPoint, 0.0f, 0.5f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("White Point", &whitePoint, 0.5f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                    }
+                    
+                    if (ImGui::TreeNodeEx("Color & Saturation", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::PushItemWidth(150);
+                        if (ImGui::SliderFloat("Hue Shift", &hueShift, -180.0f, 180.0f, "%.0f°")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Saturation", &satFactor, 0.0f, 2.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Vibrance", &vibrance, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Smart saturation that preserves skin tones");
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                    }
+                    
+                    if (ImGui::TreeNodeEx("Atmospheric Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        ImGui::PushItemWidth(150);
+                        if (ImGui::SliderFloat("Temperature", &temperature, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cool (blue) to Warm (orange)");
+                        
+                        if (ImGui::SliderFloat("Fog/Haze", &fogIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulates atmospheric perspective");
+                        
+                        if (ImGui::SliderFloat("Sepia Tone", &sepiaIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                    }
+                    
+                    if (ImGui::TreeNode("Color Tinting")) {
+                        ImGui::Text("Custom Color Tint:");
+                        ImGui::PushItemWidth(120);
+                        if (ImGui::SliderFloat("Red Tint", &colorTintR, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Green Tint", &colorTintG, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        if (ImGui::SliderFloat("Blue Tint", &colorTintB, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                        ImGui::PopItemWidth();
+                        ImGui::TreePop();
+                    }
+                    
+                    // Note: Effect processing moved to bottom of function to handle presets
+                    
+                    ImGui::Spacing();
+                    
+                    // Preset Effects for Common Atmospheres
+                    if (ImGui::CollapsingHeader("Atmospheric Presets##presets_section")) {
+                        
+                        if (ImGui::Button("Night/Moonlight", ImVec2(110, 0))) {
+                            brightness = -0.3f; contrast = 0.2f; temperature = -0.4f; 
+                            satFactor = 0.7f; colorTintB = 0.2f; colorTintR = colorTintG = 0.0f;
+                            anyEffectChanged = true;
+                        }
+                        ImGui::SameLine();
+                        
+                        if (ImGui::Button("Sunset/Fire", ImVec2(110, 0))) {
+                            brightness = 0.1f; contrast = 0.3f; temperature = 0.6f;
+                            satFactor = 1.3f; colorTintR = 0.3f; colorTintG = colorTintB = 0.0f;
+                            anyEffectChanged = true;
                         }
                         
-                        paletteModified = true;
-                        statsValid = false;
+                        if (ImGui::Button("Underwater", ImVec2(110, 0))) {
+                            brightness = -0.2f; contrast = -0.3f; temperature = -0.5f;
+                            satFactor = 0.8f; colorTintB = 0.4f; colorTintG = 0.1f; colorTintR = 0.0f;
+                            fogIntensity = 0.3f; anyEffectChanged = true;
+                        }
+                        ImGui::SameLine();
                         
-                        // Update display if showing working palette
-                        if (!showOriginalPalette) {
-                            UpdatePaletteDisplay();
+                        if (ImGui::Button("Toxic/Poison", ImVec2(110, 0))) {
+                            brightness = 0.0f; contrast = 0.4f; vibrance = 0.5f;
+                            satFactor = 1.4f; colorTintG = 0.5f; colorTintR = colorTintB = 0.0f;
+                            anyEffectChanged = true;
+                        }
+                        
+                        if (ImGui::Button("Foggy/Misty", ImVec2(110, 0))) {
+                            brightness = 0.2f; contrast = -0.4f; satFactor = 0.6f;
+                            fogIntensity = 0.6f; colorTintR = colorTintG = colorTintB = 0.0f;
+                            anyEffectChanged = true;
+                        }
+                        ImGui::SameLine();
+                        
+                        if (ImGui::Button("Desert/Heat", ImVec2(110, 0))) {
+                            brightness = 0.3f; contrast = 0.5f; temperature = 0.7f;
+                            satFactor = 1.1f; colorTintR = 0.2f; colorTintG = 0.1f; colorTintB = 0.0f;
+                            anyEffectChanged = true;
                         }
                     }
                     
                     ImGui::Spacing();
-                    // Reset effects button
-                    if (ImGui::Button("Reset Effects##effects", ImVec2(120, 0))) {
-                        brightness = contrast = hueShift = temperature = 0.0f;
-                        satFactor = sepiaIntensity = 1.0f;
-                        effectsBackupValid = false; // Force backup refresh
+                    
+                    // Control buttons
+                    if (ImGui::Button("Reset All Effects", ImVec2(120, 0))) {
+                        brightness = contrast = hueShift = exposure = shadows = highlights = 0.0f;
+                        gamma = satFactor = whitePoint = 1.0f;
+                        temperature = sepiaIntensity = fogIntensity = vibrance = blackPoint = 0.0f;
+                        colorTintR = colorTintG = colorTintB = 0.0f;
+                        effectsBackupValid = false;
                         
-                        // Restore original colors for selection
                         if (hasSelection) {
                             for (int i = firstSel; i <= lastSel; i++) {
                                 if (selectedIndices[i]) {
@@ -880,8 +914,7 @@ void RenderPaletteManagerDialog() {
                     
                     ImGui::SameLine();
                     
-                    // Quick effect buttons
-                    if (ImGui::Button("Grayscale##effects", ImVec2(90, 0))) {
+                    if (ImGui::Button("Grayscale", ImVec2(90, 0))) {
                         if (hasSelection) {
                             RealmpalPaletteContext ctx;
                             ctx.palette = workingPalette;
@@ -892,7 +925,7 @@ void RenderPaletteManagerDialog() {
                             if (realmpal_palette_to_grayscale(&ctx, firstSel, lastSel)) {
                                 paletteModified = true;
                                 statsValid = false;
-                                effectsBackupValid = false; // Force backup refresh
+                                effectsBackupValid = false;
                                 
                                 if (!showOriginalPalette) {
                                     UpdatePaletteDisplay();
@@ -908,6 +941,169 @@ void RenderPaletteManagerDialog() {
                         effectsBackupValid = false;
                         lastFirstSel = firstSel;
                         lastLastSel = lastSel;
+                    }
+                    
+                    // Apply all effects in real-time (moved to end to handle preset buttons)
+                    if (anyEffectChanged && hasSelection && effectsBackupValid) {
+                        for (int i = firstSel; i <= lastSel; i++) {
+                            if (selectedIndices[i]) {
+                                RGB8 baseColor = effectsBackupPalette[i];
+                                
+                                float r = baseColor.r / 255.0f;
+                                float g = baseColor.g / 255.0f;
+                                float b = baseColor.b / 255.0f;
+                                
+                                // 1. Apply exposure (before gamma)
+                                if (exposure != 0.0f) {
+                                    float exposureMult = pow(2.0f, exposure);
+                                    r *= exposureMult;
+                                    g *= exposureMult;
+                                    b *= exposureMult;
+                                }
+                                
+                                // 2. Apply gamma correction
+                                if (gamma != 1.0f) {
+                                    r = pow(r, 1.0f / gamma);
+                                    g = pow(g, 1.0f / gamma);
+                                    b = pow(b, 1.0f / gamma);
+                                }
+                                
+                                // 3. Apply black/white point adjustment
+                                if (blackPoint != 0.0f || whitePoint != 1.0f) {
+                                    float range = whitePoint - blackPoint;
+                                    if (range > 0.001f) {
+                                        r = (r - blackPoint) / range;
+                                        g = (g - blackPoint) / range;
+                                        b = (b - blackPoint) / range;
+                                    }
+                                }
+                                
+                                // 4. Shadow/highlight adjustment
+                                if (shadows != 0.0f || highlights != 0.0f) {
+                                    float luminance = 0.299f * r + 0.587f * g + 0.114f * b;
+                                    
+                                    // Shadow adjustment (affects darker pixels more)
+                                    if (shadows != 0.0f) {
+                                        float shadowMask = 1.0f - luminance; // Stronger effect on darker areas
+                                        shadowMask = shadowMask * shadowMask; // Non-linear falloff
+                                        float shadowAdjust = shadows * shadowMask;
+                                        r += shadowAdjust;
+                                        g += shadowAdjust;
+                                        b += shadowAdjust;
+                                    }
+                                    
+                                    // Highlight adjustment (affects brighter pixels more)
+                                    if (highlights != 0.0f) {
+                                        float highlightMask = luminance; // Stronger effect on brighter areas
+                                        highlightMask = highlightMask * highlightMask; // Non-linear falloff
+                                        float highlightAdjust = highlights * highlightMask;
+                                        r += highlightAdjust;
+                                        g += highlightAdjust;
+                                        b += highlightAdjust;
+                                    }
+                                }
+                                
+                                // 5. Apply brightness
+                                r += brightness;
+                                g += brightness;
+                                b += brightness;
+                                
+                                // 6. Apply contrast
+                                if (contrast != 0.0f) {
+                                    r = ((r - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                    g = ((g - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                    b = ((b - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                }
+                                
+                                // 7. Apply temperature shift
+                                if (temperature != 0.0f) {
+                                    if (temperature > 0) { // Warmer
+                                        r *= 1.0f + (temperature * 0.3f);
+                                        g *= 1.0f + (temperature * 0.1f);
+                                        b *= 1.0f - (temperature * 0.2f);
+                                    } else { // Cooler
+                                        r *= 1.0f + (temperature * 0.2f);
+                                        g *= 1.0f + (temperature * 0.1f);
+                                        b *= 1.0f - (temperature * 0.3f);
+                                    }
+                                }
+                                
+                                // 8. Apply color tinting
+                                if (colorTintR != 0.0f || colorTintG != 0.0f || colorTintB != 0.0f) {
+                                    r += colorTintR * 0.3f;
+                                    g += colorTintG * 0.3f;
+                                    b += colorTintB * 0.3f;
+                                }
+                                
+                                // 9. Apply fog/haze effect
+                                if (fogIntensity > 0.0f) {
+                                    // Fog desaturates and shifts toward white/gray
+                                    float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+                                    float fogTarget = gray + 0.3f; // Shift toward lighter gray
+                                    r = r * (1.0f - fogIntensity) + fogTarget * fogIntensity;
+                                    g = g * (1.0f - fogIntensity) + fogTarget * fogIntensity;
+                                    b = b * (1.0f - fogIntensity) + fogTarget * fogIntensity;
+                                }
+                                
+                                // 10. Apply vibrance (smart saturation)
+                                if (vibrance != 0.0f) {
+                                    float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+                                    float maxChannel = fmax(fmax(r, g), b);
+                                    float saturation = (maxChannel > 0.001f) ? (maxChannel - gray) / maxChannel : 0.0f;
+                                    
+                                    // Vibrance affects less saturated colors more
+                                    float vibranceMask = 1.0f - saturation;
+                                    float adjustedVibrance = vibrance * vibranceMask;
+                                    
+                                    r = gray + (r - gray) * (1.0f + adjustedVibrance);
+                                    g = gray + (g - gray) * (1.0f + adjustedVibrance);
+                                    b = gray + (b - gray) * (1.0f + adjustedVibrance);
+                                }
+                                
+                                // 11. Apply saturation
+                                if (satFactor != 1.0f) {
+                                    float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+                                    r = gray + (r - gray) * satFactor;
+                                    g = gray + (g - gray) * satFactor;
+                                    b = gray + (b - gray) * satFactor;
+                                }
+                                
+                                // 12. Apply hue shift (simplified RGB rotation)
+                                if (hueShift != 0.0f) {
+                                    float hueRad = hueShift * 3.14159f / 180.0f;
+                                    float cosHue = cos(hueRad);
+                                    float sinHue = sin(hueRad);
+                                    
+                                    // Simple hue rotation in RGB space (approximation)
+                                    float rNew = r * cosHue - g * sinHue;
+                                    float gNew = r * sinHue + g * cosHue;
+                                    r = rNew; g = gNew;
+                                }
+                                
+                                // 13. Apply sepia tone
+                                if (sepiaIntensity > 0.0f) {
+                                    float sepiaR = (r * 0.393f + g * 0.769f + b * 0.189f);
+                                    float sepiaG = (r * 0.349f + g * 0.686f + b * 0.168f);
+                                    float sepiaB = (r * 0.272f + g * 0.534f + b * 0.131f);
+                                    
+                                    r = r * (1.0f - sepiaIntensity) + sepiaR * sepiaIntensity;
+                                    g = g * (1.0f - sepiaIntensity) + sepiaG * sepiaIntensity;
+                                    b = b * (1.0f - sepiaIntensity) + sepiaB * sepiaIntensity;
+                                }
+                                
+                                // Clamp final values
+                                workingPalette[i].r = (uint8_t)realmpal_clamp_int((int)(r * 255), 0, 255);
+                                workingPalette[i].g = (uint8_t)realmpal_clamp_int((int)(g * 255), 0, 255);
+                                workingPalette[i].b = (uint8_t)realmpal_clamp_int((int)(b * 255), 0, 255);
+                            }
+                        }
+                        
+                        paletteModified = true;
+                        statsValid = false;
+                        
+                        if (!showOriginalPalette) {
+                            UpdatePaletteDisplay();
+                        }
                     }
                 }
             }
