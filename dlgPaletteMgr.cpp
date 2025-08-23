@@ -2,7 +2,7 @@
  *  Copyright (C) Enrico Rolfi 'Endroz', 2004-2021.
  *  Copyright (C) Daniel Arnold 'Dhel', 2022-2024.
  *
- *  Enhanced ImGui Palette Manager Dialog
+ *  Enhanced ImGui Palette Manager Dialog with Cached Preview System
  *
  */
 
@@ -22,16 +22,48 @@ void RenderPaletteManagerDialog() {
     // Ensure theme is applied
     FotoSCIhopStyles::RefreshTheme();
     
-    // Static variables for dialog state
+    // Static variables for dialog state with cached palette system
     static bool configInitialized = false;
     static std::string statusMessage = "";
     static bool showStatus = false;
-    static RGB8 workingPalette[256];
+    static RGB8 workingPalette[256];      // Cached palette - where changes are made
+    static RGB8 originalPalette[256];     // Original - preserved until Apply
     static bool paletteModified = false;
+    static bool showOriginalPalette = false;  // Toggle: false = show cached, true = show original
     
     // Palette analysis results
     static RealmpalPaletteStats paletteStats;
     static bool statsValid = false;
+    
+    // Function to update display with current palette choice
+    auto UpdatePaletteDisplay = [&]() {
+        Palette* currentPalette = nullptr;
+        if (globalView && globalView->palSCI) {
+            currentPalette = globalView->palSCI;
+        } else if (globalPicture && globalPicture->palSCI) {
+            currentPalette = globalPicture->palSCI;
+        }
+        
+        if (currentPalette) {
+            // Choose which palette to display
+            RGB8* displayPalette = showOriginalPalette ? originalPalette : workingPalette;
+            
+            // Apply to current palette for display
+            for (int i = 0; i < 256; i++) {
+                currentPalette->palData[i].red = displayPalette[i].r;
+                currentPalette->palData[i].green = displayPalette[i].g;
+                currentPalette->palData[i].blue = displayPalette[i].b;
+            }
+            
+            // Force display refresh
+            if (isPicture) {
+                ShowCell(curCellIndex);
+            } else {
+                ShowLoopCell(curLoopIndex, curCellIndex);
+            }
+            InvalidateRect(hWnd, NULL, TRUE);
+        }
+    };
     
     // Selection state for interactive palette grid
     static std::vector<bool> selectedIndices(256, false);
@@ -39,7 +71,6 @@ void RenderPaletteManagerDialog() {
     static int dragStart = -1;
     static int selectionStart = -1;
     static int selectionEnd = -1;
-    static bool updatePixels = true;  // Whether operations should update pixel indices
     
     // Clipboard for copy/paste operations
     static std::vector<RGB8> clipboardColors;
@@ -54,7 +85,7 @@ void RenderPaletteManagerDialog() {
     
     // Initialize working palette on first run or when dialog is reopened
     if (!configInitialized) {
-        // Copy current palette to working copy
+        // Copy current palette to both working and original copies
         Palette* currentPalette = nullptr;
         if (globalView && globalView->palSCI) {
             currentPalette = globalView->palSCI;
@@ -64,19 +95,24 @@ void RenderPaletteManagerDialog() {
         
         if (currentPalette) {
             for (int i = 0; i < 256; i++) {
-                workingPalette[i].r = currentPalette->palData[i].red;
-                workingPalette[i].g = currentPalette->palData[i].green;
-                workingPalette[i].b = currentPalette->palData[i].blue;
+                originalPalette[i].r = currentPalette->palData[i].red;
+                originalPalette[i].g = currentPalette->palData[i].green;
+                originalPalette[i].b = currentPalette->palData[i].blue;
+                
+                // Start with original as working copy
+                workingPalette[i] = originalPalette[i];
             }
         } else {
             // Default grayscale palette if none available
             for (int i = 0; i < 256; i++) {
-                workingPalette[i] = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
+                originalPalette[i] = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
+                workingPalette[i] = originalPalette[i];
             }
         }
         
         configInitialized = true;
         paletteModified = false;
+        showOriginalPalette = false;
         statsValid = false;
         std::fill(selectedIndices.begin(), selectedIndices.end(), false);
         selectionStart = selectionEnd = -1;
@@ -139,17 +175,24 @@ void RenderPaletteManagerDialog() {
             ImGui::Dummy(ImVec2(30, 0));
             
             ImGui::SameLine();
-            ImGui::Checkbox("Update Pixels", &updatePixels);
+            bool showOriginalChanged = ImGui::Checkbox("Show Original", &showOriginalPalette);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("When enabled, pixel indices will be updated to follow palette changes");
+                ImGui::SetTooltip("Toggle between original palette and modified version");
             }
+            
+            if (showOriginalChanged) {
+                UpdatePaletteDisplay();
+            }
+            
+            ImGui::SameLine();
+            InfoText(showOriginalPalette ? "Viewing: Original Palette" : "Viewing: Modified Palette");
             
             ImGui::SameLine();
             ImGui::Dummy(ImVec2(20, 0));
             
             ImGui::SameLine();
-            if (ApplyButton("Apply to Current")) {
-                // Apply working palette back to the current file
+            if (ApplyButton("Apply & Close")) {
+                // Apply working palette back to the current file permanently and close
                 Palette* currentPalette = nullptr;
                 if (globalView && globalView->palSCI) {
                     currentPalette = globalView->palSCI;
@@ -165,55 +208,54 @@ void RenderPaletteManagerDialog() {
                         // Keep existing remap value
                     }
                     
-                    // Refresh display
+                    // Mark file as needing save
+                    datasaved = false;
+                    
+                    // Force display refresh with working palette
                     if (isPicture) {
                         ShowCell(curCellIndex);
                     } else {
                         ShowLoopCell(curLoopIndex, curCellIndex);
                     }
-                    
-                    datasaved = false;
                     InvalidateRect(hWnd, NULL, TRUE);
                     
                     paletteModified = false;
-                    statusMessage = "Palette applied successfully!";
+                    statusMessage = "Palette applied and saved successfully!";
                     showStatus = true;
                 } else {
                     statusMessage = "ERROR: No target palette found";
                     showStatus = true;
                 }
+                
+                // Close dialog after applying
+                configInitialized = false;
+                ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
+                EndDialog();
+                return;
             }
             
             ImGui::SameLine();
-            if (CancelButton("Reset")) {
+            if (CancelButton("Revert")) {
                 // Reset working palette to original
-                Palette* currentPalette = nullptr;
-                if (globalView && globalView->palSCI) {
-                    currentPalette = globalView->palSCI;
-                } else if (globalPicture && globalPicture->palSCI) {
-                    currentPalette = globalPicture->palSCI;
+                for (int i = 0; i < 256; i++) {
+                    workingPalette[i] = originalPalette[i];
+                }
+                paletteModified = false;
+                statsValid = false;
+                std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                selectionStart = selectionEnd = -1;
+                clipboardColors.clear();
+                clipboardStart = clipboardSize = -1;
+                swapBuffer.clear();
+                hasSwapSelection = false;
+                
+                // Update display if showing working palette
+                if (!showOriginalPalette) {
+                    UpdatePaletteDisplay();
                 }
                 
-                if (currentPalette) {
-                    for (int i = 0; i < 256; i++) {
-                        workingPalette[i].r = currentPalette->palData[i].red;
-                        workingPalette[i].g = currentPalette->palData[i].green;
-                        workingPalette[i].b = currentPalette->palData[i].blue;
-                    }
-                    paletteModified = false;
-                    statsValid = false;
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    selectionStart = selectionEnd = -1;
-                    clipboardColors.clear();
-                    clipboardStart = clipboardSize = -1;
-                    swapBuffer.clear();
-                    hasSwapSelection = false;
-                    statusMessage = "Palette reset to original";
-                    showStatus = true;
-                } else {
-                    statusMessage = "ERROR: No source palette found";
-                    showStatus = true;
-                }
+                statusMessage = "Palette reverted to original";
+                showStatus = true;
             }
         }
         ImGui::EndGroup();
@@ -252,44 +294,50 @@ void RenderPaletteManagerDialog() {
                 
                 ImGui::Spacing();
                 
-                // Quick selection tools
-                if (ImGui::Button("Select All", ImVec2(80, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear", ImVec2(80, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    selectionStart = selectionEnd = -1;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Invert", ImVec2(80, 0))) {
-                    for (int i = 0; i < 256; i++) {
-                        selectedIndices[i] = !selectedIndices[i];
+                // Quick selection tools - only enabled when showing working palette
+                if (showOriginalPalette) {
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    DisabledText("Selection disabled when viewing original palette");
+                    ImGui::PopStyleVar();
+                } else {
+                    if (ImGui::Button("Select All", ImVec2(80, 0))) {
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), true);
                     }
-                }
-                
-                ImGui::Spacing();
-                
-                // Range selection
-                static int rangeStart = 0;
-                static int rangeEnd = 255;
-                
-                ImGui::Text("Select Range:");
-                ImGui::PushItemWidth(70);
-                if (ImGui::InputInt("From##range", &rangeStart)) {
-                    rangeStart = realmpal_clamp_int(rangeStart, 0, 255);
-                }
-                ImGui::SameLine();
-                if (ImGui::InputInt("To##range", &rangeEnd)) {
-                    rangeEnd = realmpal_clamp_int(rangeEnd, rangeStart, 255);
-                }
-                ImGui::PopItemWidth();
-                
-                ImGui::SameLine();
-                if (ImGui::Button("Select##range", ImVec2(60, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    for (int i = rangeStart; i <= rangeEnd; i++) {
-                        selectedIndices[i] = true;
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear", ImVec2(80, 0))) {
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                        selectionStart = selectionEnd = -1;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Invert", ImVec2(80, 0))) {
+                        for (int i = 0; i < 256; i++) {
+                            selectedIndices[i] = !selectedIndices[i];
+                        }
+                    }
+                    
+                    ImGui::Spacing();
+                    
+                    // Range selection
+                    static int rangeStart = 0;
+                    static int rangeEnd = 255;
+                    
+                    ImGui::Text("Select Range:");
+                    ImGui::PushItemWidth(70);
+                    if (ImGui::InputInt("From##range", &rangeStart)) {
+                        rangeStart = realmpal_clamp_int(rangeStart, 0, 255);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::InputInt("To##range", &rangeEnd)) {
+                        rangeEnd = realmpal_clamp_int(rangeEnd, rangeStart, 255);
+                    }
+                    ImGui::PopItemWidth();
+                    
+                    ImGui::SameLine();
+                    if (ImGui::Button("Select##range", ImVec2(60, 0))) {
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                        for (int i = rangeStart; i <= rangeEnd; i++) {
+                            selectedIndices[i] = true;
+                        }
                     }
                 }
             }
@@ -342,6 +390,11 @@ void RenderPaletteManagerDialog() {
                         
                         paletteModified = true;
                         statsValid = false;
+                        
+                        // Update display if showing working palette
+                        if (!showOriginalPalette) {
+                            UpdatePaletteDisplay();
+                        }
                         
                         char msg[128];
                         sprintf(msg, "Pasted %d colors at index %d", pasteCount, firstSel);
@@ -407,24 +460,7 @@ void RenderPaletteManagerDialog() {
                         ctx.palette = workingPalette;
                         ctx.width = ctx.height = 0;
                         ctx.indices = nullptr;
-                        ctx.update_indices = updatePixels;
-                        
-                        // Ensure image data is loaded if we need to update pixels
-                        if (updatePixels && curCell && (*curCell)) {
-                            // CRITICAL: Ensure image data is loaded before accessing
-                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
-                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-                            }
-                            
-                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
-                                ctx.indices = (*curCell)->bmImage;
-                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
-                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
-                                
-                                // IMPORTANT: Mark cell as changed so the modified data gets saved
-                                (*curCell)->changed = true;
-                            }
-                        }
+                        ctx.update_indices = false; // Using cached palette system
                         
                         if (realmpal_palette_swap_ranges(&ctx, swapStart, swapEnd, firstSel, lastSel)) {
                             paletteModified = true;
@@ -437,9 +473,9 @@ void RenderPaletteManagerDialog() {
                             statusMessage = msg;
                             showStatus = true;
                             
-                            if (updatePixels && ctx.indices) {
-                                // Force bitmap refresh to show pixel index changes
-                                ForceImageRefresh();
+                            // Update display if showing working palette
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
                             }
                         } else {
                             statusMessage = "ERROR: Failed to swap ranges";
@@ -492,21 +528,7 @@ void RenderPaletteManagerDialog() {
                             ctx.palette = workingPalette;
                             ctx.width = ctx.height = 0;
                             ctx.indices = nullptr;
-                            ctx.update_indices = updatePixels;
-                            
-                            // Ensure image data is loaded if we need to update pixels
-                            if (updatePixels && curCell && (*curCell)) {
-                                // CRITICAL: Ensure image data is loaded before accessing
-                                if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
-                                    (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-                                }
-                                
-                                if ((*curCell)->bmImage && (*curCell)->bmInfo) {
-                                    ctx.indices = (*curCell)->bmImage;
-                                    ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
-                                    ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
-                                }
-                            }
+                            ctx.update_indices = false; // Using cached palette system now
                             
                             if (realmpal_palette_shift_range(&ctx, firstSel, lastSel, shiftTo)) {
                                 paletteModified = true;
@@ -522,14 +544,9 @@ void RenderPaletteManagerDialog() {
                                 statusMessage = "Range moved successfully";
                                 showStatus = true;
                                 
-                                if (updatePixels && ctx.indices) {
-                                    // Refresh display if pixels were updated
-                                    if (isPicture) {
-                                        ShowCell(curCellIndex);
-                                    } else {
-                                        ShowLoopCell(curLoopIndex, curCellIndex);
-                                    }
-                                    InvalidateRect(hWnd, NULL, TRUE);
+                                // Update display if showing working palette
+                                if (!showOriginalPalette) {
+                                    UpdatePaletteDisplay();
                                 }
                             } else {
                                 statusMessage = "ERROR: Failed to move range";
@@ -548,24 +565,7 @@ void RenderPaletteManagerDialog() {
                         ctx.palette = workingPalette;
                         ctx.width = ctx.height = 0;
                         ctx.indices = nullptr;
-                        ctx.update_indices = updatePixels;
-                        
-                        // Ensure image data is loaded if we need to update pixels
-                        if (updatePixels && curCell && (*curCell)) {
-                            // CRITICAL: Ensure image data is loaded before accessing
-                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
-                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-                            }
-                            
-                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
-                                ctx.indices = (*curCell)->bmImage;
-                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
-                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
-                                
-                                // IMPORTANT: Mark cell as changed so the modified data gets saved
-                                (*curCell)->changed = true;
-                            }
-                        }
+                        ctx.update_indices = false; // Using cached palette system
                         
                         if (realmpal_palette_reverse_range(&ctx, firstSel, lastSel)) {
                             paletteModified = true;
@@ -573,9 +573,9 @@ void RenderPaletteManagerDialog() {
                             statusMessage = "Range reversed successfully";
                             showStatus = true;
                             
-                            if (updatePixels && ctx.indices) {
-                                // Force bitmap refresh to show pixel index changes
-                                ForceImageRefresh();
+                            // Update display if showing working palette
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
                             }
                         } else {
                             statusMessage = "ERROR: Failed to reverse range";
@@ -616,21 +616,7 @@ void RenderPaletteManagerDialog() {
                         ctx.palette = workingPalette;
                         ctx.width = ctx.height = 0;
                         ctx.indices = nullptr;
-                        ctx.update_indices = updatePixels;
-                        
-                        // Ensure image data is loaded if we need to update pixels
-                        if (updatePixels && curCell && (*curCell)) {
-                            // CRITICAL: Ensure image data is loaded before accessing
-                            if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
-                                (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-                            }
-                            
-                            if ((*curCell)->bmImage && (*curCell)->bmInfo) {
-                                ctx.indices = (*curCell)->bmImage;
-                                ctx.width = (*curCell)->bmInfo->bmiHeader.biWidth;
-                                ctx.height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
-                            }
-                        }
+                        ctx.update_indices = false; // Using cached palette system
                         
                         RealmpalSortCriteria criteria = (RealmpalSortCriteria)sortCriteria;
                         
@@ -640,9 +626,9 @@ void RenderPaletteManagerDialog() {
                             statusMessage = "Range sorted successfully";
                             showStatus = true;
                             
-                            if (updatePixels && ctx.indices) {
-                                // Force bitmap refresh to show pixel index changes
-                                ForceImageRefresh();
+                            // Update display if showing working palette
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
                             }
                         } else {
                             statusMessage = "ERROR: Failed to sort range";
@@ -656,24 +642,94 @@ void RenderPaletteManagerDialog() {
                     HeaderText("Create Gradient:");
                     
                     static bool useHSL = true;
-                    ImGui::Checkbox("Use HSL interpolation", &useHSL);
+                    static bool autoGradient = false;
                     
-                    if (ImGui::Button("Create Gradient##gradient", ImVec2(-1, 0))) {
+                    if (ImGui::Checkbox("Use HSL interpolation", &useHSL)) {
+                        // Update gradient immediately if auto-gradient is on and we have selection
+                        if (autoGradient && hasSelection) {
+                            RealmpalPaletteContext ctx;
+                            ctx.palette = workingPalette;
+                            ctx.indices = nullptr;
+                            ctx.width = ctx.height = 0;
+                            ctx.update_indices = false;
+                            
+                            if (realmpal_palette_create_gradient(&ctx, firstSel, lastSel, useHSL)) {
+                                paletteModified = true;
+                                statsValid = false;
+                                
+                                if (!showOriginalPalette) {
+                                    UpdatePaletteDisplay();
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (ImGui::Checkbox("Auto-Gradient", &autoGradient)) {
+                        // Apply gradient immediately when enabled if we have selection
+                        if (autoGradient && hasSelection) {
+                            RealmpalPaletteContext ctx;
+                            ctx.palette = workingPalette;
+                            ctx.indices = nullptr;
+                            ctx.width = ctx.height = 0;
+                            ctx.update_indices = false;
+                            
+                            if (realmpal_palette_create_gradient(&ctx, firstSel, lastSel, useHSL)) {
+                                paletteModified = true;
+                                statsValid = false;
+                                
+                                if (!showOriginalPalette) {
+                                    UpdatePaletteDisplay();
+                                }
+                            }
+                        }
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Automatically create gradients when selection changes");
+                    }
+                    
+                    // Manual gradient button (for when auto-gradient is off)
+                    if (!autoGradient) {
+                        if (ImGui::Button("Create Gradient##gradient", ImVec2(-1, 0))) {
+                            RealmpalPaletteContext ctx;
+                            ctx.palette = workingPalette;
+                            ctx.indices = nullptr;
+                            ctx.width = ctx.height = 0;
+                            ctx.update_indices = false;
+                            
+                            if (realmpal_palette_create_gradient(&ctx, firstSel, lastSel, useHSL)) {
+                                paletteModified = true;
+                                statsValid = false;
+                                
+                                if (!showOriginalPalette) {
+                                    UpdatePaletteDisplay();
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Auto-apply gradient when selection changes (if auto-gradient is enabled)
+                    static int lastGradientFirstSel = -1;
+                    static int lastGradientLastSel = -1;
+                    if (autoGradient && hasSelection && 
+                        (firstSel != lastGradientFirstSel || lastSel != lastGradientLastSel)) {
+                        
                         RealmpalPaletteContext ctx;
                         ctx.palette = workingPalette;
-                        ctx.indices = nullptr; // Gradients don't need pixel updates
+                        ctx.indices = nullptr;
                         ctx.width = ctx.height = 0;
                         ctx.update_indices = false;
                         
                         if (realmpal_palette_create_gradient(&ctx, firstSel, lastSel, useHSL)) {
                             paletteModified = true;
                             statsValid = false;
-                            statusMessage = "Gradient created successfully";
-                            showStatus = true;
-                        } else {
-                            statusMessage = "ERROR: Failed to create gradient";
-                            showStatus = true;
+                            
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
+                            }
                         }
+                        
+                        lastGradientFirstSel = firstSel;
+                        lastGradientLastSel = lastSel;
                     }
                 }
             }
@@ -697,88 +753,162 @@ void RenderPaletteManagerDialog() {
                     static float satFactor = 1.0f;
                     static float sepiaIntensity = 0.5f;
                     static float temperature = 0.0f;
+                    static RGB8 effectsBackupPalette[256]; // Backup for real-time effects
+                    static bool effectsBackupValid = false;
+                    
+                    // Create backup of selection when first adjusting
+                    if (!effectsBackupValid && hasSelection) {
+                        for (int i = firstSel; i <= lastSel; i++) {
+                            if (selectedIndices[i]) {
+                                effectsBackupPalette[i] = originalPalette[i]; // Use original as base
+                            }
+                        }
+                        effectsBackupValid = true;
+                    }
+                    
+                    bool anyEffectChanged = false;
                     
                     ImGui::PushItemWidth(150);
-                    ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("Hue Shift", &hueShift, -180.0f, 180.0f, "%.0f°");
-                    ImGui::SliderFloat("Saturation", &satFactor, 0.0f, 2.0f, "%.2f");
-                    ImGui::SliderFloat("Temperature", &temperature, -1.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat("Sepia", &sepiaIntensity, 0.0f, 1.0f, "%.2f");
+                    if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                    if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                    if (ImGui::SliderFloat("Hue Shift", &hueShift, -180.0f, 180.0f, "%.0f°")) anyEffectChanged = true;
+                    if (ImGui::SliderFloat("Saturation", &satFactor, 0.0f, 2.0f, "%.2f")) anyEffectChanged = true;
+                    if (ImGui::SliderFloat("Temperature", &temperature, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
+                    if (ImGui::SliderFloat("Sepia", &sepiaIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
                     ImGui::PopItemWidth();
                     
-                    ImGui::Spacing();
+                    // Apply effects in real-time
+                    if (anyEffectChanged && hasSelection && effectsBackupValid) {
+                        // Start from backup and apply all effects
+                        for (int i = firstSel; i <= lastSel; i++) {
+                            if (selectedIndices[i]) {
+                                RGB8 baseColor = effectsBackupPalette[i];
+                                
+                                float r = baseColor.r / 255.0f;
+                                float g = baseColor.g / 255.0f;
+                                float b = baseColor.b / 255.0f;
+                                
+                                // Apply temperature shift
+                                if (temperature > 0) { // Warmer
+                                    r *= 1.0f + (temperature * 0.3f);
+                                    g *= 1.0f + (temperature * 0.1f);
+                                    b *= 1.0f - (temperature * 0.2f);
+                                } else if (temperature < 0) { // Cooler
+                                    r *= 1.0f + (temperature * 0.2f);
+                                    g *= 1.0f + (temperature * 0.1f);
+                                    b *= 1.0f - (temperature * 0.3f);
+                                }
+                                
+                                // Apply brightness
+                                r *= (1.0f + brightness);
+                                g *= (1.0f + brightness);
+                                b *= (1.0f + brightness);
+                                
+                                // Apply contrast
+                                if (contrast != 0.0f) {
+                                    r = ((r - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                    g = ((g - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                    b = ((b - 0.5f) * (1.0f + contrast)) + 0.5f;
+                                }
+                                
+                                // Apply saturation
+                                if (satFactor != 1.0f) {
+                                    float gray = 0.299f * r + 0.587f * g + 0.114f * b;
+                                    r = gray + (r - gray) * satFactor;
+                                    g = gray + (g - gray) * satFactor;
+                                    b = gray + (b - gray) * satFactor;
+                                }
+                                
+                                // Apply hue shift (simplified HSV approach)
+                                if (hueShift != 0.0f) {
+                                    float hueRad = hueShift * 3.14159f / 180.0f;
+                                    float cosHue = cos(hueRad);
+                                    float sinHue = sin(hueRad);
+                                    
+                                    float rNew = r * cosHue - g * sinHue;
+                                    float gNew = r * sinHue + g * cosHue;
+                                    r = rNew; g = gNew;
+                                }
+                                
+                                // Apply sepia tone
+                                if (sepiaIntensity > 0.0f) {
+                                    float sepiaR = (r * 0.393f + g * 0.769f + b * 0.189f);
+                                    float sepiaG = (r * 0.349f + g * 0.686f + b * 0.168f);
+                                    float sepiaB = (r * 0.272f + g * 0.534f + b * 0.131f);
+                                    
+                                    r = r * (1.0f - sepiaIntensity) + sepiaR * sepiaIntensity;
+                                    g = g * (1.0f - sepiaIntensity) + sepiaG * sepiaIntensity;
+                                    b = b * (1.0f - sepiaIntensity) + sepiaB * sepiaIntensity;
+                                }
+                                
+                                workingPalette[i].r = (uint8_t)realmpal_clamp_int((int)(r * 255), 0, 255);
+                                workingPalette[i].g = (uint8_t)realmpal_clamp_int((int)(g * 255), 0, 255);
+                                workingPalette[i].b = (uint8_t)realmpal_clamp_int((int)(b * 255), 0, 255);
+                            }
+                        }
+                        
+                        paletteModified = true;
+                        statsValid = false;
+                        
+                        // Update display if showing working palette
+                        if (!showOriginalPalette) {
+                            UpdatePaletteDisplay();
+                        }
+                    }
                     
-                    // Apply adjustments buttons
-                    if (ImGui::Button("Apply Adjustments##effects", ImVec2(120, 0))) {
-                        RealmpalPaletteContext ctx;
-                        ctx.palette = workingPalette;
-                        ctx.indices = nullptr; // Color adjustments don't need pixel updates
-                        ctx.width = ctx.height = 0;
-                        ctx.update_indices = false;
+                    ImGui::Spacing();
+                    // Reset effects button
+                    if (ImGui::Button("Reset Effects##effects", ImVec2(120, 0))) {
+                        brightness = contrast = hueShift = temperature = 0.0f;
+                        satFactor = sepiaIntensity = 1.0f;
+                        effectsBackupValid = false; // Force backup refresh
                         
-                        bool applied = false;
-                        
-                        if (brightness != 0.0f || contrast != 0.0f) {
-                            if (realmpal_palette_adjust_brightness_contrast(&ctx, firstSel, lastSel, brightness, contrast)) {
-                                applied = true;
+                        // Restore original colors for selection
+                        if (hasSelection) {
+                            for (int i = firstSel; i <= lastSel; i++) {
+                                if (selectedIndices[i]) {
+                                    workingPalette[i] = originalPalette[i];
+                                }
                             }
-                        }
-                        
-                        if (hueShift != 0.0f || satFactor != 1.0f) {
-                            if (realmpal_palette_adjust_hue_saturation(&ctx, firstSel, lastSel, hueShift, satFactor)) {
-                                applied = true;
-                            }
-                        }
-                        
-                        if (temperature != 0.0f) {
-                            if (realmpal_palette_adjust_temperature(&ctx, firstSel, lastSel, temperature)) {
-                                applied = true;
-                            }
-                        }
-                        
-                        if (applied) {
                             paletteModified = true;
                             statsValid = false;
-                            statusMessage = "Color adjustments applied";
-                            showStatus = true;
                             
-                            // Reset sliders
-                            brightness = contrast = hueShift = temperature = 0.0f;
-                            satFactor = 1.0f;
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
+                            }
                         }
                     }
                     
                     ImGui::SameLine();
                     
+                    // Quick effect buttons
                     if (ImGui::Button("Grayscale##effects", ImVec2(90, 0))) {
-                        RealmpalPaletteContext ctx;
-                        ctx.palette = workingPalette;
-                        ctx.indices = nullptr;
-                        ctx.width = ctx.height = 0;
-                        ctx.update_indices = false;
-                        
-                        if (realmpal_palette_to_grayscale(&ctx, firstSel, lastSel)) {
-                            paletteModified = true;
-                            statsValid = false;
-                            statusMessage = "Converted to grayscale";
-                            showStatus = true;
+                        if (hasSelection) {
+                            RealmpalPaletteContext ctx;
+                            ctx.palette = workingPalette;
+                            ctx.indices = nullptr;
+                            ctx.width = ctx.height = 0;
+                            ctx.update_indices = false;
+                            
+                            if (realmpal_palette_to_grayscale(&ctx, firstSel, lastSel)) {
+                                paletteModified = true;
+                                statsValid = false;
+                                effectsBackupValid = false; // Force backup refresh
+                                
+                                if (!showOriginalPalette) {
+                                    UpdatePaletteDisplay();
+                                }
+                            }
                         }
                     }
                     
-                    if (ImGui::Button("Apply Sepia##effects", ImVec2(120, 0))) {
-                        RealmpalPaletteContext ctx;
-                        ctx.palette = workingPalette;
-                        ctx.indices = nullptr;
-                        ctx.width = ctx.height = 0;
-                        ctx.update_indices = false;
-                        
-                        if (realmpal_palette_sepia_tone(&ctx, firstSel, lastSel, sepiaIntensity)) {
-                            paletteModified = true;
-                            statsValid = false;
-                            statusMessage = "Sepia tone applied";
-                            showStatus = true;
-                        }
+                    // Reset backup when selection changes
+                    static int lastFirstSel = -1;
+                    static int lastLastSel = -1;
+                    if (firstSel != lastFirstSel || lastSel != lastLastSel) {
+                        effectsBackupValid = false;
+                        lastFirstSel = firstSel;
+                        lastLastSel = lastSel;
                     }
                 }
             }
@@ -822,6 +952,12 @@ void RenderPaletteManagerDialog() {
                             paletteModified = true;
                             statsValid = false;
                             std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                            
+                            // Update display if showing working palette
+                            if (!showOriginalPalette) {
+                                UpdatePaletteDisplay();
+                            }
+                            
                             char msg[512];
                             sprintf(msg, "SUCCESS: Imported %d colors", colors);
                             statusMessage = msg;
@@ -869,6 +1005,7 @@ void RenderPaletteManagerDialog() {
                             // Clear error state
                             realmpal_clear_error();
                             
+                            // Use working palette for export
                             if (realmpal_write_auto(g_palMgrOutputFile.c_str(), 16, 16, indices, workingPalette)) {
                                 statusMessage = "SUCCESS: Palette exported";
                                 showStatus = true;
@@ -960,6 +1097,9 @@ void RenderPaletteManagerDialog() {
             InfoText("Left-click = select, Drag = range, Ctrl+click = multi-select");
             ImGui::Spacing();
             
+            // Choose which palette to display based on toggle
+            RGB8* displayPalette = showOriginalPalette ? originalPalette : workingPalette;
+            
             // Palette grid display with selection
             ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.05f, 0.05f, 0.1f, 0.9f));
             if (ImGui::BeginChild("InteractivePalette", ImVec2(0, 0), true)) {
@@ -978,7 +1118,7 @@ void RenderPaletteManagerDialog() {
                         char buttonId[16];
                         sprintf(buttonId, "##pal%d", colorIndex);
                         
-                        RGB8 color = workingPalette[colorIndex];
+                        RGB8 color = displayPalette[colorIndex];
                         float r = color.r / 255.0f;
                         float g = color.g / 255.0f;
                         float b = color.b / 255.0f;
@@ -1000,8 +1140,8 @@ void RenderPaletteManagerDialog() {
                         
                         ImGui::PopStyleColor(3);
                         
-                        // Handle selection
-                        if (buttonClicked) {
+                        // Handle selection - only allow if showing working palette
+                        if (buttonClicked && !showOriginalPalette) {
                             if (ctrlPressed) {
                                 // Toggle individual selection
                                 selectedIndices[colorIndex] = !selectedIndices[colorIndex];
@@ -1015,8 +1155,8 @@ void RenderPaletteManagerDialog() {
                             }
                         }
                         
-                        // Handle drag selection
-                        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0)) {
+                        // Handle drag selection - only if showing working palette
+                        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0) && !showOriginalPalette) {
                             if (!isDragging) {
                                 isDragging = true;
                                 dragStart = colorIndex;
@@ -1050,9 +1190,10 @@ void RenderPaletteManagerDialog() {
                         // Tooltip
                         if (ImGui::IsItemHovered()) {
                             char tooltip[128];
-                            sprintf(tooltip, "Index %d\nRGB(%d, %d, %d)%s", 
+                            sprintf(tooltip, "Index %d\nRGB(%d, %d, %d)%s%s", 
                                    colorIndex, color.r, color.g, color.b,
-                                   isSelected ? "\n[SELECTED]" : "");
+                                   isSelected ? "\n[SELECTED]" : "",
+                                   showOriginalPalette ? "\n(Original)" : "");
                             ImGui::SetTooltip("%s", tooltip);
                         }
                         
@@ -1072,62 +1213,14 @@ void RenderPaletteManagerDialog() {
     }
     ImGui::EndChild();
     
-    // =========================================================================
-    // BOTTOM BUTTONS
-    // =========================================================================
-    
-    ImGui::Separator();
-    ImGui::Spacing();
-    
-    if (ApplyButton("Apply & Close")) {
-        // Apply working palette and close
-        Palette* currentPalette = nullptr;
-        if (globalView && globalView->palSCI) {
-            currentPalette = globalView->palSCI;
-        } else if (globalPicture && globalPicture->palSCI) {
-            currentPalette = globalPicture->palSCI;
-        }
-        
-        if (currentPalette) {
-            for (int i = 0; i < 256; i++) {
-                currentPalette->palData[i].red = workingPalette[i].r;
-                currentPalette->palData[i].green = workingPalette[i].g;
-                currentPalette->palData[i].blue = workingPalette[i].b;
-                // Keep existing remap value
-            }
-            
-            // Refresh display
-            if (isPicture) {
-                ShowCell(curCellIndex);
-            } else {
-                ShowLoopCell(curLoopIndex, curCellIndex);
-            }
-            
-            datasaved = false;
-            InvalidateRect(hWnd, NULL, TRUE);
-            
-            // Reset state for next time
-            configInitialized = false;
-        }
-        
-        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
-    }
-    
-    ImGui::SameLine();
-    
-    if (CloseButton("Close")) {
-        // Reset state for next time dialog is opened
-        configInitialized = false;
-        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
-    }
-    
+    // Bottom buttons are now handled in the header section
     // Status message
     if (showStatus && !statusMessage.empty()) {
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();
         
-        if (statusMessage.find("SUCCESS") != std::string::npos) {
+        if (statusMessage.find("SUCCESS") != std::string::npos || statusMessage.find("successfully") != std::string::npos) {
             SuccessText(statusMessage.c_str());
         } else if (statusMessage.find("ERROR") != std::string::npos) {
             ErrorText(statusMessage.c_str());
