@@ -163,4 +163,10 @@ extern bool g_requestInputDialog;
 extern bool g_requestPaletteDialog;
 extern bool g_requestExtraDialog;
 
+// Palette Manager dialog state variables
+extern std::string g_palMgrInputFile;
+extern std::string g_palMgrOutputFile;  
+extern bool g_requestPalMgrInputDialog;
+extern bool g_requestPalMgrOutputDialog;
+
 #endif // FOTOSCIHOP_H

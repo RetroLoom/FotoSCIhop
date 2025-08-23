@@ -269,6 +269,46 @@ void HandleRealmpalFileDialogs() {
             g_realmpalExtraFile = fileName;
         }
     }
+    
+    if (g_requestPalMgrInputDialog) {
+        g_requestPalMgrInputDialog = false;
+        
+        OPENFILENAME ofn;
+        static char fileName[MAX_PATH] = "";
+        
+        ZeroMemory(&ofn, sizeof(OPENFILENAME));
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = hWnd;
+        ofn.lpstrFilter = "Palette files (*.bmp;*.png;*.pcx)\0*.bmp;*.png;*.pcx\0All files (*.*)\0*.*\0\0";
+        ofn.lpstrFile = fileName;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.Flags = OFN_EXPLORER | OFN_FILEMUSTEXIST | OFN_HIDEREADONLY;
+        ofn.lpstrTitle = "Import Palette From File";
+        
+        if (GetOpenFileName(&ofn)) {
+            g_palMgrInputFile = fileName;
+        }
+    }
+    
+    if (g_requestPalMgrOutputDialog) {
+        g_requestPalMgrOutputDialog = false;
+        
+        OPENFILENAME ofn;
+        static char fileName[MAX_PATH] = "palette.bmp";
+        
+        ZeroMemory(&ofn, sizeof(OPENFILENAME));
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = hWnd;
+        ofn.lpstrFilter = "BMP Palette (*.bmp)\0*.bmp\0PCX Palette (*.pcx)\0*.pcx\0\0";
+        ofn.lpstrFile = fileName;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT;
+        ofn.lpstrTitle = "Export Palette To File";
+        
+        if (GetSaveFileName(&ofn)) {
+            g_palMgrOutputFile = fileName;
+        }
+    }
 }
 
 #ifdef __DEVC
