@@ -57,13 +57,32 @@ void RenderPaletteManagerDialog() {
                 currentPalette->palData[i].blue = displayPalette[i].b;
             }
             
-            // Force display refresh
-            if (isPicture) {
+            // Force display refresh with special handling for pictures
+            if (isPicture && globalPicture) {
+                // For P56 files, we need to force regeneration of bitmap data
+                if (curCell && (*curCell)) {
+                    // Clear cached bitmap data to force regeneration with new palette
+                    if ((*curCell)->bmImage) {
+                        // Don't delete the image data, just mark it for refresh
+                        (*curCell)->bmInfo = nullptr;
+                        (*curCell)->bmImage = nullptr;
+                    }
+                }
+                
+                // Force complete cell refresh
                 ShowCell(curCellIndex);
-            } else {
+                
+                // Additional refresh for pictures
+                PostMessage(hWnd, WM_USER + 1, 0, 0); // Trigger scroll bar and display update
+                
+            } else if (globalView) {
+                // For V56 files, normal refresh should work
                 ShowLoopCell(curLoopIndex, curCellIndex);
             }
+            
+            // Force immediate window redraw
             InvalidateRect(hWnd, NULL, TRUE);
+            UpdateWindow(hWnd);
         }
     };
     
@@ -211,19 +230,37 @@ void RenderPaletteManagerDialog() {
                     // Mark file as needing save
                     datasaved = false;
                     
-                    // Force display refresh with working palette
-                    if (isPicture) {
+                    // Enhanced display refresh for both file types
+                    if (isPicture && globalPicture) {
+                        // For P56 files: Force complete image data regeneration
+                        if (curCell && (*curCell)) {
+                            // Clear cached image data to force regeneration with new palette
+                            if ((*curCell)->bmImage) {
+                                (*curCell)->bmInfo = nullptr;
+                                (*curCell)->bmImage = nullptr;
+                            }
+                        }
+                        
+                        // Force cell refresh
                         ShowCell(curCellIndex);
-                    } else {
+                        
+                        // Additional refresh steps for pictures
+                        PostMessage(hWnd, WM_USER + 1, 0, 0);
+                        
+                    } else if (globalView) {
+                        // For V56 files: Standard refresh
                         ShowLoopCell(curLoopIndex, curCellIndex);
                     }
+                    
+                    // Force complete window redraw
                     InvalidateRect(hWnd, NULL, TRUE);
+                    RedrawWindow(hWnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW);
                     
                     paletteModified = false;
                     statusMessage = "Palette applied and saved successfully!";
                     showStatus = true;
                     
-                    // Set flag to close dialog instead of immediate return
+                    // Set flag to close dialog
                     shouldCloseDialog = true;
                 } else {
                     statusMessage = "ERROR: No target palette found";
