@@ -32,7 +32,6 @@ int gAppResY = 500;
 int zScale = 100;
 int gPosCells = 0;
 int gCliMode = 0;
-int gBaseMagnify = 100;
 int gCliEnabled = 0;
 
 // ============================================================================
@@ -136,14 +135,10 @@ void LoadConfig()
     gAppResY = GetPrivateProfileInt("main", "resY", gAppResY, gConfigIni);
     zScale = GetPrivateProfileInt("main", "zScale", zScale, gConfigIni);
     gPosCells = GetPrivateProfileInt("main", "posCells", gPosCells, gConfigIni);
-    gBaseMagnify = GetPrivateProfileInt("main", "magScale", gBaseMagnify, gConfigIni);
     gCliEnabled = GetPrivateProfileInt("main", "cliStartup", gCliEnabled, gConfigIni);
 
     // Load reference image settings
     LoadReferenceImageSettings();
-
-    // Set the base magnification factor
-    MagnifyFactor = gBaseMagnify;
 }
 
 void SaveConfig()
@@ -162,9 +157,6 @@ void SaveConfig()
     
     sprintf(buffer, "%d", gPosCells);
     WritePrivateProfileString("main", "posCells", buffer, gConfigIni);
-    
-    sprintf(buffer, "%d", gBaseMagnify);
-    WritePrivateProfileString("main", "magScale", buffer, gConfigIni);
     
     sprintf(buffer, "%d", gCliEnabled);
     WritePrivateProfileString("main", "cliStartup", buffer, gConfigIni);
@@ -293,7 +285,6 @@ void SetDefaultConfiguration()
     zScale = 100;
     gPosCells = 0;
     gCliMode = 0;
-    gBaseMagnify = 100;
     gCliEnabled = 0;
 
     // Reference image defaults
@@ -325,12 +316,6 @@ bool ValidateConfiguration()
     // Validate zoom scale
     if (zScale < 25 || zScale > 1600) {
         zScale = 100;
-        return false;
-    }
-
-    // Validate magnification
-    if (gBaseMagnify < 25 || gBaseMagnify > 1600) {
-        gBaseMagnify = 100;
         return false;
     }
 

@@ -1027,15 +1027,9 @@ bool SampleColorAtScreenPosition(int clientX, int clientY, int& colorIndex) {
     int displayOriginX = UI_LEFT_MARGIN + picX + tableX;
     int displayOriginY = UI_TOP_MARGIN + picY;
     
-    // Calculate relative position within the display area
+    // Calculate relative position within the display area - NO MAGNIFICATION
     int relativeX = clientX - displayOriginX;
     int relativeY = clientY - displayOriginY;
-    
-    // Account for magnification factor (same as original display code)
-    if (MagnifyFactor > 0) {
-        relativeX = (relativeX * 100) / MagnifyFactor;
-        relativeY = (relativeY * 100) / MagnifyFactor;
-    }
     
     if (globalView && curCell && (*curCell)) {
         // For view files - sample from current view cell

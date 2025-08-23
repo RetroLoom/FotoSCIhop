@@ -53,31 +53,6 @@ static const COLORREF COLOR_BLACK = RGB(0, 0, 0);
 static const COLORREF COLOR_CYAN = RGB(0, 255, 255);
 
 // ============================================================================
-// ZOOM AND SCROLL CONSTANTS
-// ============================================================================
-// Enhanced magnification levels (percentage)
-static const int ZOOM_LEVELS[] = {
-    25, 50, 75, 100, 125, 150, 200, 300, 400, 600, 800, 1200, 1600
-};
-static const int ZOOM_LEVEL_COUNT = sizeof(ZOOM_LEVELS) / sizeof(ZOOM_LEVELS[0]);
-
-// Mouse wheel zoom sensitivity
-static const int WHEEL_ZOOM_DELTA = 120;
-
-// ============================================================================
-// SCROLL AND ZOOM STATE (EXTERNAL DECLARATIONS)
-// ============================================================================
-extern int g_scrollX;
-extern int g_scrollY;
-extern int g_maxScrollX;
-extern int g_maxScrollY;
-extern int g_clientWidth;
-extern int g_clientHeight;
-extern bool g_isPanning;
-extern POINT g_lastPanPoint;
-extern int g_currentZoomIndex;
-
-// ============================================================================
 // CORE DISPLAY FUNCTIONS
 // ============================================================================
 void ForceImageRefresh();
@@ -97,44 +72,7 @@ void DisplayPriorityBars(HDC hdc);
 // UI drawing functions
 void DrawPaletteTable(HDC hdc);
 void DrawCellInfo(HDC hdc);
-void DrawZoomControls(HDC hdc, int startX);
 void DrawPaletteStatusIndicators(HDC hdc, Palette* tpalette);
-
-// ============================================================================
-// ZOOM CONTROL FUNCTIONS
-// ============================================================================
-void SetZoomLevel(int zoomPercentage);
-void ZoomIn();
-void ZoomOut();
-void ZoomToFit();
-void ZoomTo100();
-int FindZoomIndex(int percentage);
-
-// ============================================================================
-// SCROLL MANAGEMENT FUNCTIONS
-// ============================================================================
-void UpdateScrollBars();
-void ScrollBy(int deltaX, int deltaY);
-void ScrollTo(int x, int y);
-void EnsureScrollBarsAfterLoad();
-
-// ============================================================================
-// COORDINATE CONVERSION FUNCTIONS
-// ============================================================================
-POINT ScreenToImageCoords(int screenX, int screenY);
-POINT ImageToScreenCoords(int imageX, int imageY);
-
-// ============================================================================
-// PANNING FUNCTIONS
-// ============================================================================
-void StartPanning(int x, int y);
-void UpdatePanning(int x, int y);
-void StopPanning();
-
-// ============================================================================
-// UI INTERACTION FUNCTIONS
-// ============================================================================
-bool HandleZoomControlClick(int x, int y);
 
 // ============================================================================
 // UTILITY FUNCTIONS

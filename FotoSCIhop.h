@@ -21,7 +21,7 @@
 #include "p56files.h"
 #include "v56files.h"
 #include "english.h"
-#include "display.h"  // Include the new display module
+#include "display.h"
 #include <set>
 #include <string>
 #include <vector>
@@ -54,7 +54,6 @@ extern int gAppResY;
 extern int zScale;
 extern int gPosCells;
 extern int gCliMode;
-extern int gBaseMagnify;
 extern int gCliEnabled;
 
 // ============================================================================
@@ -103,11 +102,10 @@ extern std::set<int> g_usedColorIndices;
 extern ClutGenerator* g_clutGenerator;
 
 // ============================================================================
-// UI STATE (NON-DISPLAY)
+// UI STATE
 // ============================================================================
 
-// Display settings (accessed by display module)
-extern int MagnifyFactor;
+// Display settings
 extern int picX;
 extern int picY;
 extern int tableX;
@@ -124,7 +122,7 @@ extern int colorLimit;
 extern int tolerance;
 
 // ============================================================================
-// FUNCTION DECLARATIONS (NON-DISPLAY)
+// FUNCTION DECLARATIONS
 // ============================================================================
 bool HandleCliCommands(char* cmdLine);
 void ParseAppPath(void);

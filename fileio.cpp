@@ -55,15 +55,14 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
    bool proceed = false;
 
    ZeroMemory(&ofn, sizeof(OPENFILENAME));
-   // szFileName[0] = 0;
 
    ofn.lStructSize = sizeof(ofn);
    ofn.hwndOwner = hwnd;
    ofn.lpstrFilter = INTERFACE_OPENFILEFILTER;
    ofn.lpstrFile = szFileName;
    ofn.nMaxFile = MAX_PATH;
-
    ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+   
    proceed = (GetOpenFileName(&ofn) != 0);
 
    if(proceed)
@@ -71,7 +70,6 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 	   if (filename)
 	   {
 		   strcpy(szFileName, filename);
-
 	   }
 
 	  strcpy(szNextFileName, szFileName);
@@ -130,11 +128,6 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 			else
 			{	
 				globalPicture = newPicture;
-
-				//for (int i=0; i<globalPicture->CellsCount(); i++)
-				//{
-				//	globalPicture->cells[i]->GetImage(&globalPicture->cells[i]->bmInfo, &globalPicture->cells[i]->bmImage);
-				//}
 				ShowCell(0);
             }
 
@@ -182,7 +175,6 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 
 	  HMENU menu = GetMenu(hwnd); 
 		
-
 	  EnableMenuItem(menu, ID_IMPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));
 	  EnableMenuItem(menu, ID_ESPORTABMP, (result==ID_NOERROR ?MF_ENABLED:MF_GRAYED));	  
 	  datasaved = true;
@@ -204,7 +196,6 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 			EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 			EnableMenuItem(menu, ID_CELLASUCCESSIVA, MF_GRAYED);
 	  }
-
 
 	  InvalidateRgn(hwnd, NULL, true);
 
@@ -231,21 +222,7 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
       }
       SetWindowText(hwnd, wname);
 
-      // Reset scroll position when loading new file
-      g_scrollX = 0;
-      g_scrollY = 0;
-
-      RECT clientRect;
-      GetClientRect(hWnd, &clientRect);
-      g_clientWidth = clientRect.right;
-      g_clientHeight = clientRect.bottom;
-
-      // IMPORTANT: Don't call UpdateScrollBars here - let ShowCell/ShowLoopCell handle it
-      // after image data is properly loaded
-      
-      // Use a timer to ensure scroll bars are updated after image loading is complete
-      SetTimer(hWnd, 3, 100, NULL); // 100ms delay
-      
+      // Simple window refresh after loading
       InvalidateRect(hWnd, NULL, FALSE);
 
       return (result==ID_NOERROR);
@@ -261,15 +238,6 @@ BOOL DoFileSave(HWND hwnd)
       MessageBox(hwnd, ERR_FILEMOVED, ERR_TITLE, MB_OK | MB_ICONSTOP);
       return FALSE;
    }
-   
-   /* Dhel - removed for CLI. will rather 
-   int btn;   
-
-   btn = MessageBox (hwnd, WARN_OVERWRITE, WARN_ATTENTION,
-                              MB_APPLMODAL | MB_ICONQUESTION | MB_OKCANCEL);
-   if (btn == IDCANCEL)
-         return FALSE; 
-	*/
   
    if(!(isPicture ?globalPicture->SavePic(hwnd, szFileName):globalView->SaveFile(hwnd, szFileName)))
    { 
@@ -293,18 +261,14 @@ BOOL DoFileSaveAs(HWND hwnd)
    char szSaveFileName[MAX_PATH] = "";
 
    ZeroMemory(&ofn, sizeof(ofn));
-   //szSaveFileName[0] = 0;
 
    ofn.lStructSize = sizeof(ofn);
    ofn.hwndOwner = hwnd;
    ofn.lpstrFilter = (isPicture ?INTERFACE_SAVEFILEFILTERP56 :INTERFACE_SAVEFILEFILTERV56);
-   //ofn.nFilterIndex = 2;
    ofn.lpstrFile = szSaveFileName;
    ofn.nMaxFile = MAX_PATH;
    ofn.lpstrDefExt = (isPicture ?"p56" :"v56"); 
-
-   ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY |
-               OFN_OVERWRITEPROMPT;
+   ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
    
    if(GetSaveFileName(&ofn))
    {
@@ -326,7 +290,6 @@ BOOL DoFileSaveAs(HWND hwnd)
 		SetWindowText(hwnd, wname); 
 
        memcpy(szFileName, szSaveFileName, MAX_PATH); 
-       //FIX is this the best solution? by doing this, the source folder is always changed!
    }
 
    InvalidateRect(hwnd, NULL, true);
@@ -351,7 +314,6 @@ BOOL DoNextFile(HWND hwnd)
 	strncpy(fpath, szNextFileName,pos+1);
 	fpath[pos+1]=0;
 
-
 	char searchstr[MAX_PATH];
 	sprintf(searchstr, "%s*.?56", fpath); 
 
@@ -368,12 +330,9 @@ BOOL DoNextFile(HWND hwnd)
 		bool passed =false;
 		char *extension=0;
 		
-
-
 		if (!_stricmp(szNextFileName, fpath))
 			passed = true;
 		
-
 		do
 		{			
 			if (retvalue)
@@ -394,14 +353,12 @@ BOOL DoNextFile(HWND hwnd)
 		}
 		while (retvalue);
 			
-
 		MessageBox(hwnd, INTERFACE_ENDOFFILESSTR, INTERFACE_SEARCHTITLE,
                   MB_OK | MB_ICONINFORMATION);
 
 		strcpy(szNextFileName, fpath);
 		
 		FindClose(hFind);
-		
 	}
 
 	return FALSE;
@@ -409,12 +366,10 @@ BOOL DoNextFile(HWND hwnd)
 
 int DoSaveChangesDialog(HWND hwnd)
 {
-	
 	int btn;
 
 	if (!datasaved)
 	{
-	
 		btn = MessageBox (hwnd, WARN_UNSAVEDCHANGES, WARN_ATTENTION, 
 								MB_APPLMODAL | MB_ICONQUESTION | MB_YESNOCANCEL);
 		if (btn == IDYES)
@@ -423,7 +378,6 @@ int DoSaveChangesDialog(HWND hwnd)
 	}
 	else
 		btn = IDNO;
-
 
 	return btn;	
 }
@@ -563,7 +517,7 @@ BOOL ExportBitmapUnified(HWND hwnd, const char* path)
         ofn.lpstrFile    = filePath;
         ofn.nMaxFile     = MAX_PATH;
         ofn.lpstrDefExt  = "bmp";
-        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
         if (!GetSaveFileName(&ofn)) return FALSE; // cancel
     }
 
@@ -682,7 +636,7 @@ BOOL ExportPaletteUnified(HWND hwnd, const char* path)
         ofn.lpstrFile    = filePath;
         ofn.nMaxFile     = MAX_PATH;
         ofn.lpstrDefExt  = "pal";
-        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT;
+        ofn.Flags        = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
         if (!GetSaveFileName(&ofn)) return FALSE; // cancel
     }
 
@@ -769,7 +723,6 @@ int cliScale(int scaleX, int scaleY)
 
 	if (globalView)
 	{
-
 		globalView->Head.view32.resX = (globalView->Head.view32.resX * scaleX) / 100;
 		globalView->Head.view32.resY = (globalView->Head.view32.resY * scaleY) / 100;
 
@@ -828,9 +781,6 @@ int cliSetHeader( int vanishX, int viewAngle )
 
 	if (globalPicture)		
 	{
-		//globalPicture->MaxWidth(vanishX);
-		//globalPicture->MaxHeight(viewAngle);
-
 		globalPicture->Head.pic32.resX = vanishX;
 		globalPicture->Head.pic32.resY = viewAngle;
 	}
@@ -846,52 +796,30 @@ int cliSetHeader( int vanishX, int viewAngle )
 
 BOOL DoAddCells(int loop, int base, int amount)
 {
-     
    if(!(isPicture ?globalPicture->addCells(base, amount):globalView->addCells(loop, base, amount)))
    { 
-       //MessageBox(hwnd, ERR_CANTSAVECHANGES, ERR_TITLE,
-       //           MB_OK | MB_ICONSTOP);
-      // return FALSE;
+       // Error handling could be added here
    } else {
-       //datasaved = false;
+       // Success handling could be added here
    }
-
-  // InvalidateRect(hwnd, NULL, true); 
 
    return TRUE;
 }
 
 BOOL DoAddLoops(int base, int amount)
 {
-	
    if (FILE *tempf = fopen(szFileName, "rb"))
       fclose(tempf);
    else {
-     // MessageBox(hwnd, ERR_FILEMOVED, ERR_TITLE, MB_OK | MB_ICONSTOP);
       return FALSE;
    }
-   
-   /* Dhel - removed for CLI. will rather 
-   int btn;   
-
-   btn = MessageBox (hwnd, WARN_OVERWRITE, WARN_ATTENTION,
-                              MB_APPLMODAL | MB_ICONQUESTION | MB_OKCANCEL);
-   if (btn == IDCANCEL)
-         return FALSE; 
-	*/
   
    if(!(isPicture ? 0:globalView->addLoops(base, amount)))
    { 
-       //MessageBox(hwnd, ERR_CANTSAVECHANGES, ERR_TITLE,
-       //           MB_OK | MB_ICONSTOP);
        return FALSE;
    } else {
-       //datasaved = true;
-	   //HMENU menu = GetMenu(hwnd); 
-       //EnableMenuItem(menu, ID_SALVA, MF_GRAYED);
+       // Success handling
    }
-
-   //InvalidateRect(hwnd, NULL, true); 
 
    return TRUE;
 }

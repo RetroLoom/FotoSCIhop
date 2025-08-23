@@ -68,7 +68,6 @@ std::set<int> g_usedColorIndices;
 // ============================================================================
 
 // Display settings
-int MagnifyFactor = gBaseMagnify;
 int picX = 0;
 int picY = 30;
 int tableX = 0;
@@ -117,7 +116,7 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
             if (curCell && !(*curLoop)->Head.flags) {
                 curCellIndex = newcell;
                 
-                // CRITICAL: Ensure image data is loaded before updating scroll bars
+                // Ensure image data is loaded
                 if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
                     (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
                 }
@@ -142,9 +141,6 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
         
             if (newcell == 0)
                 EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
-
-            // CRITICAL: Update scroll bars after image data is ready
-            UpdateScrollBars();
 
             InvalidateRgn(hWnd, NULL, true);
         }
@@ -184,7 +180,7 @@ void ShowCell(unsigned char newcell) {
     }
     
     if (curCell) {
-        // CRITICAL: Ensure image data is loaded before updating scroll bars
+        // Ensure image data is loaded
         if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
             (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
         }
@@ -199,9 +195,6 @@ void ShowCell(unsigned char newcell) {
         if (curCellIndex == 0)
             EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 
-        // CRITICAL: Update scroll bars after image data is ready
-        UpdateScrollBars();
-        
         InvalidateRgn(hWnd, NULL, true);
     }
 }
@@ -395,14 +388,14 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     WNDCLASSEX wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX); 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS; // Removed CS_OWNDC if present
+    wcex.style          = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
     wcex.lpfnWndProc    = (WNDPROC)WndProc;
     wcex.cbClsExtra     = 0;
     wcex.cbWndExtra     = 0;
     wcex.hInstance      = hInstance;
     wcex.hIcon          = LoadIcon(hInstance, (LPCTSTR)IDI_IMMAGINA);
     wcex.hCursor        = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground  = NULL; // IMPORTANT: Set to NULL to prevent auto-erase
+    wcex.hbrBackground  = NULL;
     wcex.lpszMenuName   = (LPCTSTR)IDC_IMMAGINA;
     wcex.lpszClassName  = szWindowClass;
     wcex.hIconSm        = LoadIcon((HINSTANCE)wcex.hInstance, (LPCTSTR)IDI_SMALL);
@@ -412,7 +405,7 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-    hInst = hInstance; // Store instance handle in our global variable
+    hInst = hInstance;
 
     // Get the width and height of the screen
     int screenWidth = GetSystemMetrics(SM_CXSCREEN);
@@ -430,15 +423,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
                        x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
 
-    // Enable scroll bars
-    LONG style = GetWindowLong(hWnd, GWL_STYLE);
-    style |= WS_HSCROLL | WS_VSCROLL;
-    SetWindowLong(hWnd, GWL_STYLE, style);
-
-    // Initialize scroll system
-    UpdateScrollBars();
-
-    // If the window couldn't be created, return FALSE
     if (!hWnd)
     {
         return FALSE;
@@ -453,7 +437,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     FotoSCIhopStyles::Initialize();
 
-    // Load theme setting (add this at the end)
+    // Load theme setting
     int savedTheme = GetPrivateProfileInt("main", "theme", 0, gConfigIni);
     if (savedTheme >= 0 && savedTheme < 5) { // Validate theme index
         FotoSCIhopStyles::SetTheme((FotoSCIhopStyles::ThemeMode)savedTheme);
@@ -488,17 +472,17 @@ void exit_proc(HWND hwnd)
 {
     if (globalPicture) {
         delete globalPicture;
-        globalPicture = NULL;  // Prevent double deletion
+        globalPicture = NULL;
     }
 
     if (globalView) {
         delete globalView;
-        globalView = NULL;  // Prevent double deletion
+        globalView = NULL;
     }
 
     if (hfDefault) {
         DeleteObject(hfDefault);
-        hfDefault = NULL;  // Prevent double deletion
+        hfDefault = NULL;
     }
 
     FotoSCIhopStyles::Shutdown();
@@ -521,7 +505,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     // Menu checks
     HMENU menu = GetMenu(hWnd);
-    if (menu)  // Safety check
+    if (menu)
         EnableMenuItem(menu, ID_SALVA, (datasaved == false) ? MF_ENABLED : MF_GRAYED);
 
     switch (message) 
@@ -735,12 +719,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         // Get client rect
         RECT clientRect;
         GetClientRect(hWnd, &clientRect);
-        g_clientWidth = clientRect.right;
-        g_clientHeight = clientRect.bottom;
 
         // Create double buffer
         HDC hdcBuffer = CreateCompatibleDC(hdcScreen);
-        HBITMAP hbmBuffer = CreateCompatibleBitmap(hdcScreen, g_clientWidth, g_clientHeight);
+        HBITMAP hbmBuffer = CreateCompatibleBitmap(hdcScreen, clientRect.right, clientRect.bottom);
         HBITMAP hbmOld = (HBITMAP)SelectObject(hdcBuffer, hbmBuffer);
 
         // Set up theme font
@@ -803,7 +785,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
 
         // Copy buffer to screen in one operation
-        BitBlt(hdcScreen, 0, 0, g_clientWidth, g_clientHeight, hdcBuffer, 0, 0, SRCCOPY);
+        BitBlt(hdcScreen, 0, 0, clientRect.right, clientRect.bottom, hdcBuffer, 0, 0, SRCCOPY);
 
         // Cleanup
         SelectObject(hdcBuffer, oldFont);
@@ -820,131 +802,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return 1; // Non-zero means "we handled it"
 
     case WM_SIZE:
-    {
-        if (wParam != SIZE_MINIMIZED)
-        {
-            // Clear any cached coordinate calculations
-            RECT clientRect;
-            GetClientRect(hWnd, &clientRect);
-            g_clientWidth = clientRect.right;
-            g_clientHeight = clientRect.bottom;
-
-            // Update scroll system first
-            UpdateScrollBars();
-
-            // Force complete redraw after resize to prevent artifacts
-            InvalidateRect(hWnd, NULL, FALSE);
-        }
-        break;
-    }
-
-    case WM_HSCROLL:
-    {
-        int scrollCode = LOWORD(wParam);
-        int scrollPos = HIWORD(wParam);
-
-        switch (scrollCode)
-        {
-        case SB_LINEUP:
-            ScrollBy(-20, 0);
-            break;
-        case SB_LINEDOWN:
-            ScrollBy(20, 0);
-            break;
-        case SB_PAGEUP:
-            ScrollBy(-g_clientWidth / 4, 0);
-            break;
-        case SB_PAGEDOWN:
-            ScrollBy(g_clientWidth / 4, 0);
-            break;
-        case SB_THUMBTRACK:
-        case SB_THUMBPOSITION:
-            ScrollTo(scrollPos, g_scrollY);
-            break;
-        }
-        break;
-    }
-
-    case WM_VSCROLL:
-    {
-        int scrollCode = LOWORD(wParam);
-        int scrollPos = HIWORD(wParam);
-
-        switch (scrollCode)
-        {
-        case SB_LINEUP:
-            ScrollBy(0, -20);
-            break;
-        case SB_LINEDOWN:
-            ScrollBy(0, 20);
-            break;
-        case SB_PAGEUP:
-            ScrollBy(0, -g_clientHeight / 4);
-            break;
-        case SB_PAGEDOWN:
-            ScrollBy(0, g_clientHeight / 4);
-            break;
-        case SB_THUMBTRACK:
-        case SB_THUMBPOSITION:
-            ScrollTo(g_scrollX, scrollPos);
-            break;
-        }
-        break;
-    }
-
-    case WM_MOUSEWHEEL:
-    {
-        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-        WORD keys = GET_KEYSTATE_WPARAM(wParam);
-
-        if (keys & MK_CONTROL)
-        {
-            // Ctrl + wheel = zoom
-            if (delta > 0)
-            {
-                ZoomIn();
-            }
-            else
-            {
-                ZoomOut();
-            }
-        }
-        else
-        {
-            // Plain wheel = vertical scroll
-            ScrollBy(0, -delta / 4);
-        }
-        break;
-    }
-
-    case WM_MOUSEMOVE:
-    {
-        int x = LOWORD(lParam);
-        int y = HIWORD(lParam);
-
-        // Handle panning
-        if (g_isPanning)
-        {
-            UpdatePanning(x, y);
-        }
-
-        break;
-    }
-
-    case WM_LBUTTONUP:
-        StopPanning();
+        InvalidateRect(hWnd, NULL, FALSE);
         break;
 
     case WM_LBUTTONDOWN:
     {
         int x = LOWORD(lParam);
         int y = HIWORD(lParam);
-
-        // Check zoom control click first
-        if (HandleZoomControlClick(x, y))
-        {
-            break;
-        }
 
         // Check if magic wand is enabled
         if (g_clutGenerator && g_clutGenerator->IsMagicWandEnabled())
@@ -959,13 +823,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 SetTimer(hWnd, 2, 3000, NULL);
             }
             break;
-        }
-
-        // Start panning with middle mouse button or space key + drag
-        WORD keys = wParam;
-        if (keys & MK_MBUTTON || GetKeyState(VK_SPACE) & 0x8000)
-        {
-            StartPanning(x, y);
         }
 
         break;
@@ -989,13 +846,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 
                 // Restore normal title after 3 seconds
                 SetTimer(hWnd, 2, 3000, NULL);
-                
-                // Optional: Also show in console for debugging
-                #ifdef _DEBUG
-                char debugMsg[128];
-                sprintf(debugMsg, "[DEBUG] Magic Wand TO: Color %d at (%d,%d)\n", colorIndex, clientX, clientY);
-                OutputDebugStringA(debugMsg);
-                #endif
             } else {
                 // Click was outside image area
                 SetWindowText(hWnd, "FotoSCIhop - Magic Wand: Click inside the image area");
@@ -1003,15 +853,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             return 0; // Consume the message
         }
-        // If magic wand not enabled, let default processing handle it
         break;
-    }
-
-    case WM_USER + 1:
-    {
-        UpdateScrollBars();
-        InvalidateRect(hWnd, NULL, FALSE);
-        return 0;
     }
 
     case WM_TIMER:
@@ -1021,9 +863,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             FotoSCIhopStyles::RefreshTheme();
             g_pendingThemeChange = false;
             
-            // Lightweight redraw - let Windows handle timing
             InvalidateRect(hWnd, NULL, TRUE);
-            // Don't force immediate update - let it happen naturally
         }
         
         HandleRealmpalFileDialogs();
@@ -1050,10 +890,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         SetWindowText(hWnd, wname);
     }
-    else if (wParam == 3) { // Scroll bar initialization timer
-        KillTimer(hWnd, 3);
-        EnsureScrollBarsAfterLoad();
-    }
     break;
 
     case WM_SETCURSOR:
@@ -1064,7 +900,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             GetCursorPos(&pt);
             ScreenToClient(hWnd, &pt);
             
-            // Check if cursor is over the image display area
             RECT clientRect;
             GetClientRect(hWnd, &clientRect);
             
@@ -1091,4 +926,4 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-#pragma warning(pop)  // Restore warning level
+#pragma warning(pop)

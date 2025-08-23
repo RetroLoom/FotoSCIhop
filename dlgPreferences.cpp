@@ -28,17 +28,9 @@ void SavePreferencesToINI() {
     sprintf(buffer, "%d", gPosCells);
     WritePrivateProfileStringA("main", "posCells", buffer, gConfigIni);
     
-    sprintf(buffer, "%d", gBaseMagnify);
-    WritePrivateProfileStringA("main", "magScale", buffer, gConfigIni);
-    
     // Save theme setting
     sprintf(buffer, "%d", (int)FotoSCIhopStyles::GetCurrentTheme());
     WritePrivateProfileStringA("main", "theme", buffer, gConfigIni);
-}
-
-void LoadPreferencesFromINI() {
-    // This essentially duplicates LoadConfig() but for the static variables
-    // We'll load into the static variables in the dialog
 }
 
 void RenderPreferencesDialog() {
@@ -54,20 +46,18 @@ void RenderPreferencesDialog() {
     static bool showStatus = false;
     static bool hasUnsavedChanges = false;
     
-    // Static copies of all settings for editing
+    // Static copies of settings for editing (removed magnification)
     static int tempAppResX = 700;
     static int tempAppResY = 500;
     static int tempZScale = 100;
     static int tempPosCells = 0;
-    static int tempBaseMagnify = 100;
     static int tempTheme = 0;
     
-    // Original values for comparison and reset
+    // Original values for comparison and reset (removed magnification)
     static int originalAppResX = 700;
     static int originalAppResY = 500;
     static int originalZScale = 100;
     static int originalPosCells = 0;
-    static int originalBaseMagnify = 100;
     static int originalTheme = 0;
     
     bool open = true;
@@ -95,7 +85,6 @@ void RenderPreferencesDialog() {
         tempAppResY = originalAppResY = gAppResY;
         tempZScale = originalZScale = zScale;
         tempPosCells = originalPosCells = gPosCells;
-        tempBaseMagnify = originalBaseMagnify = gBaseMagnify;
         tempTheme = originalTheme = (int)FotoSCIhopStyles::GetCurrentTheme();
         configInitialized = true;
         hasUnsavedChanges = false;
@@ -141,25 +130,17 @@ void RenderPreferencesDialog() {
             ImGui::PopItemWidth();
             ImGui::Spacing();
             
-            // Magnification settings
+            // Display settings
             HeaderText("Display Settings:");
             ImGui::Spacing();
             
-            ImGui::Text("Default Magnification:");
-            ImGui::PushItemWidth(120);
-            int oldMagnify = tempBaseMagnify;
-            if (ImGui::InputInt("Percent##magnify", &tempBaseMagnify)) {
-                tempBaseMagnify = max(25, min(1600, tempBaseMagnify)); // Match zoom limits
-                if (tempBaseMagnify != oldMagnify) hasUnsavedChanges = true;
-            }
-            
             ImGui::Text("Priority Scale:");
+            ImGui::PushItemWidth(120);
             int oldZScale = tempZScale;
             if (ImGui::InputInt("Scale##zscale", &tempZScale)) {
                 tempZScale = max(1, min(500, tempZScale)); // Reasonable bounds
                 if (tempZScale != oldZScale) hasUnsavedChanges = true;
             }
-            
             ImGui::PopItemWidth();
             ImGui::Spacing();
             
@@ -180,7 +161,6 @@ void RenderPreferencesDialog() {
             if (ImGui::TreeNode("Current Values")) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.9f, 1.0f, 1.0f));
                 ImGui::Text("Window: %dx%d", tempAppResX, tempAppResY);
-                ImGui::Text("Magnification: %d%%", tempBaseMagnify);
                 ImGui::Text("Priority Scale: %d", tempZScale);
                 ImGui::Text("Cell Mode: %s", posCellItems[tempPosCells]);
                 ImGui::PopStyleColor();
@@ -288,7 +268,6 @@ void RenderPreferencesDialog() {
             if (ImGui::Button("Reset Window Settings", ImVec2(availableWidth * 0.48f, 0))) {
                 tempAppResX = 700;
                 tempAppResY = 500;
-                tempBaseMagnify = 100;
                 hasUnsavedChanges = true;
             }
             
@@ -299,7 +278,6 @@ void RenderPreferencesDialog() {
                 tempAppResY = 500;
                 tempZScale = 100;
                 tempPosCells = 0;
-                tempBaseMagnify = 100;
                 tempTheme = 0;
                 FotoSCIhopStyles::SetTheme(FotoSCIhopStyles::ThemeMode::PHOTOSHOP_DARK);
                 FotoSCIhopStyles::RefreshTheme();
@@ -353,8 +331,6 @@ void RenderPreferencesDialog() {
             gAppResY = tempAppResY;
             zScale = tempZScale;
             gPosCells = tempPosCells;
-            gBaseMagnify = tempBaseMagnify;
-            MagnifyFactor = gBaseMagnify;
 
             // Apply theme change if needed
             if (tempTheme != originalTheme)
@@ -371,7 +347,6 @@ void RenderPreferencesDialog() {
             originalAppResY = tempAppResY;
             originalZScale = tempZScale;
             originalPosCells = tempPosCells;
-            originalBaseMagnify = tempBaseMagnify;
             originalTheme = tempTheme;
             
             hasUnsavedChanges = false;
@@ -380,7 +355,6 @@ void RenderPreferencesDialog() {
             
             // Force window update if size changed
             if (hWnd) {
-                UpdateScrollBars();
                 InvalidateRect(hWnd, NULL, TRUE);
             }
         }
@@ -400,7 +374,6 @@ void RenderPreferencesDialog() {
             tempAppResY = originalAppResY;
             tempZScale = originalZScale;
             tempPosCells = originalPosCells;
-            tempBaseMagnify = originalBaseMagnify;
             tempTheme = originalTheme;
 
             // Reset theme (deferred)
@@ -427,8 +400,6 @@ void RenderPreferencesDialog() {
             gAppResY = tempAppResY;
             zScale = tempZScale;
             gPosCells = tempPosCells;
-            gBaseMagnify = tempBaseMagnify;
-            MagnifyFactor = gBaseMagnify;
 
             // Apply theme change if needed
             if (tempTheme != originalTheme)
@@ -441,7 +412,6 @@ void RenderPreferencesDialog() {
 
             if (hWnd)
             {
-                UpdateScrollBars();
                 InvalidateRect(hWnd, NULL, TRUE);
             }
 
