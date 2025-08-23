@@ -31,6 +31,7 @@ void RenderPaletteManagerDialog() {
     static bool paletteModified = false;
     static bool showOriginalPalette = false;  // Toggle: false = show cached, true = show original
     static int lastClickedIndex = -1;
+    static bool shouldCloseDialog = false;
     
     // Palette analysis results
     static RealmpalPaletteStats paletteStats;
@@ -144,7 +145,7 @@ void RenderPaletteManagerDialog() {
     
     // Handle close button
     if (!open) {
-        // Reset state for next time dialog is opened
+        // Don't immediately close - set flag instead
         configInitialized = false;
         ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
         EndDialog();
@@ -191,7 +192,7 @@ void RenderPaletteManagerDialog() {
             
             ImGui::SameLine();
             if (ApplyButton("Apply & Close")) {
-                // Apply working palette back to the current file permanently and close
+                // Apply working palette back to the current file permanently
                 Palette* currentPalette = nullptr;
                 if (globalView && globalView->palSCI) {
                     currentPalette = globalView->palSCI;
@@ -221,16 +222,13 @@ void RenderPaletteManagerDialog() {
                     paletteModified = false;
                     statusMessage = "Palette applied and saved successfully!";
                     showStatus = true;
+                    
+                    // Set flag to close dialog instead of immediate return
+                    shouldCloseDialog = true;
                 } else {
                     statusMessage = "ERROR: No target palette found";
                     showStatus = true;
                 }
-                
-                // Close dialog after applying
-                configInitialized = false;
-                ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
-                EndDialog();
-                return;
             }
             
             ImGui::SameLine();
@@ -1432,4 +1430,11 @@ void RenderPaletteManagerDialog() {
     }
     
     EndDialog();
+
+    if (shouldCloseDialog) {
+        configInitialized = false;
+        shouldCloseDialog = false;
+        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
+        return;
+    }
 }
