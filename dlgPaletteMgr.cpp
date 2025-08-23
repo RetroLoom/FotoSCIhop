@@ -880,45 +880,301 @@ void RenderPaletteManagerDialog() {
                     ImGui::Spacing();
                     
                     // Preset Effects for Common Atmospheres
+                    struct AtmosphericPreset {
+                        const char* name;
+                        const char* category;
+                        float brightness, contrast, gamma, exposure, shadows, highlights;
+                        float hueShift, satFactor, vibrance, blackPoint, whitePoint;
+                        float temperature, fogIntensity, sepiaIntensity;
+                        float colorTintR, colorTintG, colorTintB;
+                        const char* description;
+                    };
+
+                    // Comprehensive preset database
+                    static AtmosphericPreset g_atmosphericPresets[] = {
+                        // === TIME OF DAY ===
+                        {"Dawn", "Time of Day", 0.2f, 0.1f, 1.1f, 0.3f, 0.1f, 0.0f, 
+                        10.0f, 1.1f, 0.2f, 0.0f, 1.0f, 0.2f, 0.1f, 0.0f, 
+                        0.3f, 0.2f, 0.1f, "Soft morning light with warm orange glow"},
+                        
+                        {"Morning", "Time of Day", 0.3f, 0.2f, 1.0f, 0.2f, 0.2f, 0.0f,
+                        0.0f, 1.2f, 0.1f, 0.0f, 1.0f, 0.1f, 0.0f, 0.0f,
+                        0.2f, 0.1f, 0.0f, "Bright, clear morning atmosphere"},
+                        
+                        {"Noon", "Time of Day", 0.4f, 0.3f, 0.9f, 0.1f, 0.0f, 0.1f,
+                        0.0f, 1.3f, 0.2f, 0.0f, 1.0f, -0.1f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.0f, "High contrast midday sun"},
+                        
+                        {"Dusk", "Time of Day", 0.0f, 0.2f, 1.2f, 0.0f, -0.1f, -0.2f,
+                        15.0f, 1.0f, -0.1f, 0.1f, 0.9f, 0.4f, 0.0f, 0.1f,
+                        0.4f, 0.2f, -0.1f, "Golden hour with warm sunset colors"},
+                        
+                        {"Night", "Time of Day", -0.3f, 0.2f, 1.3f, -0.5f, 0.0f, -0.3f,
+                        0.0f, 0.7f, -0.2f, 0.2f, 0.8f, -0.4f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.2f, "Dark night with reduced saturation"},
+                        
+                        {"Moonlight", "Time of Day", -0.4f, 0.1f, 1.4f, -0.3f, 0.1f, -0.4f,
+                        0.0f, 0.6f, -0.3f, 0.1f, 0.9f, -0.5f, 0.2f, 0.0f,
+                        -0.2f, -0.1f, 0.3f, "Cool moonlit atmosphere"},
+
+                        // === WEATHER CONDITIONS ===
+                        {"Foggy Morning", "Weather", 0.2f, -0.3f, 1.1f, 0.2f, -0.1f, 0.0f,
+                        0.0f, 0.6f, -0.2f, 0.0f, 0.9f, 0.0f, 0.6f, 0.0f,
+                        0.0f, 0.0f, 0.0f, "Misty, low contrast morning fog"},
+                        
+                        {"Heavy Fog", "Weather", 0.1f, -0.5f, 1.2f, 0.1f, -0.2f, 0.0f,
+                        0.0f, 0.4f, -0.4f, 0.1f, 0.8f, 0.0f, 0.8f, 0.0f,
+                        0.0f, 0.0f, 0.0f, "Dense, visibility-reducing fog"},
+                        
+                        {"Rainy Day", "Weather", -0.2f, -0.2f, 1.1f, -0.1f, 0.0f, -0.1f,
+                        0.0f, 0.8f, -0.1f, 0.0f, 0.9f, -0.2f, 0.3f, 0.0f,
+                        -0.1f, 0.0f, 0.1f, "Overcast, muted colors"},
+                        
+                        {"Storm", "Weather", -0.4f, 0.4f, 1.3f, -0.2f, 0.2f, -0.2f,
+                        0.0f, 0.7f, -0.2f, 0.2f, 0.8f, -0.3f, 0.1f, 0.0f,
+                        0.0f, 0.0f, 0.2f, "Dark, dramatic storm atmosphere"},
+                        
+                        {"Blizzard", "Weather", 0.3f, -0.4f, 1.0f, 0.3f, -0.3f, 0.1f,
+                        0.0f, 0.3f, -0.5f, 0.0f, 1.0f, -0.6f, 0.7f, 0.0f,
+                        -0.3f, -0.1f, 0.0f, "White-out snow conditions"},
+                        
+                        {"Heat Haze", "Weather", 0.3f, -0.3f, 0.8f, 0.4f, 0.0f, 0.2f,
+                        10.0f, 0.9f, 0.0f, 0.0f, 1.0f, 0.6f, 0.4f, 0.0f,
+                        0.3f, 0.2f, 0.0f, "Shimmering desert heat"},
+
+                        // === ENVIRONMENTS ===
+                        {"Deep Cave", "Environment", -0.5f, 0.5f, 1.5f, -0.4f, 0.3f, -0.5f,
+                        0.0f, 0.5f, -0.4f, 0.3f, 0.7f, -0.2f, 0.1f, 0.0f,
+                        0.0f, 0.0f, 0.1f, "Dark, high contrast underground"},
+                        
+                        {"Forest Canopy", "Environment", -0.1f, 0.1f, 1.1f, -0.1f, 0.1f, -0.1f,
+                        0.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.0f, 0.2f, 0.0f,
+                        -0.1f, 0.2f, 0.0f, "Dappled green forest light"},
+                        
+                        {"Deep Ocean", "Environment", -0.3f, -0.1f, 1.2f, -0.2f, 0.0f, -0.3f,
+                        0.0f, 0.8f, 0.0f, 0.1f, 0.9f, -0.5f, 0.4f, 0.0f,
+                        -0.2f, 0.0f, 0.4f, "Deep underwater blue atmosphere"},
+                        
+                        {"Mountain Peak", "Environment", 0.2f, 0.4f, 0.9f, 0.2f, 0.0f, 0.1f,
+                        0.0f, 1.2f, 0.3f, 0.0f, 1.0f, -0.3f, 0.1f, 0.0f,
+                        -0.2f, -0.1f, 0.2f, "Clear, crisp high altitude air"},
+                        
+                        {"Swampland", "Environment", -0.1f, 0.0f, 1.1f, 0.0f, 0.0f, -0.1f,
+                        20.0f, 0.9f, -0.1f, 0.1f, 0.9f, 0.1f, 0.3f, 0.0f,
+                        -0.1f, 0.2f, 0.1f, "Murky, green-tinted wetland"},
+                        
+                        {"Desert Noon", "Environment", 0.4f, 0.5f, 0.8f, 0.5f, 0.0f, 0.3f,
+                        5.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.7f, 0.2f, 0.1f,
+                        0.4f, 0.2f, 0.0f, "Harsh, bleaching desert sun"},
+
+                        // === MAGICAL/FANTASY ===
+                        {"Poison Cloud", "Magical", 0.0f, 0.2f, 1.1f, 0.0f, 0.0f, 0.0f,
+                        30.0f, 1.4f, 0.3f, 0.0f, 1.0f, 0.0f, 0.1f, 0.0f,
+                        -0.2f, 0.6f, -0.1f, "Toxic green magical atmosphere"},
+                        
+                        {"Fire Realm", "Magical", 0.2f, 0.4f, 0.9f, 0.3f, 0.1f, 0.1f,
+                        15.0f, 1.3f, 0.2f, 0.0f, 1.0f, 0.8f, 0.0f, 0.0f,
+                        0.5f, 0.2f, 0.0f, "Blazing magical fire environment"},
+                        
+                        {"Ice Cavern", "Magical", 0.1f, 0.3f, 1.2f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 0.9f, -0.1f, 0.0f, 1.0f, -0.6f, 0.2f, 0.0f,
+                        -0.3f, 0.0f, 0.3f, "Crystalline blue ice magic"},
+                        
+                        {"Shadow Realm", "Magical", -0.6f, 0.6f, 1.4f, -0.3f, 0.4f, -0.6f,
+                        0.0f, 0.4f, -0.5f, 0.4f, 0.6f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 0.0f, 0.1f, "Dark magical shadow dimension"},
+                        
+                        {"Holy Light", "Magical", 0.5f, -0.2f, 0.8f, 0.4f, -0.2f, 0.3f,
+                        10.0f, 1.0f, 0.1f, 0.0f, 1.0f, 0.3f, 0.3f, 0.0f,
+                        0.2f, 0.2f, 0.1f, "Divine golden radiance"},
+                        
+                        {"Arcane Energy", "Magical", 0.0f, 0.3f, 1.0f, 0.1f, 0.0f, 0.0f,
+                        -30.0f, 1.2f, 0.4f, 0.0f, 1.0f, -0.2f, 0.0f, 0.0f,
+                        0.0f, -0.1f, 0.4f, "Purple-blue magical energy"},
+
+                        // === SCI-FI/CYBERPUNK ===
+                        {"Neon Night", "Sci-Fi", -0.2f, 0.4f, 1.1f, 0.0f, 0.2f, -0.1f,
+                        0.0f, 1.5f, 0.5f, 0.1f, 0.9f, -0.3f, 0.0f, 0.0f,
+                        0.0f, 0.1f, 0.3f, "Cyberpunk neon-lit streets"},
+                        
+                        {"Space Station", "Sci-Fi", -0.1f, 0.2f, 1.2f, -0.1f, 0.1f, -0.1f,
+                        0.0f, 0.8f, -0.2f, 0.0f, 1.0f, -0.4f, 0.0f, 0.0f,
+                        -0.1f, 0.0f, 0.2f, "Sterile artificial lighting"},
+                        
+                        {"Alien World", "Sci-Fi", 0.1f, 0.2f, 1.0f, 0.2f, 0.0f, 0.0f,
+                        45.0f, 1.2f, 0.2f, 0.0f, 1.0f, 0.2f, 0.1f, 0.0f,
+                        0.2f, 0.3f, 0.2f, "Strange otherworldly atmosphere"},
+                        
+                        {"Nuclear Glow", "Sci-Fi", 0.2f, 0.1f, 1.1f, 0.3f, 0.0f, 0.0f,
+                        20.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.1f, 0.2f, 0.0f,
+                        0.1f, 0.4f, 0.0f, "Radioactive green luminescence"},
+
+                        // === HORROR/MOOD ===
+                        {"Gothic Horror", "Horror/Mood", -0.4f, 0.5f, 1.3f, -0.2f, 0.3f, -0.4f,
+                        0.0f, 0.6f, -0.3f, 0.3f, 0.7f, 0.0f, 0.1f, 0.3f,
+                        0.0f, 0.0f, 0.0f, "Dark, foreboding Gothic atmosphere"},
+                        
+                        {"Blood Moon", "Horror/Mood", -0.2f, 0.3f, 1.2f, 0.0f, 0.1f, -0.2f,
+                        0.0f, 1.0f, 0.0f, 0.1f, 0.9f, 0.2f, 0.0f, 0.0f,
+                        0.4f, -0.1f, -0.1f, "Ominous red-tinted moonlight"},
+                        
+                        {"Peaceful Meadow", "Horror/Mood", 0.3f, -0.1f, 0.9f, 0.2f, -0.1f, 0.1f,
+                        5.0f, 1.1f, 0.2f, 0.0f, 1.0f, 0.1f, 0.0f, 0.0f,
+                        0.1f, 0.2f, 0.0f, "Soft, calming natural light"},
+                        
+                        {"Romantic Sunset", "Horror/Mood", 0.1f, 0.0f, 1.0f, 0.2f, -0.1f, 0.0f,
+                        25.0f, 1.2f, 0.1f, 0.0f, 1.0f, 0.5f, 0.0f, 0.2f,
+                        0.3f, 0.2f, 0.1f, "Warm, golden romantic atmosphere"},
+
+                        // === DECAY/POST-APOCALYPTIC ===
+                        {"Nuclear Winter", "Post-Apocalyptic", -0.3f, 0.2f, 1.3f, -0.2f, 0.1f, -0.3f,
+                        0.0f, 0.5f, -0.4f, 0.2f, 0.8f, -0.4f, 0.5f, 0.0f,
+                        -0.1f, 0.0f, 0.1f, "Cold, desolate wasteland"},
+                        
+                        {"Toxic Wasteland", "Post-Apocalyptic", 0.0f, 0.3f, 1.1f, 0.1f, 0.0f, 0.0f,
+                        15.0f, 0.9f, 0.0f, 0.1f, 0.9f, 0.2f, 0.2f, 0.1f,
+                        0.0f, 0.3f, 0.0f, "Poisoned, contaminated landscape"},
+                        
+                        {"Rust & Decay", "Post-Apocalyptic", -0.1f, 0.2f, 1.2f, 0.0f, 0.1f, -0.1f,
+                        10.0f, 0.8f, -0.1f, 0.1f, 0.9f, 0.3f, 0.1f, 0.3f,
+                        0.2f, 0.1f, 0.0f, "Oxidized, weathered metal tones"},
+
+                        // === SEASONAL ===
+                        {"Spring Fresh", "Seasonal", 0.2f, 0.1f, 0.9f, 0.2f, -0.1f, 0.1f,
+                        0.0f, 1.2f, 0.3f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+                        0.0f, 0.2f, 0.0f, "Fresh, vibrant spring colors"},
+                        
+                        {"Summer Heat", "Seasonal", 0.3f, 0.2f, 0.8f, 0.4f, 0.0f, 0.2f,
+                        0.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.5f, 0.2f, 0.0f,
+                        0.2f, 0.1f, 0.0f, "Intense summer sunshine"},
+                        
+                        {"Autumn Leaves", "Seasonal", 0.1f, 0.2f, 1.0f, 0.1f, 0.0f, 0.0f,
+                        20.0f, 1.1f, 0.0f, 0.0f, 1.0f, 0.3f, 0.0f, 0.2f,
+                        0.3f, 0.2f, 0.0f, "Warm autumn foliage colors"},
+                        
+                        {"Winter Twilight", "Seasonal", -0.2f, 0.1f, 1.2f, -0.1f, 0.0f, -0.2f,
+                        0.0f, 0.8f, -0.2f, 0.0f, 0.9f, -0.3f, 0.1f, 0.0f,
+                        -0.2f, 0.0f, 0.2f, "Cold, crisp winter evening"}
+                    };
+
+                    // Replace the existing Atmospheric Presets section with this:
                     if (ImGui::CollapsingHeader("Atmospheric Presets##presets_section")) {
                         
-                        if (ImGui::Button("Night/Moonlight", ImVec2(110, 0))) {
-                            brightness = -0.3f; contrast = 0.2f; temperature = -0.4f; 
-                            satFactor = 0.7f; colorTintB = 0.2f; colorTintR = colorTintG = 0.0f;
-                            anyEffectChanged = true;
-                        }
+                        static int selectedPresetIndex = -1;
+                        static char filterText[128] = "";
+                        static char categoryFilter[64] = "All Categories";
+                        
+                        // Category filter
+                        ImGui::Text("Category Filter:");
                         ImGui::SameLine();
-                        
-                        if (ImGui::Button("Sunset/Fire", ImVec2(110, 0))) {
-                            brightness = 0.1f; contrast = 0.3f; temperature = 0.6f;
-                            satFactor = 1.3f; colorTintR = 0.3f; colorTintG = colorTintB = 0.0f;
-                            anyEffectChanged = true;
+                        ImGui::PushItemWidth(180);
+                        if (ImGui::BeginCombo("##category_filter", categoryFilter)) {
+                            if (ImGui::Selectable("All Categories", strcmp(categoryFilter, "All Categories") == 0)) {
+                                strcpy(categoryFilter, "All Categories");
+                            }
+                            
+                            // Get unique categories
+                            std::set<std::string> categories;
+                            for (size_t i = 0; i < sizeof(g_atmosphericPresets) / sizeof(g_atmosphericPresets[0]); i++) {
+                                categories.insert(g_atmosphericPresets[i].category);
+                            }
+                            
+                            for (const auto& category : categories) {
+                                if (ImGui::Selectable(category.c_str(), strcmp(categoryFilter, category.c_str()) == 0)) {
+                                    strcpy(categoryFilter, category.c_str());
+                                }
+                            }
+                            ImGui::EndCombo();
                         }
+                        ImGui::PopItemWidth();
                         
-                        if (ImGui::Button("Underwater", ImVec2(110, 0))) {
-                            brightness = -0.2f; contrast = -0.3f; temperature = -0.5f;
-                            satFactor = 0.8f; colorTintB = 0.4f; colorTintG = 0.1f; colorTintR = 0.0f;
-                            fogIntensity = 0.3f; anyEffectChanged = true;
-                        }
                         ImGui::SameLine();
-                        
-                        if (ImGui::Button("Toxic/Poison", ImVec2(110, 0))) {
-                            brightness = 0.0f; contrast = 0.4f; vibrance = 0.5f;
-                            satFactor = 1.4f; colorTintG = 0.5f; colorTintR = colorTintB = 0.0f;
-                            anyEffectChanged = true;
-                        }
-                        
-                        if (ImGui::Button("Foggy/Misty", ImVec2(110, 0))) {
-                            brightness = 0.2f; contrast = -0.4f; satFactor = 0.6f;
-                            fogIntensity = 0.6f; colorTintR = colorTintG = colorTintB = 0.0f;
-                            anyEffectChanged = true;
-                        }
+                        ImGui::Text("Search:");
                         ImGui::SameLine();
+                        ImGui::PushItemWidth(150);
+                        ImGui::InputText("##preset_search", filterText, sizeof(filterText));
+                        ImGui::PopItemWidth();
                         
-                        if (ImGui::Button("Desert/Heat", ImVec2(110, 0))) {
-                            brightness = 0.3f; contrast = 0.5f; temperature = 0.7f;
-                            satFactor = 1.1f; colorTintR = 0.2f; colorTintG = 0.1f; colorTintB = 0.0f;
-                            anyEffectChanged = true;
+                        ImGui::Spacing();
+                        
+                        // Preset list
+                        ImGui::PushItemWidth(-1);
+                        if (ImGui::BeginListBox("##preset_list", ImVec2(-1, 200))) {
+                            
+                            int presetCount = sizeof(g_atmosphericPresets) / sizeof(g_atmosphericPresets[0]);
+                            for (int i = 0; i < presetCount; i++) {
+                                AtmosphericPreset& preset = g_atmosphericPresets[i];
+                                
+                                // Apply filters
+                                bool matchesCategory = (strcmp(categoryFilter, "All Categories") == 0) || 
+                                                    (strcmp(categoryFilter, preset.category) == 0);
+                                bool matchesSearch = (strlen(filterText) == 0) || 
+                                                (strstr(preset.name, filterText) != nullptr) ||
+                                                (strstr(preset.description, filterText) != nullptr);
+                                
+                                if (matchesCategory && matchesSearch) {
+                                    char displayText[512];
+                                    sprintf(displayText, "[%s] %s", preset.category, preset.name);
+                                    
+                                    if (ImGui::Selectable(displayText, selectedPresetIndex == i)) {
+                                        selectedPresetIndex = i;
+                                    }
+                                    
+                                    if (ImGui::IsItemHovered()) {
+                                        ImGui::SetTooltip("%s", preset.description);
+                                    }
+                                }
+                            }
+                            
+                            ImGui::EndListBox();
+                        }
+                        ImGui::PopItemWidth();
+                        
+                        ImGui::Spacing();
+                        
+                        // Apply preset button
+                        if (selectedPresetIndex >= 0) {
+                            AtmosphericPreset& preset = g_atmosphericPresets[selectedPresetIndex];
+                            
+                            char buttonText[256];
+                            sprintf(buttonText, "Apply: %s", preset.name);
+                            
+                            if (ImGui::Button(buttonText, ImVec2(-1, 0))) {
+                                // Apply all preset values
+                                brightness = preset.brightness;
+                                contrast = preset.contrast;
+                                gamma = preset.gamma;
+                                exposure = preset.exposure;
+                                shadows = preset.shadows;
+                                highlights = preset.highlights;
+                                hueShift = preset.hueShift;
+                                satFactor = preset.satFactor;
+                                vibrance = preset.vibrance;
+                                blackPoint = preset.blackPoint;
+                                whitePoint = preset.whitePoint;
+                                temperature = preset.temperature;
+                                fogIntensity = preset.fogIntensity;
+                                sepiaIntensity = preset.sepiaIntensity;
+                                colorTintR = preset.colorTintR;
+                                colorTintG = preset.colorTintG;
+                                colorTintB = preset.colorTintB;
+                                
+                                anyEffectChanged = true;
+                                
+                                char msg[256];
+                                sprintf(msg, "Applied preset: %s", preset.name);
+                                statusMessage = msg;
+                                showStatus = true;
+                            }
+                            
+                            // Show preset description
+                            ImGui::Spacing();
+                            ImGui::TextWrapped("Description: %s", preset.description);
+                            
+                        } else {
+                            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                            ImGui::Button("Select a preset to apply", ImVec2(-1, 0));
+                            ImGui::PopStyleVar();
                         }
                     }
                     
