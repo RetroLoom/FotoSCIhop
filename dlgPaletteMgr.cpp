@@ -30,6 +30,7 @@ void RenderPaletteManagerDialog() {
     static RGB8 originalPalette[256];     // Original - preserved until Apply
     static bool paletteModified = false;
     static bool showOriginalPalette = false;  // Toggle: false = show cached, true = show original
+    static int lastClickedIndex = -1;
     
     // Palette analysis results
     static RealmpalPaletteStats paletteStats;
@@ -67,8 +68,6 @@ void RenderPaletteManagerDialog() {
     
     // Selection state for interactive palette grid
     static std::vector<bool> selectedIndices(256, false);
-    static bool isDragging = false;
-    static int dragStart = -1;
     static int selectionStart = -1;
     static int selectionEnd = -1;
     
@@ -1094,7 +1093,7 @@ void RenderPaletteManagerDialog() {
             ImGui::Separator();
             ImGui::Spacing();
             
-            InfoText("Left-click = select, Drag = range, Ctrl+click = multi-select");
+            InfoText("Left-click = select, Shift+click = range, Ctrl+click = multi-select");
             ImGui::Spacing();
             
             // Choose which palette to display based on toggle
@@ -1142,41 +1141,40 @@ void RenderPaletteManagerDialog() {
                         
                         // Handle selection - only allow if showing working palette
                         if (buttonClicked && !showOriginalPalette) {
-                            if (ctrlPressed) {
-                                // Toggle individual selection
-                                selectedIndices[colorIndex] = !selectedIndices[colorIndex];
-                            } else {
-                                // Start new selection
-                                if (!isDragging) {
-                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                                    selectedIndices[colorIndex] = true;
-                                    selectionStart = selectionEnd = colorIndex;
-                                }
-                            }
-                        }
-                        
-                        // Handle drag selection - only if showing working palette
-                        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(0) && !showOriginalPalette) {
-                            if (!isDragging) {
-                                isDragging = true;
-                                dragStart = colorIndex;
-                                if (!ctrlPressed) {
-                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                                }
-                            }
+                            ImGuiIO& io = ImGui::GetIO();
+                            bool ctrlPressed = io.KeyCtrl;
+                            bool shiftPressed = io.KeyShift;
                             
-                            // Select range from dragStart to current
-                            int start = min(dragStart, colorIndex);
-                            int end = max(dragStart, colorIndex);
-                            for (int i = start; i <= end; i++) {
-                                selectedIndices[i] = true;
+                            if (shiftPressed && lastClickedIndex != -1) {
+                                // Shift+click: Select range from last clicked to current
+                                int rangeStart = min(lastClickedIndex, colorIndex);
+                                int rangeEnd = max(lastClickedIndex, colorIndex);
+                                
+                                if (!ctrlPressed) {
+                                    // Clear existing selection unless Ctrl is also held
+                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                                }
+                                
+                                // Select the range
+                                for (int i = rangeStart; i <= rangeEnd; i++) {
+                                    selectedIndices[i] = true;
+                                }
+                                
+                                selectionStart = rangeStart;
+                                selectionEnd = rangeEnd;
+                                
+                                // Don't update lastClickedIndex when shift-clicking to allow extending ranges
+                            } else if (ctrlPressed) {
+                                // Ctrl+click: Toggle individual selection
+                                selectedIndices[colorIndex] = !selectedIndices[colorIndex];
+                                lastClickedIndex = colorIndex;
+                            } else {
+                                // Plain click: Start new selection
+                                std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                                selectedIndices[colorIndex] = true;
+                                selectionStart = selectionEnd = colorIndex;
+                                lastClickedIndex = colorIndex;
                             }
-                            selectionStart = start;
-                            selectionEnd = end;
-                        }
-                        
-                        if (ImGui::IsMouseReleased(0)) {
-                            isDragging = false;
                         }
                         
                         // Draw selection border
@@ -1191,9 +1189,9 @@ void RenderPaletteManagerDialog() {
                         if (ImGui::IsItemHovered()) {
                             char tooltip[128];
                             sprintf(tooltip, "Index %d\nRGB(%d, %d, %d)%s%s", 
-                                   colorIndex, color.r, color.g, color.b,
-                                   isSelected ? "\n[SELECTED]" : "",
-                                   showOriginalPalette ? "\n(Original)" : "");
+                                colorIndex, color.r, color.g, color.b,
+                                isSelected ? "\n[SELECTED]" : "",
+                                showOriginalPalette ? "\n(Original)" : "");
                             ImGui::SetTooltip("%s", tooltip);
                         }
                         
@@ -1201,8 +1199,7 @@ void RenderPaletteManagerDialog() {
                             ImGui::SameLine(0, SPACING_VAL);
                         }
                     }
-                }
-                
+                }               
             }
             ImGui::EndChild();
             ImGui::PopStyleColor();
