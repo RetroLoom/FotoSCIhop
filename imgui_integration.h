@@ -34,6 +34,11 @@ namespace ImGuiDialogs {
     bool IsDialogOpen(DialogType type);
     bool IsAnyDialogOpen();
     
+    // Focus management functions
+    bool HasDialogFocus();
+    void RestoreDialogFocus();
+    HWND GetDialogWindow();
+    
     // =========================================================================
     // CORE ENGINE FUNCTIONS
     // =========================================================================

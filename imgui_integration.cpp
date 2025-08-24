@@ -2,6 +2,11 @@
 #include "imgui_integration.h"
 #include <windowsx.h>
 
+// Ensure Win32 constants are available
+#ifndef RDW_NOACTIVATE
+#define RDW_NOACTIVATE 0x2000
+#endif
+
 // ImGui includes
 #include "imgui_impl_win32.h"
 #include "imgui_impl_opengl3.h"
@@ -12,6 +17,9 @@
 
 // Forward declare message handler
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// External dialog activity flag from FotoSCIhop.cpp
+extern bool g_dialogActive;
 
 namespace ImGuiDialogs {
         
@@ -70,15 +78,20 @@ namespace ImGuiDialogs {
         int activeDialogType;
         bool windowVisible;
         bool isResizing;
+        bool parentWasEnabled;  // Track parent's original enabled state
         
         EngineState() : parent(NULL), hwnd(NULL), hdc(NULL), hglrc(NULL), 
                        initialized(false), currentTheme(THEME_DARK),
-                       activeDialogType(-1), windowVisible(false), isResizing(false) {
+                       activeDialogType(-1), windowVisible(false), isResizing(false),
+                       parentWasEnabled(true) {
             
             // Set default sizes for each dialog type
             dialogs[DIALOG_PROPERTIES].SetPreferredSize(600, 500);
             dialogs[DIALOG_ABOUT].SetPreferredSize(550, 450);
             dialogs[DIALOG_CLUT_GENERATOR].SetPreferredSize(1000, 750);
+            dialogs[DIALOG_REALMPAL].SetPreferredSize(800, 600);
+            dialogs[DIALOG_PREFERENCES].SetPreferredSize(500, 400);
+            dialogs[DIALOG_PALETTE_MANAGER].SetPreferredSize(700, 550);
         }
     };
     
@@ -93,6 +106,16 @@ namespace ImGuiDialogs {
             return true;
             
         switch (msg) {
+        case WM_ACTIVATE:
+            // Ensure dialog stays active when clicked
+            if (LOWORD(wParam) != WA_INACTIVE && g_engine.parent) {
+                // Make sure parent doesn't steal focus
+                if (GetForegroundWindow() == g_engine.parent) {
+                    SetForegroundWindow(hWnd);
+                }
+            }
+            return 0;
+
         case WM_SIZE:
             if (g_engine.hglrc && wParam != SIZE_MINIMIZED && !g_engine.isResizing) {
                 int newWidth = LOWORD(lParam);
@@ -201,6 +224,7 @@ namespace ImGuiDialogs {
 
         g_engine.dialogs[type].isOpen = true;
         g_engine.activeDialogType = type;
+        g_dialogActive = true;
 
         if (g_engine.hwnd)
         {
@@ -232,8 +256,23 @@ namespace ImGuiDialogs {
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
 
-            ShowWindow(g_engine.hwnd, SW_SHOW);
+            // Set proper window relationships and make modal
+            SetWindowLongPtr(g_engine.hwnd, GWLP_HWNDPARENT, (LONG_PTR)g_engine.parent);
+            
+            // Store parent's current enabled state and disable it
+            if (g_engine.parent) {
+                g_engine.parentWasEnabled = IsWindowEnabled(g_engine.parent);
+                EnableWindow(g_engine.parent, FALSE);
+            }
+
+            // Show the dialog window with proper Z-order
+            SetWindowPos(g_engine.hwnd, HWND_TOP, 0, 0, 0, 0, 
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+            
+            // Activate the dialog
             SetForegroundWindow(g_engine.hwnd);
+            SetFocus(g_engine.hwnd);
+            
             g_engine.windowVisible = true;
         }
     }
@@ -253,6 +292,24 @@ namespace ImGuiDialogs {
             if (g_engine.dialogs[i].isOpen) return true;
         }
         return false;
+    }
+
+    bool HasDialogFocus() {
+        if (!g_engine.hwnd || !IsWindowVisible(g_engine.hwnd)) return false;
+        
+        HWND foregroundWindow = GetForegroundWindow();
+        return (foregroundWindow == g_engine.hwnd);
+    }
+
+    void RestoreDialogFocus() {
+        if (g_engine.hwnd && IsWindowVisible(g_engine.hwnd)) {
+            SetForegroundWindow(g_engine.hwnd);
+            SetFocus(g_engine.hwnd);
+        }
+    }
+
+    HWND GetDialogWindow() {
+        return g_engine.hwnd;
     }
     
     // =========================================================================
@@ -290,7 +347,7 @@ namespace ImGuiDialogs {
             L"Dialog",
             WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX,
             x, y, defaultWidth, defaultHeight,
-            NULL,
+            NULL, // Don't set parent here - we'll do it in ShowDialog
             NULL,
             wc.hInstance,
             NULL);
@@ -332,6 +389,9 @@ namespace ImGuiDialogs {
     void Shutdown() {
         if (!g_engine.initialized) return;
         
+        // Clean up dialog state
+        Hide();
+        
         ImGui_ImplOpenGL3_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
@@ -347,9 +407,21 @@ namespace ImGuiDialogs {
     }
     
     void Hide() {
+        // Re-enable parent window if it was enabled before
+        if (g_engine.parent && !g_engine.parentWasEnabled) {
+            EnableWindow(g_engine.parent, g_engine.parentWasEnabled);
+        } else if (g_engine.parent) {
+            EnableWindow(g_engine.parent, TRUE);
+            // Restore focus to parent
+            SetForegroundWindow(g_engine.parent);
+        }
+
         for (int i = 0; i < DIALOG_COUNT; i++) {
             g_engine.dialogs[i].isOpen = false;
         }
+        
+        g_engine.activeDialogType = -1;
+        g_dialogActive = false;
                
         if (g_engine.hwnd && g_engine.windowVisible) {
             ShowWindow(g_engine.hwnd, SW_HIDE);
@@ -368,6 +440,22 @@ namespace ImGuiDialogs {
         if (!g_engine.initialized) return;
         if (!IsAnyDialogOpen()) return;
         if (!IsWindowVisible(g_engine.hwnd)) return;
+
+        // Ensure dialog stays on top of parent
+        if (g_engine.hwnd && g_engine.parent && IsWindowVisible(g_engine.hwnd)) {
+            HWND foreground = GetForegroundWindow();
+            
+            // If parent somehow got foreground focus, bring dialog back to front
+            if (foreground == g_engine.parent) {
+                SetWindowPos(g_engine.hwnd, HWND_TOP, 0, 0, 0, 0, 
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                SetForegroundWindow(g_engine.hwnd);
+            }
+            
+            // Ensure dialog is always above parent in Z-order
+            SetWindowPos(g_engine.hwnd, g_engine.parent, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
             
         if (!wglMakeCurrent(g_engine.hdc, g_engine.hglrc)) return;
             

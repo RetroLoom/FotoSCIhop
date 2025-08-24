@@ -30,6 +30,9 @@ TCHAR szWindowClass[MAX_LOADSTRING];			// the main window class name
 char szFileName[MAX_PATH] = "";
 char szNextFileName[MAX_PATH] = "";
 
+// Dialog activity flag
+bool g_dialogActive = false;
+
 // Forward declarations of functions included in this code module:
 ATOM				MyRegisterClass(HINSTANCE hInstance);
 BOOL				InitInstance(HINSTANCE, int);
@@ -142,6 +145,7 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell) {
             if (newcell == 0)
                 EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 
+            // Simple invalidation for cell switching (don't clear cache)
             InvalidateRgn(hWnd, NULL, true);
         }
     }
@@ -195,6 +199,7 @@ void ShowCell(unsigned char newcell) {
         if (curCellIndex == 0)
             EnableMenuItem(menu, ID_CELLAPRECEDENTE, MF_GRAYED);
 
+        // Simple invalidation for cell switching (don't clear cache)
         InvalidateRgn(hWnd, NULL, true);
     }
 }
@@ -510,6 +515,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message) 
     {
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) == WA_ACTIVE || LOWORD(wParam) == WA_CLICKACTIVE) {
+            // If a dialog is open, don't allow main window activation
+            if (ImGuiDialogs::IsAnyDialogOpen()) {
+                // Redirect focus back to dialog
+                ImGuiDialogs::RestoreDialogFocus();
+                return 0;
+            }
+        }
+        break;
+
+    case WM_SETFOCUS:
+        if (ImGuiDialogs::IsAnyDialogOpen()) {
+            // Don't accept focus while dialog is open
+            ImGuiDialogs::RestoreDialogFocus();
+            return 0;
+        }
+        break;
+
     case WM_COMMAND:
         wmId    = LOWORD(wParam); 
         wmEvent = HIWORD(wParam); 
@@ -553,7 +577,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             
         case ID_FILE_NEXTFILE:
             DoNextFile(hWnd);
-            RedrawWindow(hWnd, NULL, NULL, RDW_UPDATENOW);
+            InvalidateRect(hWnd, NULL, FALSE);
             Sleep(200);
             break;
             
@@ -633,7 +657,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     break;
                 }
                 
-                InvalidateRgn(hWnd, NULL, true);
+                InvalidateRect(hWnd, NULL, FALSE);
                 break;
             }
             
@@ -661,7 +685,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     break;
                 }
                 
-                InvalidateRgn(hWnd, NULL, true);
+                InvalidateRect(hWnd, NULL, FALSE);
                 break;
             }
             
@@ -857,40 +881,55 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
 
     case WM_TIMER:
-    if (wParam == 1) { // ImGui timer
-        if (g_pendingThemeChange) {
-            FotoSCIhopStyles::SetTheme(g_pendingTheme);
-            FotoSCIhopStyles::RefreshTheme();
-            g_pendingThemeChange = false;
+        if (wParam == 1) { // ImGui timer
+            bool hasDialogFocus = false;
             
-            InvalidateRect(hWnd, NULL, TRUE);
-        }
-        
-        HandleRealmpalFileDialogs();
-        
-        if (ImGuiDialogs::IsAnyDialogOpen()) {
-            ImGuiDialogs::Render();
-        }
-    }
-    else if (wParam == 2) { // Title restore timer
-        KillTimer(hWnd, 2);
-        
-        // Restore normal window title
-        char wname[MAX_PATH + 15] = "FotoSCIhop";
-        if (strlen(szFileName) > 0) {
-            strcat(wname, " - ");
+            // Check if any dialog has focus
+            if (ImGuiDialogs::IsAnyDialogOpen()) {
+                hasDialogFocus = ImGuiDialogs::HasDialogFocus();
+            }
             
-            // Extract just the filename from the full path
-            char* filename = strrchr(szFileName, '\\');
-            if (filename) {
-                strcat(wname, filename + 1); // Skip the backslash
-            } else {
-                strcat(wname, szFileName);
+            if (g_pendingThemeChange) {
+                FotoSCIhopStyles::SetTheme(g_pendingTheme);
+                FotoSCIhopStyles::RefreshTheme();
+                g_pendingThemeChange = false;
+                
+                // Only invalidate if no dialog has focus
+                if (!hasDialogFocus) {
+                    InvalidateRect(hWnd, NULL, TRUE);
+                }
+            }
+            
+            HandleRealmpalFileDialogs();
+            
+            if (ImGuiDialogs::IsAnyDialogOpen()) {
+                ImGuiDialogs::Render();
+                
+                // Restore dialog focus if main window somehow got it
+                if (hasDialogFocus && GetForegroundWindow() != ImGuiDialogs::GetDialogWindow()) {
+                    ImGuiDialogs::RestoreDialogFocus();
+                }
             }
         }
-        SetWindowText(hWnd, wname);
-    }
-    break;
+        else if (wParam == 2) { // Title restore timer
+            KillTimer(hWnd, 2);
+            
+            // Restore normal window title
+            char wname[MAX_PATH + 15] = "FotoSCIhop";
+            if (strlen(szFileName) > 0) {
+                strcat(wname, " - ");
+                
+                // Extract just the filename from the full path
+                char* filename = strrchr(szFileName, '\\');
+                if (filename) {
+                    strcat(wname, filename + 1); // Skip the backslash
+                } else {
+                    strcat(wname, szFileName);
+                }
+            }
+            SetWindowText(hWnd, wname);
+        }
+        break;
 
     case WM_SETCURSOR:
     {

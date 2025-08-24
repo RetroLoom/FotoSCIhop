@@ -146,6 +146,8 @@ bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
 bool ImportBMPToCurrentCell(const char* filename, bool applyPalette);
 
 // Dialog functions
+extern bool g_dialogActive;
+void ForceDisplayRefresh();
 void RenderPropertiesDialog();
 void RenderAboutDialog(); 
 void RenderClutGeneratorDialog();
