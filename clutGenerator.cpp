@@ -116,6 +116,50 @@ void ClutGenerator::ApplyCurrentRemaps() {
     ForceImageRefresh();
 }
 
+void ClutGenerator::ApplyPreviewRemap() {
+    if (!m_isActive || !m_sourcePalette || !m_backupPalette.hasValidData) {
+        return;
+    }
+    
+    // First, restore all colors to original and apply existing remaps
+    ApplyCurrentRemaps();
+    
+    // Then apply the preview remap if both from and to colors are valid and different
+    if (ValidateColorIndex(m_selectedFromColor) && 
+        ValidateColorIndex(m_selectedToColor) && 
+        m_selectedFromColor != m_selectedToColor) {
+        
+        // Check if this would conflict with an existing active remap
+        bool hasConflict = false;
+        for (size_t i = 0; i < m_currentRemaps.size(); i++) {
+            if (m_currentRemaps[i].active && m_currentRemaps[i].fromColor == m_selectedFromColor) {
+                hasConflict = true;
+                break;
+            }
+        }
+        
+        // Only apply preview if no conflict
+        if (!hasConflict) {
+            PalEntry sourceEntry = m_backupPalette.entries[m_selectedToColor];
+            m_sourcePalette->SetPalEntry(sourceEntry, m_selectedFromColor);
+            m_hasPreviewRemap = true;
+            m_previewFromColor = m_selectedFromColor;
+            m_previewToColor = m_selectedToColor;
+        }
+    }
+    
+    // Force display refresh
+    ForceImageRefresh();
+}
+
+void ClutGenerator::ClearPreviewRemap() {
+    if (m_hasPreviewRemap) {
+        m_hasPreviewRemap = false;
+        // Restore to current remaps without preview
+        ApplyCurrentRemaps();
+    }
+}
+
 void ClutGenerator::RevertToOriginal() {
     // Clear all remaps and restore original palette
     m_currentRemaps.clear();
@@ -331,51 +375,6 @@ bool ClutGenerator::ImportFromSCITableEntry(const std::string& sciLine) {
 // Helper functions
 bool ClutGenerator::ValidateColorIndex(int colorIndex) const {
     return colorIndex >= 0 && colorIndex < 256;
-}
-
-// Preview management methods
-void ClutGenerator::ApplyPreviewRemap() {
-    if (!m_isActive || !m_sourcePalette || !m_backupPalette.hasValidData) {
-        return;
-    }
-    
-    // First, restore all colors to original and apply existing remaps
-    ApplyCurrentRemaps();
-    
-    // Then apply the preview remap if both from and to colors are valid and different
-    if (ValidateColorIndex(m_selectedFromColor) && 
-        ValidateColorIndex(m_selectedToColor) && 
-        m_selectedFromColor != m_selectedToColor) {
-        
-        // Check if this would conflict with an existing active remap
-        bool hasConflict = false;
-        for (size_t i = 0; i < m_currentRemaps.size(); i++) {
-            if (m_currentRemaps[i].active && m_currentRemaps[i].fromColor == m_selectedFromColor) {
-                hasConflict = true;
-                break;
-            }
-        }
-        
-        // Only apply preview if no conflict
-        if (!hasConflict) {
-            PalEntry sourceEntry = m_backupPalette.entries[m_selectedToColor];
-            m_sourcePalette->SetPalEntry(sourceEntry, m_selectedFromColor);
-            m_hasPreviewRemap = true;
-            m_previewFromColor = m_selectedFromColor;
-            m_previewToColor = m_selectedToColor;
-        }
-    }
-    
-    // Force display refresh
-    ForceImageRefresh();
-}
-
-void ClutGenerator::ClearPreviewRemap() {
-    if (m_hasPreviewRemap) {
-        m_hasPreviewRemap = false;
-        // Restore to current remaps without preview
-        ApplyCurrentRemaps();
-    }
 }
 
 bool SampleColorAtScreenPosition(int clientX, int clientY, int& colorIndex) {

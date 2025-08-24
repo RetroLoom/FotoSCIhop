@@ -117,4 +117,7 @@ private:
 // Global instance
 extern ClutGenerator* g_clutGenerator;
 
+// Function for sampling colors (defined in clutGenerator.cpp)
+bool SampleColorAtScreenPosition(int clientX, int clientY, int& colorIndex);
+
 #endif // CLUT_GENERATOR_H
