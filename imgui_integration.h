@@ -29,10 +29,12 @@ namespace ImGuiDialogs {
     
     // Core dialog system
     void RegisterDialog(DialogType type, const char* title, ImGuiDialogCallback callback);
+    void RegisterDialogWithInput(DialogType type, const char* title, ImGuiDialogCallback callback, bool allowMainWindowInput);
     void ShowDialog(DialogType type);
     void HideDialog(DialogType type);
     bool IsDialogOpen(DialogType type);
     bool IsAnyDialogOpen();
+    bool CurrentDialogAllowsMainWindowInput();
     
     // Focus management functions
     bool HasDialogFocus();

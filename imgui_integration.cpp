@@ -27,6 +27,7 @@ namespace ImGuiDialogs {
         char title[256];
         ImGuiDialogCallback callback;
         bool isOpen;
+        bool allowMainWindowInput; // New flag for input policy
         
         // Per-dialog size settings
         int preferredWidth;
@@ -35,17 +36,18 @@ namespace ImGuiDialogs {
         int currentHeight;
         bool hasCustomSize;
         
-        DialogInfo() : callback(nullptr), isOpen(false), 
+        DialogInfo() : callback(nullptr), isOpen(false), allowMainWindowInput(false),
                       preferredWidth(500), preferredHeight(600),
                       currentWidth(500), currentHeight(600),
                       hasCustomSize(false) {
             title[0] = '\0';
         }
         
-        DialogInfo(const char* t, ImGuiDialogCallback cb) : callback(cb), isOpen(false),
-                                                           preferredWidth(500), preferredHeight(600),
-                                                           currentWidth(500), currentHeight(600),
-                                                           hasCustomSize(false) {
+        DialogInfo(const char* t, ImGuiDialogCallback cb, bool allowInput = false) : 
+                   callback(cb), isOpen(false), allowMainWindowInput(allowInput),
+                   preferredWidth(500), preferredHeight(600),
+                   currentWidth(500), currentHeight(600),
+                   hasCustomSize(false) {
             if (t) {
                 strncpy(title, t, sizeof(title) - 1);
                 title[sizeof(title) - 1] = '\0';
@@ -107,12 +109,21 @@ namespace ImGuiDialogs {
             
         switch (msg) {
         case WM_ACTIVATE:
-            // Ensure dialog stays active when clicked
+            // Only handle activation if it's not due to user clicking in dialog
             if (LOWORD(wParam) != WA_INACTIVE && g_engine.parent) {
-                // Make sure parent doesn't steal focus
-                if (GetForegroundWindow() == g_engine.parent) {
-                    SetForegroundWindow(hWnd);
+                // Don't aggressively steal focus - let normal processing happen
+                // Only intervene if parent tries to steal focus unexpectedly
+                HWND currentForeground = GetForegroundWindow();
+                if (currentForeground == g_engine.parent) {
+                    // Small delay to allow click processing, then restore focus
+                    PostMessage(hWnd, WM_USER + 100, 0, 0); // Custom message to restore focus later
                 }
+            }
+            return DefWindowProcW(hWnd, msg, wParam, lParam);
+
+        case WM_USER + 100: // Custom message to restore focus
+            if (IsWindowVisible(hWnd)) {
+                SetForegroundWindow(hWnd);
             }
             return 0;
 
@@ -203,9 +214,20 @@ namespace ImGuiDialogs {
     // =========================================================================
         
     void RegisterDialog(DialogType type, const char* title, ImGuiDialogCallback callback) {
+        RegisterDialogWithInput(type, title, callback, false); // Default: block main window input
+    }
+
+    void RegisterDialogWithInput(DialogType type, const char* title, ImGuiDialogCallback callback, bool allowMainWindowInput) {
         if (type >= 0 && type < DIALOG_COUNT) {
-            g_engine.dialogs[type] = DialogInfo(title, callback);
+            g_engine.dialogs[type] = DialogInfo(title, callback, allowMainWindowInput);
         }
+    }
+
+    bool CurrentDialogAllowsMainWindowInput() {
+        if (g_engine.activeDialogType >= 0 && g_engine.activeDialogType < DIALOG_COUNT) {
+            return g_engine.dialogs[g_engine.activeDialogType].allowMainWindowInput;
+        }
+        return false;
     }
 
     void ShowDialog(DialogType type)
@@ -256,13 +278,15 @@ namespace ImGuiDialogs {
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
 
-            // Set proper window relationships and make modal
+            // Set proper window relationships but DON'T disable parent completely
+            // This allows magic wand clicks to reach the main window
             SetWindowLongPtr(g_engine.hwnd, GWLP_HWNDPARENT, (LONG_PTR)g_engine.parent);
             
-            // Store parent's current enabled state and disable it
+            // Store parent's current enabled state but keep it enabled for mouse input
             if (g_engine.parent) {
                 g_engine.parentWasEnabled = IsWindowEnabled(g_engine.parent);
-                EnableWindow(g_engine.parent, FALSE);
+                // DON'T disable parent - this was preventing magic wand clicks
+                // EnableWindow(g_engine.parent, FALSE);
             }
 
             // Show the dialog window with proper Z-order
@@ -407,10 +431,8 @@ namespace ImGuiDialogs {
     }
     
     void Hide() {
-        // Re-enable parent window if it was enabled before
-        if (g_engine.parent && !g_engine.parentWasEnabled) {
-            EnableWindow(g_engine.parent, g_engine.parentWasEnabled);
-        } else if (g_engine.parent) {
+        // Re-enable parent window if it was disabled
+        if (g_engine.parent) {
             EnableWindow(g_engine.parent, TRUE);
             // Restore focus to parent
             SetForegroundWindow(g_engine.parent);
@@ -441,18 +463,9 @@ namespace ImGuiDialogs {
         if (!IsAnyDialogOpen()) return;
         if (!IsWindowVisible(g_engine.hwnd)) return;
 
-        // Ensure dialog stays on top of parent
+        // Only do minimal Z-order management - don't aggressively steal focus
         if (g_engine.hwnd && g_engine.parent && IsWindowVisible(g_engine.hwnd)) {
-            HWND foreground = GetForegroundWindow();
-            
-            // If parent somehow got foreground focus, bring dialog back to front
-            if (foreground == g_engine.parent) {
-                SetWindowPos(g_engine.hwnd, HWND_TOP, 0, 0, 0, 0, 
-                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-                SetForegroundWindow(g_engine.hwnd);
-            }
-            
-            // Ensure dialog is always above parent in Z-order
+            // Just ensure dialog is above parent in Z-order, don't force focus
             SetWindowPos(g_engine.hwnd, g_engine.parent, 0, 0, 0, 0,
                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
@@ -611,12 +624,12 @@ namespace ImGuiDialogs {
             colors[ImGuiCol_FrameBgActive] = ImVec4(0.35f, 0.35f, 0.35f, 1.00f);
             colors[ImGuiCol_TitleBg] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
             colors[ImGuiCol_TitleBgActive] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
-            colors[ImGuiCol_Button] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-            colors[ImGuiCol_ButtonHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
-            colors[ImGuiCol_ButtonActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
-            colors[ImGuiCol_Header] = ImVec4(0.30f, 0.30f, 0.30f, 1.00f);
-            colors[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.00f);
-            colors[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+            colors[ImGuiCol_Button] = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
+            colors[ImGuiCol_ButtonHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.0f);
+            colors[ImGuiCol_ButtonActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.0f);
+            colors[ImGuiCol_Header] = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
+            colors[ImGuiCol_HeaderHovered] = ImVec4(0.40f, 0.40f, 0.40f, 1.0f);
+            colors[ImGuiCol_HeaderActive] = ImVec4(0.50f, 0.50f, 0.50f, 1.0f);
             
             style.WindowRounding = 4.0f;
             style.FrameRounding = 2.0f;
