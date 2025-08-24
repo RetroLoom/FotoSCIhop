@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "ClutGenerator.h"
 #include "FotoSCIhop.h"
+#include "display.h"
 #include <sstream>
 #include <iomanip>
 
@@ -9,14 +10,9 @@ ClutGenerator* g_clutGenerator = nullptr;
 
 ClutGenerator::ClutGenerator() 
     : m_isActive(false)
-    , m_previewEnabled(true)
-    , m_magicWandEnabled(false)
     , m_sourcePalette(nullptr)
     , m_selectedFromColor(0)
     , m_selectedToColor(0)
-    , m_hasPreviewRemap(false)
-    , m_previewFromColor(0)
-    , m_previewToColor(0)
 {
 }
 
@@ -31,14 +27,15 @@ bool ClutGenerator::Initialize(Palette* sourcePalette) {
     
     m_sourcePalette = sourcePalette;
     
-    // Backup the original palette before any modifications
+    // Backup the original palette
     BackupOriginalPalette();
     
     m_isActive = true;
     m_currentRemaps.clear();
-    m_previewEnabled = true;
-    m_hasPreviewRemap = false;
     m_usedColorIndices.clear();
+    
+    // Always enable magic wand when CLUT generator is active
+    SetMagicWandEnabled(true);
     
     return true;
 }
@@ -49,12 +46,12 @@ void ClutGenerator::Shutdown() {
         RestoreOriginalPalette();
     }
     
+    // Always disable magic wand when shutting down
+    SetMagicWandEnabled(false);
+    
     m_sourcePalette = nullptr;
     m_isActive = false;
-    m_previewEnabled = false;
-    m_magicWandEnabled = false;
     m_backupPalette.hasValidData = false;
-    m_hasPreviewRemap = false;
     m_currentRemaps.clear();
     m_usedColorIndices.clear();
 }
@@ -62,9 +59,12 @@ void ClutGenerator::Shutdown() {
 void ClutGenerator::BackupOriginalPalette() {
     if (!m_sourcePalette) return;
     
-    // Backup all 256 palette entries using GetPalEntry()
+    // Backup all 256 palette entries
     for (int i = 0; i < 256; i++) {
-        BackupPaletteEntry(i);
+        PalEntry* sourceEntry = m_sourcePalette->GetPalEntry(i);
+        if (sourceEntry) {
+            m_backupPalette.entries[i] = *sourceEntry;
+        }
     }
     
     m_backupPalette.hasValidData = true;
@@ -73,46 +73,26 @@ void ClutGenerator::BackupOriginalPalette() {
 void ClutGenerator::RestoreOriginalPalette() {
     if (!m_backupPalette.hasValidData || !m_sourcePalette) return;
     
-    // Restore all palette entries using SetPalEntry()
+    // Restore all palette entries
     for (int i = 0; i < 256; i++) {
-        RestorePaletteEntry(i);
+        m_sourcePalette->SetPalEntry(m_backupPalette.entries[i], i);
     }
     
-    // Clear preview state
-    m_hasPreviewRemap = false;
-    
-    // Force cached image data to refresh with restored palette
+    // Force display refresh
     ForceImageRefresh();
 }
 
 void ClutGenerator::ApplyCurrentRemaps() {
-    if (!m_isActive || !m_previewEnabled || !m_sourcePalette || !m_backupPalette.hasValidData) {
+    if (!m_isActive || !m_sourcePalette || !m_backupPalette.hasValidData) {
         return;
     }
     
-    ApplyRemapsToMainPalette();
-    
-    // If we have a preview remap, apply it on top
-    if (m_hasPreviewRemap) {
-        if (ValidateColorIndex(m_selectedFromColor) && ValidateColorIndex(m_selectedToColor)) {
-            PalEntry sourceEntry = m_backupPalette.entries[m_selectedToColor];
-            m_sourcePalette->SetPalEntry(sourceEntry, m_selectedFromColor);
-        }
-    }
-    
-    // Force cached image data to refresh with new palette
-    ForceImageRefresh();
-}
-
-void ClutGenerator::ApplyRemapsToMainPalette() {
-    if (!m_sourcePalette || !m_backupPalette.hasValidData) return;
-    
     // STEP 1: Restore all colors to original first
     for (int i = 0; i < 256; i++) {
-        RestorePaletteEntry(i);
+        m_sourcePalette->SetPalEntry(m_backupPalette.entries[i], i);
     }
     
-    // STEP 2: Apply only ACTIVE remaps to the main image palette
+    // STEP 2: Apply only ACTIVE remaps
     for (size_t i = 0; i < m_currentRemaps.size(); i++) {
         const ColorRemapEntry& remap = m_currentRemaps[i];
         if (!remap.active) continue; // Skip inactive remaps
@@ -121,25 +101,29 @@ void ClutGenerator::ApplyRemapsToMainPalette() {
             // Get the ORIGINAL color that we want to map TO (from backup)
             PalEntry sourceEntry = m_backupPalette.entries[remap.toColor];
             
-            // Apply it to the FROM color position using SetPalEntry()
-            // This directly modifies the main image palette for live preview
+            // Apply it to the FROM color position
             m_sourcePalette->SetPalEntry(sourceEntry, remap.fromColor);
         }
     }
+    
+    // Force display refresh
+    ForceImageRefresh();
+}
+
+void ClutGenerator::RevertToOriginal() {
+    // Clear all remaps and restore original palette
+    m_currentRemaps.clear();
+    RestoreOriginalPalette();
 }
 
 void ClutGenerator::ClearAllRemaps() {
     m_currentRemaps.clear();
-    m_hasPreviewRemap = false;
-    // Restore to original state
-    RestoreOriginalPalette();
+    // Apply (which will restore to original since no remaps exist)
+    ApplyCurrentRemaps();
 }
 
 void ClutGenerator::AddRemap(int fromColor, int toColor) {
     if (!ValidateColorIndex(fromColor) || !ValidateColorIndex(toColor)) return;
-    
-    // Clear any preview remap first
-    ClearPreviewRemap();
     
     // Remove existing remap for this fromColor
     RemoveRemap(fromColor);
@@ -147,12 +131,12 @@ void ClutGenerator::AddRemap(int fromColor, int toColor) {
     // Add new remap
     m_currentRemaps.push_back(ColorRemapEntry(fromColor, toColor));
     
-    // Apply live preview immediately
+    // Apply immediately for real-time preview
     ApplyCurrentRemaps();
 }
 
 void ClutGenerator::RemoveRemap(int fromColor) {
-    // Find and remove remap with matching fromColor using older C++ syntax
+    // Find and remove remap with matching fromColor
     for (std::vector<ColorRemapEntry>::iterator it = m_currentRemaps.begin(); it != m_currentRemaps.end(); ) {
         if (it->fromColor == fromColor) {
             it = m_currentRemaps.erase(it);
@@ -161,14 +145,14 @@ void ClutGenerator::RemoveRemap(int fromColor) {
         }
     }
     
-    // Apply live preview (will restore original colors for removed remaps)
+    // Apply immediately
     ApplyCurrentRemaps();
 }
 
 void ClutGenerator::ClearRemap(int index) {
     if (index >= 0 && index < static_cast<int>(m_currentRemaps.size())) {
         m_currentRemaps.erase(m_currentRemaps.begin() + index);
-        // Apply live preview
+        // Apply immediately
         ApplyCurrentRemaps();
     }
 }
@@ -176,7 +160,7 @@ void ClutGenerator::ClearRemap(int index) {
 void ClutGenerator::ToggleRemapActive(int index) {
     if (index >= 0 && index < static_cast<int>(m_currentRemaps.size())) {
         m_currentRemaps[index].active = !m_currentRemaps[index].active;
-        // Apply live preview immediately
+        // Apply immediately
         ApplyCurrentRemaps();
     }
 }
@@ -191,18 +175,6 @@ bool ClutGenerator::HasRemap(int fromColor) const {
     return false;
 }
 
-void ClutGenerator::SetPreviewEnabled(bool enabled) {
-    m_previewEnabled = enabled;
-    
-    if (enabled) {
-        // Apply current remaps for live preview
-        ApplyCurrentRemaps();
-    } else {
-        // Restore original palette
-        RestoreOriginalPalette();
-    }
-}
-
 // Get original palette entry for GUI display
 bool ClutGenerator::GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const {
     if (!ValidateColorIndex(colorIndex) || !m_backupPalette.hasValidData) {
@@ -211,30 +183,6 @@ bool ClutGenerator::GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) con
     
     entry = m_backupPalette.entries[colorIndex];
     return true;
-}
-
-// Update preview remap
-void ClutGenerator::UpdatePreviewRemap() {
-    if (!m_isActive || !m_previewEnabled || !m_sourcePalette || !m_backupPalette.hasValidData) {
-        return;
-    }
-    
-    // Store preview state
-    m_hasPreviewRemap = true;
-    m_previewFromColor = m_selectedFromColor;
-    m_previewToColor = m_selectedToColor;
-    
-    // Apply all current remaps plus the preview remap
-    ApplyCurrentRemaps();
-}
-
-// Clear preview remap
-void ClutGenerator::ClearPreviewRemap() {
-    if (m_hasPreviewRemap) {
-        m_hasPreviewRemap = false;
-        // Reapply only the actual remaps (removes preview)
-        ApplyCurrentRemaps();
-    }
 }
 
 void ClutGenerator::AnalyzeImageColorUsage() {
@@ -374,28 +322,100 @@ bool ClutGenerator::ValidateColorIndex(int colorIndex) const {
     return colorIndex >= 0 && colorIndex < 256;
 }
 
-void ClutGenerator::CopyPaletteEntry(const PalEntry* source, PalEntry* dest) const {
-    if (!source || !dest) return;
+bool SampleColorAtScreenPosition(int clientX, int clientY, int& colorIndex) {
+    if (!g_clutGenerator || !g_clutGenerator->IsActive()) return false;
     
-    dest->red = source->red;
-    dest->green = source->green;
-    dest->blue = source->blue;
-    dest->remap = source->remap;
-}
-
-void ClutGenerator::BackupPaletteEntry(int colorIndex) {
-    if (!ValidateColorIndex(colorIndex) || !m_sourcePalette) return;
+    // Use the same display origin calculation as the original display code
+    int displayOriginX = UI_LEFT_MARGIN + picX + tableX;
+    int displayOriginY = UI_TOP_MARGIN + picY;
     
-    // Use Palette's GetPalEntry method to get the original entry
-    PalEntry* sourceEntry = m_sourcePalette->GetPalEntry(colorIndex);
-    if (sourceEntry) {
-        CopyPaletteEntry(sourceEntry, &m_backupPalette.entries[colorIndex]);
+    // Calculate relative position within the display area - NO MAGNIFICATION
+    int relativeX = clientX - displayOriginX;
+    int relativeY = clientY - displayOriginY;
+    
+    if (globalView && curCell && (*curCell)) {
+        // For view files - sample from current view cell
+        if (!(*curCell)->bmImage || !(*curCell)->bmInfo) {
+            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+        }
+        
+        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+            CelHeaderView* header = (CelHeaderView*)&(*curCell)->Head;
+            
+            // Adjust for hot spot offset (same as DisplayCurrentView function)
+            int imageX = relativeX - header->xHot;
+            int imageY = relativeY - header->yHot;
+            
+            int width = (*curCell)->bmInfo->bmiHeader.biWidth;
+            int height = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+            
+            // Check bounds
+            if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                // Calculate pixel index (accounting for row padding)
+                int rowWidth = ((width + 3) & ~3); // Round up to multiple of 4
+                int pixelIndex = imageY * rowWidth + imageX;
+                colorIndex = (*curCell)->bmImage[pixelIndex];
+                return true;
+            }
+        }
     }
-}
-
-void ClutGenerator::RestorePaletteEntry(int colorIndex) {
-    if (!ValidateColorIndex(colorIndex) || !m_sourcePalette || !m_backupPalette.hasValidData) return;
+    else if (globalPicture && curCellIndex >= 0 && curCellIndex < globalPicture->CellsCount()) {
+        // For picture files - we need to handle both single cell and all cells display
+        if (curCellIndex == 0) {
+            // When displaying all cells, we need to check each cell
+            for (int i = 0; i < globalPicture->CellsCount(); i++) {
+                Cell* cell = globalPicture->cells[i];
+                if (!cell) continue;
+                
+                if (!cell->bmImage || !cell->bmInfo) {
+                    cell->GetImage(&cell->bmInfo, &cell->bmImage);
+                }
+                
+                if (cell->bmImage && cell->bmInfo) {
+                    CelHeaderPic* header = (CelHeaderPic*)&cell->Head;
+                    
+                    // Check if click is within this cell's bounds
+                    int imageX = relativeX - header->xpos;
+                    int imageY = relativeY - header->ypos;
+                    
+                    int width = cell->bmInfo->bmiHeader.biWidth;
+                    int height = abs(cell->bmInfo->bmiHeader.biHeight);
+                    
+                    if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                        int rowWidth = ((width + 3) & ~3);
+                        int pixelIndex = imageY * rowWidth + imageX;
+                        colorIndex = cell->bmImage[pixelIndex];
+                        return true;
+                    }
+                }
+            }
+        } else {
+            // When displaying specific cell
+            Cell* cell = globalPicture->cells[curCellIndex];
+            if (cell) {
+                if (!cell->bmImage || !cell->bmInfo) {
+                    cell->GetImage(&cell->bmInfo, &cell->bmImage);
+                }
+                
+                if (cell->bmImage && cell->bmInfo) {
+                    CelHeaderPic* header = (CelHeaderPic*)&cell->Head;
+                    
+                    int imageX = relativeX - header->xpos;
+                    int imageY = relativeY - header->ypos;
+                    
+                    int width = cell->bmInfo->bmiHeader.biWidth;
+                    int height = abs(cell->bmInfo->bmiHeader.biHeight);
+                    
+                    if (imageX >= 0 && imageX < width && imageY >= 0 && imageY < height) {
+                        int rowWidth = ((width + 3) & ~3);
+                        int pixelIndex = imageY * rowWidth + imageX;
+                        colorIndex = cell->bmImage[pixelIndex];
+                        return true;
+                    }
+                }
+            }
+        }
+    }
     
-    // Use Palette's SetPalEntry method to restore the original entry
-    m_sourcePalette->SetPalEntry(m_backupPalette.entries[colorIndex], colorIndex);
+    return false;
 }

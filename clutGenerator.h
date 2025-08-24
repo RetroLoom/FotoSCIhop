@@ -52,7 +52,7 @@ public:
     
     // UI State
     bool IsPreviewEnabled() const { return m_previewEnabled; }
-    void SetPreviewEnabled(bool enabled);
+    void RevertToOriginal();
     
     // Magic wand and usage analysis
     void SetMagicWandEnabled(bool enabled) { m_magicWandEnabled = enabled; }
@@ -70,11 +70,11 @@ public:
     int GetSelectedToColor() const { return m_selectedToColor; }
     void SetSelectedFromColor(int color) { 
         m_selectedFromColor = color; 
-        UpdatePreviewRemap();
+        ForceImageRefresh();
     }
     void SetSelectedToColor(int color) { 
         m_selectedToColor = color; 
-        UpdatePreviewRemap();
+        ForceImageRefresh();
     }
     
     bool IsActive() const { return m_isActive; }
@@ -82,9 +82,6 @@ public:
     // Get original palette colors for GUI display
     bool GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const;
     
-    // Preview functionality
-    void UpdatePreviewRemap();
-    void ClearPreviewRemap();
     
 private:
     // Internal state
@@ -110,11 +107,7 @@ private:
     std::set<int> m_usedColorIndices;
     
     // Helper functions
-    void ApplyRemapsToMainPalette();
     bool ValidateColorIndex(int colorIndex) const;
-    void CopyPaletteEntry(const PalEntry* source, PalEntry* dest) const;
-    void BackupPaletteEntry(int colorIndex);
-    void RestorePaletteEntry(int colorIndex);
     void AnalyzeCellImageUsage(unsigned char* imageData, int width, int height);
 };
 
