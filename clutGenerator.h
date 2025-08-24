@@ -70,18 +70,17 @@ public:
     int GetSelectedToColor() const { return m_selectedToColor; }
     void SetSelectedFromColor(int color) { 
         m_selectedFromColor = color; 
-        ForceImageRefresh();
+        ApplyPreviewRemap();
     }
     void SetSelectedToColor(int color) { 
         m_selectedToColor = color; 
-        ForceImageRefresh();
+        ApplyPreviewRemap();
     }
     
     bool IsActive() const { return m_isActive; }
     
     // Get original palette colors for GUI display
     bool GetOriginalPaletteEntry(int colorIndex, PalEntry& entry) const;
-    
     
 private:
     // Internal state
@@ -109,6 +108,10 @@ private:
     // Helper functions
     bool ValidateColorIndex(int colorIndex) const;
     void AnalyzeCellImageUsage(unsigned char* imageData, int width, int height);
+    
+    // Preview management
+    void ApplyPreviewRemap();
+    void ClearPreviewRemap();
 };
 
 // Global instance
