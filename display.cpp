@@ -86,37 +86,15 @@ static COLORREF InterpolateColor(int current, int total, COLORREF startColor, CO
 // ============================================================================
 
 void ForceImageRefresh() {
-    // Force cached image data to be regenerated with new palette
-    if (globalView && curCell && (*curCell)) {
-        // Clear cached view cell data
-        if ((*curCell)->bmImage) {
-            delete (*curCell)->bmImage;
-            (*curCell)->bmImage = nullptr;
-        }
-        if ((*curCell)->bmInfo) {
-            delete (*curCell)->bmInfo;
-            (*curCell)->bmInfo = nullptr;
-        }
+    if (isPicture && globalPicture && curCell && (*curCell)) {
+        (*curCell)->bmInfo = nullptr;
+        (*curCell)->bmImage = nullptr;
+        ShowCell(curCellIndex);
+    } else if (globalView) {
+        ShowLoopCell(curLoopIndex, curCellIndex);
     }
     
-    if (globalPicture) {
-        // Clear cached picture cell data
-        for (int i = 0; i < globalPicture->CellsCount(); i++) {
-            if (globalPicture->cells[i]) {
-                if (globalPicture->cells[i]->bmImage) {
-                    delete globalPicture->cells[i]->bmImage;
-                    globalPicture->cells[i]->bmImage = nullptr;
-                }
-                if (globalPicture->cells[i]->bmInfo) {
-                    delete globalPicture->cells[i]->bmInfo;
-                    globalPicture->cells[i]->bmInfo = nullptr;
-                }
-            }
-        }
-    }
-    
-    // Force window repaint
-    InvalidateRgn(hWnd, NULL, true);
+    InvalidateRect(hWnd, NULL, TRUE);
 }
 
 RGBQUAD ExtractPaletteIndexFromBM(char *image, int index) {
