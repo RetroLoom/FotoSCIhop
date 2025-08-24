@@ -516,21 +516,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message) 
     {
     case WM_ACTIVATE:
-        if (LOWORD(wParam) == WA_ACTIVE || LOWORD(wParam) == WA_CLICKACTIVE) {
-            // If a dialog is open, don't allow main window activation
+        // Only prevent activation if we're trying to activate due to automatic triggers
+        // Allow user-initiated clicks and interactions
+        if (LOWORD(wParam) == WA_ACTIVE && HIWORD(wParam) == 0) { // WA_ACTIVE with no minimize flag
+            // If a dialog is open, check if this is user-initiated
             if (ImGuiDialogs::IsAnyDialogOpen()) {
-                // Redirect focus back to dialog
-                ImGuiDialogs::RestoreDialogFocus();
-                return 0;
+                // Only redirect focus if this wasn't a user click
+                POINT cursorPos;
+                GetCursorPos(&cursorPos);
+                RECT mainWindowRect;
+                GetWindowRect(hWnd, &mainWindowRect);
+                
+                // If cursor is outside main window, this is likely an automatic activation
+                if (!PtInRect(&mainWindowRect, cursorPos)) {
+                    ImGuiDialogs::RestoreDialogFocus();
+                    return 0;
+                }
             }
         }
         break;
 
     case WM_SETFOCUS:
+        // Only prevent focus if dialog is open and this wasn't user-initiated
         if (ImGuiDialogs::IsAnyDialogOpen()) {
-            // Don't accept focus while dialog is open
-            ImGuiDialogs::RestoreDialogFocus();
-            return 0;
+            // Check if this focus change is due to user interaction with main window
+            POINT cursorPos;
+            GetCursorPos(&cursorPos);
+            RECT mainWindowRect;
+            GetWindowRect(hWnd, &mainWindowRect);
+            
+            // If cursor is outside main window, this is likely automatic - redirect focus
+            if (!PtInRect(&mainWindowRect, cursorPos)) {
+                ImGuiDialogs::RestoreDialogFocus();
+                return 0;
+            }
         }
         break;
 
@@ -882,22 +901,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_TIMER:
         if (wParam == 1) { // ImGui timer
-            bool hasDialogFocus = false;
-            
-            // Check if any dialog has focus
-            if (ImGuiDialogs::IsAnyDialogOpen()) {
-                hasDialogFocus = ImGuiDialogs::HasDialogFocus();
-            }
-            
             if (g_pendingThemeChange) {
                 FotoSCIhopStyles::SetTheme(g_pendingTheme);
                 FotoSCIhopStyles::RefreshTheme();
                 g_pendingThemeChange = false;
                 
-                // Only invalidate if no dialog has focus
-                if (!hasDialogFocus) {
-                    InvalidateRect(hWnd, NULL, TRUE);
-                }
+                InvalidateRect(hWnd, NULL, TRUE);
             }
             
             HandleRealmpalFileDialogs();
@@ -905,10 +914,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (ImGuiDialogs::IsAnyDialogOpen()) {
                 ImGuiDialogs::Render();
                 
-                // Restore dialog focus if main window somehow got it
-                if (hasDialogFocus && GetForegroundWindow() != ImGuiDialogs::GetDialogWindow()) {
-                    ImGuiDialogs::RestoreDialogFocus();
+                // Only restore focus if dialog has lost focus to the main window unexpectedly
+                // and no user interaction is happening
+                static DWORD lastInputTime = 0;
+                DWORD currentTime = GetTickCount();
+                
+                if (currentTime - lastInputTime > 500) { // 500ms delay to avoid interfering with clicks
+                    LASTINPUTINFO lii;
+                    lii.cbSize = sizeof(LASTINPUTINFO);
+                    if (GetLastInputInfo(&lii)) {
+                        if (currentTime - lii.dwTime > 100) { // No input for 100ms
+                            HWND dialogWindow = ImGuiDialogs::GetDialogWindow();
+                            if (dialogWindow && GetForegroundWindow() == hWnd) {
+                                SetForegroundWindow(dialogWindow);
+                            }
+                        }
+                    }
                 }
+                lastInputTime = currentTime;
             }
         }
         else if (wParam == 2) { // Title restore timer
