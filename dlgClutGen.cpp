@@ -251,14 +251,15 @@ std::string GenerateFullCOLORTBLTable(const PresetData& presets) {
 }
 
 void RenderPresetCard(const PresetData& presets, int index, int& selectedPreset, 
-                     std::string& statusMessage, bool& showStatus, int& selectedRemapIndex, bool& editingMode) {
+                     std::string& statusMessage, bool& showStatus, int& selectedRemapIndex, bool& editingMode, int& deleteIndex) {
     using namespace FotoSCIhopStyles;
     
     bool isSelected = (selectedPreset == index);
     ImVec4 cardColor = isSelected ? ImVec4(0.25f, 0.35f, 0.15f, 0.9f) : ImVec4(0.15f, 0.15f, 0.2f, 0.8f);
     
     ImGui::PushStyleColor(ImGuiCol_ChildBg, cardColor);
-    if (ImGui::BeginChild(("PresetCard" + std::to_string(index)).c_str(), ImVec2(180, 100), true, ImGuiWindowFlags_NoScrollbar)) {
+    if (ImGui::BeginChild(("PresetCard" + std::to_string(index)).c_str(), ImVec2(180, 100), true, 
+                         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
         
         // Header with index and category
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.6f, 1.0f));
@@ -288,7 +289,7 @@ void RenderPresetCard(const PresetData& presets, int index, int& selectedPreset,
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.7f, 0.3f, 0.8f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.4f, 0.8f, 0.4f, 0.9f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.6f, 0.2f, 0.8f));
-        if (ImGui::Button("Load", ImVec2(-1, 25))) {
+        if (ImGui::Button("Load", ImVec2(80, 22))) {
             g_clutGenerator->ClearAllRemaps();
             for (const ColorRemapEntry& remap : presets.remaps[index]) {
                 g_clutGenerator->AddRemap(remap.fromColor, remap.toColor);
@@ -298,6 +299,17 @@ void RenderPresetCard(const PresetData& presets, int index, int& selectedPreset,
             editingMode = false;
             statusMessage = "Loaded: " + presets.names[index];
             showStatus = true;
+        }
+        ImGui::PopStyleColor(3);
+        
+        ImGui::SameLine();
+        
+        // Delete button
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.3f, 0.3f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.4f, 0.4f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.6f, 0.2f, 0.2f, 0.8f));
+        if (ImGui::Button("Del", ImVec2(35, 22))) {
+            deleteIndex = index;
         }
         ImGui::PopStyleColor(3);
     }
@@ -319,8 +331,11 @@ void RenderPresetCard(const PresetData& presets, int index, int& selectedPreset,
 }
 
 void RenderPresetLibrary(const PresetData& presets, int& selectedPreset, const std::string& currentCategory,
-                        std::string& statusMessage, bool& showStatus, int& selectedRemapIndex, bool& editingMode) {
+                        std::string& statusMessage, bool& showStatus, int& selectedRemapIndex, bool& editingMode, int& presetVersion) {
     using namespace FotoSCIhopStyles;
+    
+    static int deleteIndex = -1;
+    static bool showDeleteConfirm = false;
     
     if (presets.names.empty()) {
         ImGui::Spacing();
@@ -333,6 +348,62 @@ void RenderPresetLibrary(const PresetData& presets, int& selectedPreset, const s
     ImGui::Text("%d presets available", (int)presets.names.size());
     ImGui::Separator();
     ImGui::Spacing();
+    
+    // Delete confirmation dialog
+    if (showDeleteConfirm && deleteIndex >= 0 && deleteIndex < presets.names.size()) {
+        ImGui::OpenPopup("Delete Preset?");
+    }
+    
+    if (ImGui::BeginPopupModal("Delete Preset?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Are you sure you want to delete this preset?");
+        ImGui::Spacing();
+        if (deleteIndex >= 0 && deleteIndex < presets.names.size()) {
+            ImGui::Text("Name: %s", presets.names[deleteIndex].c_str());
+            ImGui::Text("Category: %s", presets.categories[deleteIndex].c_str());
+        }
+        ImGui::Spacing();
+        
+        if (ImGui::Button("Delete", ImVec2(120, 0))) {
+            // Remove the preset from all vectors
+            if (deleteIndex >= 0 && deleteIndex < presets.names.size()) {
+                PresetData& mutablePresets = const_cast<PresetData&>(presets);
+                mutablePresets.names.erase(mutablePresets.names.begin() + deleteIndex);
+                mutablePresets.categories.erase(mutablePresets.categories.begin() + deleteIndex);
+                mutablePresets.remaps.erase(mutablePresets.remaps.begin() + deleteIndex);
+                mutablePresets.comments.erase(mutablePresets.comments.begin() + deleteIndex);
+                mutablePresets.originalIndices.erase(mutablePresets.originalIndices.begin() + deleteIndex);
+                
+                // Auto-save after deletion
+                AutoSavePresets(presets);
+                presetVersion++; // Refresh category filter
+                
+                // Update selection if needed
+                if (selectedPreset == deleteIndex) {
+                    selectedPreset = -1;
+                } else if (selectedPreset > deleteIndex) {
+                    selectedPreset--;
+                }
+                
+                statusMessage = "Preset deleted";
+                showStatus = true;
+            }
+            
+            showDeleteConfirm = false;
+            deleteIndex = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            showDeleteConfirm = false;
+            deleteIndex = -1;
+            ImGui::CloseCurrentPopup();
+        }
+        
+        ImGui::EndPopup();
+    }
     
     // Grid layout for preset cards
     float cardWidth = 180.0f;
@@ -353,12 +424,18 @@ void RenderPresetLibrary(const PresetData& presets, int& selectedPreset, const s
             ImGui::SameLine();
         }
         
-        RenderPresetCard(presets, i, selectedPreset, statusMessage, showStatus, selectedRemapIndex, editingMode);
+        RenderPresetCard(presets, i, selectedPreset, statusMessage, showStatus, selectedRemapIndex, editingMode, deleteIndex);
+        
+        // Check if delete was requested
+        if (deleteIndex == i && !showDeleteConfirm) {
+            showDeleteConfirm = true;
+        }
+        
         visibleCards++;
     }
 }
 
-void RenderWorkingArea(PresetData& presets, WorkingPreset& working, std::string& statusMessage, bool& showStatus) {
+void RenderWorkingArea(PresetData& presets, WorkingPreset& working, std::string& statusMessage, bool& showStatus, int& presetVersion) {
     using namespace FotoSCIhopStyles;
     
     HeaderText("Current Work");
@@ -429,6 +506,7 @@ void RenderWorkingArea(PresetData& presets, WorkingPreset& working, std::string&
                     // Auto-save to file
                     AutoSavePresets(presets);
                     
+                    presetVersion++; // Increment version to refresh category filter
                     statusMessage = "Saved preset: " + std::string(nameBuffer);
                     showStatus = true;
                     
@@ -520,11 +598,13 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
     static char singleLineBuffer[1024] = "";
     static bool showImportArea = false;
     static bool presetsLoaded = false;
+    static int presetVersion = 0; // Track when presets change for category refresh
     
     // Load presets from file on first run
     if (!presetsLoaded) {
         if (LoadPresetsFromFile(presets)) {
             presetsLoaded = true;
+            presetVersion++; // Increment version to refresh categories
             if (!presets.names.empty()) {
                 statusMessage = "Loaded " + std::to_string(presets.names.size()) + " presets from colortbl.txt";
                 showStatus = true;
@@ -576,7 +656,12 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
                 ImGui::Text("Filter:");
                 ImGui::SameLine();
                 ImGui::SetNextItemWidth(150);
-                if (ImGui::BeginCombo("##category", currentCategory.c_str())) {
+                
+                // Use presetVersion in combo ID to force refresh when presets change
+                char comboId[32];
+                sprintf(comboId, "##category%d", presetVersion);
+                
+                if (ImGui::BeginCombo(comboId, currentCategory.c_str())) {
                     if (ImGui::Selectable("All", currentCategory == "All")) {
                         currentCategory = "All";
                     }
@@ -626,6 +711,7 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
                         // Auto-save after importing
                         AutoSavePresets(presets);
                         
+                        presetVersion++; // Increment version to refresh category filter
                         statusMessage = "Loaded " + std::to_string(presets.names.size()) + " presets";
                         showStatus = true;
                         selectedPreset = -1;
@@ -649,7 +735,7 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
         
         // Left column - Preset library
         if (ImGui::BeginChild("LeftPresets", ImVec2(availableWidth * 0.7f, 0), true)) {
-            RenderPresetLibrary(presets, selectedPreset, currentCategory, statusMessage, showStatus, selectedRemapIndex, editingMode);
+            RenderPresetLibrary(presets, selectedPreset, currentCategory, statusMessage, showStatus, selectedRemapIndex, editingMode, presetVersion);
         }
         ImGui::EndChild();
         
@@ -657,7 +743,7 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
         
         // Right column - Working area
         if (ImGui::BeginChild("RightWork", ImVec2(0, 0), true)) {
-            RenderWorkingArea(presets, working, statusMessage, showStatus);
+            RenderWorkingArea(presets, working, statusMessage, showStatus, presetVersion);
         }
         ImGui::EndChild();
         
