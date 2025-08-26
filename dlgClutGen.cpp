@@ -35,6 +35,94 @@ struct WorkingPreset {
     WorkingPreset() : hasUnsavedChanges(false) {}
 };
 
+// Forward declarations
+bool ParseFullCOLORTBLTable(const std::string& tableData, PresetData& presets);
+std::string GenerateFullCOLORTBLTable(const PresetData& presets);
+
+// ============================================================================
+// PERSISTENT PRESET STORAGE FUNCTIONS
+// ============================================================================
+
+// Get the path to the presets file in the application directory
+char* GetPresetsFilePath() {
+    static char presetsPath[MAX_PATH];
+    
+    // Get the application directory
+    GetModuleFileName(NULL, presetsPath, MAX_PATH);
+    char* lastBackslash = strrchr(presetsPath, '\\');
+    if (lastBackslash) {
+        *lastBackslash = '\0';
+    }
+    
+    // Append the filename
+    strcat(presetsPath, "\\colortbl.txt");
+    return presetsPath;
+}
+
+// Save presets to file
+bool SavePresetsToFile(const PresetData& presets) {
+    if (presets.names.empty()) {
+        return true; // Nothing to save, but not an error
+    }
+    
+    char* filePath = GetPresetsFilePath();
+    FILE* file = fopen(filePath, "w");
+    if (!file) {
+        return false;
+    }
+    
+    // Generate the full table format and write it
+    std::string fullTable = GenerateFullCOLORTBLTable(presets);
+    if (!fullTable.empty()) {
+        fputs(fullTable.c_str(), file);
+    }
+    
+    fclose(file);
+    return true;
+}
+
+// Load presets from file
+bool LoadPresetsFromFile(PresetData& presets) {
+    char* filePath = GetPresetsFilePath();
+    FILE* file = fopen(filePath, "r");
+    if (!file) {
+        // File doesn't exist yet, not an error
+        return true;
+    }
+    
+    // Read the entire file
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (fileSize <= 0) {
+        fclose(file);
+        return true;
+    }
+    
+    char* buffer = (char*)malloc(fileSize + 1);
+    if (!buffer) {
+        fclose(file);
+        return false;
+    }
+    
+    size_t bytesRead = fread(buffer, 1, fileSize, file);
+    buffer[bytesRead] = '\0';
+    fclose(file);
+    
+    // Parse the table
+    std::string tableData(buffer);
+    bool result = ParseFullCOLORTBLTable(tableData, presets);
+    
+    free(buffer);
+    return result;
+}
+
+// Auto-save presets (called when presets are modified)
+void AutoSavePresets(const PresetData& presets) {
+    SavePresetsToFile(presets);
+}
+
 // Helper functions for preset management
 bool ParseFullCOLORTBLTable(const std::string& tableData, PresetData& presets) {
     presets.categories.clear();
@@ -338,6 +426,9 @@ void RenderWorkingArea(PresetData& presets, WorkingPreset& working, std::string&
                     presets.comments.push_back(std::string(commentBuffer));
                     presets.originalIndices.push_back(newIndex);
                     
+                    // Auto-save to file
+                    AutoSavePresets(presets);
+                    
                     statusMessage = "Saved preset: " + std::string(nameBuffer);
                     showStatus = true;
                     
@@ -402,6 +493,19 @@ void RenderWorkingArea(PresetData& presets, WorkingPreset& working, std::string&
             }
         }
     }
+    
+    ImGui::Spacing();
+    
+    // Manual save button
+    if (ImGui::Button("Save Presets to File", ImVec2(200, 25))) {
+        if (SavePresetsToFile(presets)) {
+            statusMessage = "Presets saved to colortbl.txt";
+            showStatus = true;
+        } else {
+            statusMessage = "Failed to save presets";
+            showStatus = true;
+        }
+    }
 }
 
 void RenderModernPresetManager(float availableWidth, std::string& statusMessage, bool& showStatus,
@@ -415,6 +519,20 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
     static char fullTableBuffer[65536] = "";
     static char singleLineBuffer[1024] = "";
     static bool showImportArea = false;
+    static bool presetsLoaded = false;
+    
+    // Load presets from file on first run
+    if (!presetsLoaded) {
+        if (LoadPresetsFromFile(presets)) {
+            presetsLoaded = true;
+            if (!presets.names.empty()) {
+                statusMessage = "Loaded " + std::to_string(presets.names.size()) + " presets from colortbl.txt";
+                showStatus = true;
+            }
+        } else {
+            presetsLoaded = true; // Don't keep trying if it fails
+        }
+    }
     
     // Modern header with main actions
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.12f, 0.12f, 0.18f, 0.9f));
@@ -505,6 +623,9 @@ void RenderModernPresetManager(float availableWidth, std::string& statusMessage,
                 if (strlen(fullTableBuffer) > 0) {
                     std::string tableData(fullTableBuffer);
                     if (ParseFullCOLORTBLTable(tableData, presets)) {
+                        // Auto-save after importing
+                        AutoSavePresets(presets);
+                        
                         statusMessage = "Loaded " + std::to_string(presets.names.size()) + " presets";
                         showStatus = true;
                         selectedPreset = -1;
@@ -1286,7 +1407,8 @@ void RenderClutGeneratorDialog() {
         if (statusMessage.find("Success") != std::string::npos || 
             statusMessage.find("complete") != std::string::npos || 
             statusMessage.find("Imported") != std::string::npos ||
-            statusMessage.find("Loaded") != std::string::npos) {
+            statusMessage.find("Loaded") != std::string::npos ||
+            statusMessage.find("Saved") != std::string::npos) {
             SuccessText(statusMessage.c_str());
         } else if (statusMessage.find("Failed") != std::string::npos) {
             ErrorText(statusMessage.c_str());
