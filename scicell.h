@@ -93,6 +93,9 @@ const uchar PIC11CELLRECSIZE = 0x24;
 #define VIEW32_LINES_POS 0x0500
 #define VIEW32_LINKS_POS 0x0600
 
+// Size of a section tag+size prefix written before each data section (tag:2 + size:4)
+#define SECTION_TAG_SIZE 6
+
 union CellHeader
 {
 	CelHeaderPic pic;

@@ -115,6 +115,7 @@ bool Palette::SetPalEntry(PalEntry value, unsigned short which)
 
 void Palette::noPalette()
 {
+    hasPalette = false;
     for (int i = 0; i < 256; i++)
     {
         palData[i].blue  = 255 - i;
@@ -198,8 +199,7 @@ bool Palette::loadPalette(FILE* cfilebuf, unsigned long /*palsize*/)
         return false;
 
     // Read color entries
-    if (!type)
-    {
+    if (!type)    {
         // New format: each entry has remap(1) + red(1) + green(1) + blue(1)
         for (int i = 0; i < nColors; i++)
         {
@@ -222,6 +222,7 @@ bool Palette::loadPalette(FILE* cfilebuf, unsigned long /*palsize*/)
         }
     }
 
+    hasPalette = true;
     return true;
 }
 

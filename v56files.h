@@ -350,7 +350,9 @@ public:
     Palette* palSCI;                    // Palette data
     ViewHeader Head;                    // View file header
     Loop* loops[MAX_LOOPS];            // Array of loop pointers
-    unsigned long totalImageSize;      // Total size of all image data
+    unsigned long totalImageSize;      // Total size of all image data (image + pack bytes)
+    unsigned long tagsTotalSize;       // Total size of image/tag bytes only (no pack), for split-view section header
+    bool hasLinkVersion;               // True if this file uses the extended ViewHeaderLinks format (version >= 0x84)
 
 private:
     // ============================================================================

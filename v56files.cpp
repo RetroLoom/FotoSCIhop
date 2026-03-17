@@ -15,7 +15,9 @@
 
 V56file::V56file() : 
     palSCI(nullptr),
-    totalImageSize(0)
+    totalImageSize(0),
+    tagsTotalSize(0),
+    hasLinkVersion(false)
 {
     initializeMembers();
 }
@@ -29,6 +31,8 @@ void V56file::initializeMembers()
 {
     palSCI = nullptr;
     totalImageSize = 0;
+    tagsTotalSize = 0;
+    hasLinkVersion = false;
     
     // Initialize Head structure
     memset(&Head, 0, sizeof(Head));
@@ -102,6 +106,10 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         return ID_WRONGCELLRECSIZE;
     }
     
+    // Determine if this is a version >= 0x84 file (has link table extension) from the patch ID
+    const bool hasLinkVersion = (patchID == V56PATCH84);
+    this->hasLinkVersion = hasLinkVersion;
+
     // Load base view header first (without version-specific link fields)
     fseek(cfilebuf, offset, SEEK_SET);
     if (fread(&Head, VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
@@ -110,7 +118,7 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
     }
     
     // Conditionally read the extra link fields if version >= 0x84 (matching game client)
-    if (Head.view32links.version >= 0x84) {
+    if (hasLinkVersion) {
         if (fread(reinterpret_cast<char*>(&Head) + VIEW32_HEADER_SIZE,
                   VIEW32_HEADER_LINK_SIZE - VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
             fclose(cfilebuf);
@@ -121,8 +129,8 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
     // Load palette if present
     if (Head.view32.paletteOffset) {
         // paletteOffset points directly to the game-client PalHeader (hdSize byte).
-        // The 6-byte section tag+size prefix sits immediately before it.
-        fseek(cfilebuf, offset + Head.view32.paletteOffset - 6, SEEK_SET);
+        // The SECTION_TAG_SIZE prefix sits immediately before it.
+        fseek(cfilebuf, offset + Head.view32.paletteOffset - SECTION_TAG_SIZE, SEEK_SET);
         
         unsigned short ttag = 0;
         if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
@@ -211,110 +219,94 @@ int V56file::loadCellOffset(void)
     
     // Initialize variables
     totalImageSize = 0;
-    unsigned long tagsTotalSize = 0;
+    tagsTotalSize  = 0;
     unsigned long linesTotalSize = 0;
     
-    // Calculate palette size if palette data exists
-    unsigned long paletteBlockSize = 0;
-    if (palSCI->palData) {
-        paletteBlockSize = palSCI->PaletteBlockSize(false);
-    }
+    // Calculate palette block size (tag+size prefix + PalHeader + CompPal + entries)
+    const unsigned long paletteBlockSize = palSCI->hasPalette
+        ? palSCI->PaletteBlockSize(false)
+        : 0;
     
-    // Calculate palette offset.
-    // The game client navigates to loop headers at:
-    //   (char*)viewPtr + viewPtr->viewHeaderSize + 2
-    // So cellpos_base (where loop headers start) = viewHeaderSize + 2.
-    // Cell headers follow immediately after all loop headers.
-    // paletteOffset must point directly to the game-client PalHeader (hdSize byte),
-    // which is 6 bytes after the PALETTE_POS tag+size prefix.
     // Layout from start of resource data (after patch header):
     //   viewHeaderSize bytes              (view header)
     //   +2 bytes                          (counter)
     //   loopHeaderSize * loopCount bytes  (loop headers)
-    //   celHeaderSize * celCount bytes    (cell headers)
-    //   6 bytes                           (PALETTE_POS tag + uint32 size)
-    //   <- paletteOffset points here (hdSize byte of PalHeader)
-    const unsigned long cellpos_base_calc = Head.view32.viewHeaderSize + 2;
-    const unsigned long paletteOffset = cellpos_base_calc +
-        Head.view32.loopHeaderSize * Head.view32.loopCount + 
-        Head.view32.celHeaderSize * Head.view32.celCount + 6;
-    
-    Head.view32.paletteOffset = palSCI->palData ? paletteOffset : 0;
+    //   celHeaderSize  * celCount  bytes  (cell headers)
+    //   [SECTION_TAG_SIZE + palette data] (only when hasPalette)
+    //   <- paletteOffset points here (hdSize byte of PalHeader, 6 bytes into the palette section)
+    //   image section ...
+    const unsigned long cellpos_base = Head.view32.viewHeaderSize + 2;
+    const unsigned long celHeadersEnd = cellpos_base
+        + Head.view32.loopHeaderSize * Head.view32.loopCount
+        + Head.view32.celHeaderSize  * Head.view32.celCount;
+
+    // paletteOffset points past the 6-byte tag+size prefix, directly at PalHeader
+    Head.view32.paletteOffset = palSCI->hasPalette
+        ? (celHeadersEnd + SECTION_TAG_SIZE)
+        : 0;
+
+    // Image data starts immediately after the full palette block (or after cell headers if no palette)
+    const unsigned long imagepos_base = palSCI->hasPalette
+        ? (celHeadersEnd + paletteBlockSize)
+        : celHeadersEnd;
     
     // First pass: calculate total sizes for all cells
     for (int l = 0; l < Head.view32.loopCount; l++) {
-        if (!loops[l]) continue; // Skip invalid loops
+        if (!loops[l]) continue;
         
         for (int i = 0; i < loops[l]->Head.numCels; i++) {
-            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) {
-                continue; // Skip invalid cells
-            }
+            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) continue;
             
             const CellImage* bImage = loops[l]->cells[i]->cellImage;
             totalImageSize += bImage->imageSize + bImage->packSize;
-            tagsTotalSize += bImage->imageSize;
+            tagsTotalSize  += bImage->imageSize;
             
             if (bImage->lines) {
-                linesTotalSize += loops[l]->cells[i]->Head.view.yDim * 8; // 4 * 2 = 8
+                linesTotalSize += loops[l]->cells[i]->Head.view.yDim * 8;
             }
         }
     }
     
-    // Calculate base offsets for various data sections.
-    // cellpos_base: where loop headers start (= viewHeaderSize + 2, matching game client).
-    // The palette block starts at (paletteOffset - 6) [tag+size prefix] and is
-    // paletteBlockSize bytes long.  Image data follows immediately after.
-    const unsigned long cellpos_base  = cellpos_base_calc;
-    const unsigned long imagepos_base = palSCI->palData
-        ? (paletteOffset - 6 + paletteBlockSize)
-        : (paletteOffset);
-    const unsigned long packpos_base = Head.view32.splitView ? (imagepos_base + tagsTotalSize) : 0;
-    const unsigned long linespos_base = imagepos_base + totalImageSize + 6;
-    const unsigned long linkspos_base = linespos_base + linesTotalSize + 6;
+    // Base offsets for each data section
+    const unsigned long packpos_base  = Head.view32.splitView ? (imagepos_base + tagsTotalSize) : 0;
+    const unsigned long linespos_base = imagepos_base + totalImageSize + SECTION_TAG_SIZE;
+    const unsigned long linkspos_base = linespos_base + linesTotalSize + SECTION_TAG_SIZE;
     
-    // Working offsets (will be updated as we process cells)
-    unsigned long cellpos = cellpos_base;
+    // Working offsets (advanced as we assign each cell)
+    unsigned long cellpos  = cellpos_base;
     unsigned long imagepos = imagepos_base;
-    unsigned long packpos = packpos_base;
+    unsigned long packpos  = packpos_base;
     unsigned long linespos = linespos_base;
     unsigned long linkspos = linkspos_base;
     
     // Second pass: assign offsets to all cells
     for (int l = 0; l < Head.view32.loopCount; l++) {
-        if (!loops[l]) continue; // Skip invalid loops
+        if (!loops[l]) continue;
         
         loops[l]->Head.celOffset = cellpos;
         cellpos += Head.view32.celHeaderSize * loops[l]->Head.numCels;
         
         for (int i = 0; i < loops[l]->Head.numCels; i++) {
-            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) {
-                continue; // Skip invalid cells
-            }
+            if (!loops[l]->cells[i] || !loops[l]->cells[i]->cellImage) continue;
             
-            CelHeaderView* bCell = reinterpret_cast<CelHeaderView*>(&loops[l]->cells[i]->Head);
+            CelHeaderView* bCell  = reinterpret_cast<CelHeaderView*>(&loops[l]->cells[i]->Head);
             const CellImage* bImage = loops[l]->cells[i]->cellImage;
             
-            // Calculate data sizes
-            bCell->dataByteCount = bImage->imageSize + (bCell->compressType ? bImage->packSize : 0);
+            bCell->dataByteCount    = bImage->imageSize + (bCell->compressType ? bImage->packSize : 0);
             bCell->controlByteCount = bCell->compressType ? bImage->imageSize : 0;
+            bCell->controlOffset    = imagepos;
+            bCell->colorOffset      = packpos;
             
-            // Set file offsets
-            bCell->controlOffset = imagepos;
-            bCell->colorOffset = packpos;
-            
-            // Update positions for next cell
-            imagepos += (bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount);
+            imagepos += bCell->compressType ? bCell->controlByteCount : bCell->dataByteCount;
             if (Head.view32.splitView) {
-                packpos += (bCell->dataByteCount - bCell->controlByteCount);
+                packpos += bCell->dataByteCount - bCell->controlByteCount;
             }
             
-            // Set row table offset for compressed cells
             if (bCell->compressType) {
                 bCell->rowTableOffset = bImage->lines ? linespos : 0;
-                linespos += bCell->yDim * 8; // 4 * 2 = 8 bytes per line
+                linespos += bCell->yDim * 8;
             }
             
-            // Set link table offset if links exist
             if (bCell->linkTableCount > 0) {
                 bCell->linkTableOffset = linkspos;
                 linkspos += sizeof(LinkPoint) * bCell->linkTableCount;
@@ -322,7 +314,7 @@ int V56file::loadCellOffset(void)
         }
     }
     
-    return 1; // Success
+    return 1;
 }
 
 int V56file::writeFileHeader(FILE* cfilebuf)
@@ -331,13 +323,13 @@ int V56file::writeFileHeader(FILE* cfilebuf)
         return 0;
     }
     
-    // Write patch ID
-    const unsigned long patchID = V56PATCH;
+    // Write the correct patch ID based on whether this file has link table support
+    const unsigned long patchID = hasLinkVersion ? V56PATCH84 : V56PATCH;
     if (fwrite(&patchID, 4, 1, cfilebuf) != 1) {
         return 0;
     }
     
-    // Write standard header values efficiently
+    // Write standard header values
     const unsigned short headerValues[] = {320, 200, 5, 6, 256, 0, 0, 0, 0, 0, 0};
     const size_t numValues = sizeof(headerValues) / sizeof(headerValues[0]);
     
@@ -355,8 +347,8 @@ int V56file::writeViewHeader(FILE* cfilebuf)
     }
     
     // Write only the fields that belong to the stored version.
-    // If version >= 0x84, write the full ViewHeaderLinks; otherwise write ViewHeader32 only.
-    const size_t headerSize = (Head.view32links.version >= 0x84) ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
+    // If hasLinkVersion, write the full ViewHeaderLinks; otherwise write ViewHeader32 only.
+    const size_t headerSize = hasLinkVersion ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
     
     if (fwrite(&Head, headerSize, 1, cfilebuf) != 1) {
         return 0;
@@ -430,20 +422,9 @@ int V56file::writeImages(FILE* cfilebuf)
     
     // For split-view format, image and pack are separate sections.
     // The image section tag size covers only the image (control/tag) data.
-    // For non-split, image and pack are interleaved and totalImageSize covers both.
-    unsigned long imageTagSize = totalImageSize;
-    if (Head.view32.splitView) {
-        // Recalculate: only the image (tag) bytes, not pack bytes
-        imageTagSize = 0;
-        for (int l = 0; l < Head.view32.loopCount; l++) {
-            if (!loops[l]) continue;
-            for (int i = 0; i < loops[l]->Head.numCels; i++) {
-                if (loops[l]->cells[i] && loops[l]->cells[i]->cellImage) {
-                    imageTagSize += loops[l]->cells[i]->cellImage->imageSize;
-                }
-            }
-        }
-    }
+    // For non-split, image and pack are interleaved so totalImageSize covers both.
+    // tagsTotalSize was computed in loadCellOffset — no need to re-iterate.
+    const unsigned long imageTagSize = Head.view32.splitView ? tagsTotalSize : totalImageSize;
     
     // Write image section header
     const unsigned short ttag = VIEW32_IMAGE_POS;
