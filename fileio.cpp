@@ -51,33 +51,47 @@ bool ValidateBitmapHeader(FILE* file, BITMAPFILEHEADER& fileHeader, BITMAPINFOHE
 BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 {
    OPENFILENAME ofn;
-   
-   bool proceed = false;
-
    ZeroMemory(&ofn, sizeof(OPENFILENAME));
 
-   ofn.lStructSize = sizeof(ofn);
-   ofn.hwndOwner = hwnd;
-   ofn.lpstrFilter = INTERFACE_OPENFILEFILTER;
-   ofn.lpstrFile = szFileName;
-   ofn.nMaxFile = MAX_PATH;
-   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
-   
-   proceed = (GetOpenFileName(&ofn) != 0);
+   bool proceed = false;
+
+   if (filename)
+   {
+       // Filename provided directly — skip the dialog
+       strcpy(szFileName, filename);
+       proceed = true;
+   }
+   else
+   {
+       // No filename — show the open file dialog
+       ofn.lStructSize = sizeof(ofn);
+       ofn.hwndOwner = hwnd;
+       ofn.lpstrFilter = INTERFACE_OPENFILEFILTER;
+       ofn.lpstrFile = szFileName;
+       ofn.nMaxFile = MAX_PATH;
+       ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+       proceed = (GetOpenFileName(&ofn) != 0);
+   }
 
    if(proceed)
    {
-	   if (filename)
-	   {
-		   strcpy(szFileName, filename);
-	   }
-
 	  strcpy(szNextFileName, szFileName);
       
-	  if (!_stricmp((ext==NULL?szFileName+ofn.nFileExtension:ext), "v56"))
+	  // Determine extension: use provided ext, dialog offset, or find it in the filename
+	  const char *resolvedExt = ext;
+	  if (!resolvedExt) {
+	      if (filename) {
+	          // Find last '.' in filename
+	          const char *dot = strrchr(szFileName, '.');
+	          resolvedExt = dot ? dot + 1 : szFileName;
+	      } else {
+	          resolvedExt = szFileName + ofn.nFileExtension;
+	      }
+	  }
+	  if (!_stricmp(resolvedExt, "v56"))
 		isPicture=false;
-	  else   //default is .p56 when extension in unknown
-		isPicture=true; 
+	  else
+		isPicture=true;
 
 	  int result;
 	  
@@ -315,9 +329,15 @@ BOOL DoNextFile(HWND hwnd)
 		if (szNextFileName[i] == '\\')
 			pos = i;
 
-	fname = (char *)(((unsigned long) szNextFileName) + pos+1);
-	strncpy(fpath, szNextFileName,pos+1);
+	fname = szNextFileName + pos + 1;
+	strncpy(fpath, szNextFileName, pos+1);
 	fpath[pos+1]=0;
+
+	// Copy fname into a local buffer — szNextFileName is overwritten by DoFileOpen
+	char fnameLocal[MAX_PATH];
+	strncpy(fnameLocal, fname, MAX_PATH - 1);
+	fnameLocal[MAX_PATH - 1] = 0;
+	fname = fnameLocal;
 
 	char searchstr[MAX_PATH];
 	sprintf(searchstr, "%s*.?56", fpath); 
@@ -344,7 +364,7 @@ BOOL DoNextFile(HWND hwnd)
 			{
 				if (passed)
 				{
-					extension = (char *)(((unsigned long) FindFileData.cFileName) + strlen(FindFileData.cFileName)-3);
+					extension = FindFileData.cFileName + strlen(FindFileData.cFileName) - 3;
 					strcat(fpath, FindFileData.cFileName);				
                     DoFileOpen(hwnd, fpath, extension);
 					FindClose(hFind);
