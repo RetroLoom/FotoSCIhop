@@ -102,11 +102,20 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         return ID_WRONGCELLRECSIZE;
     }
     
-    // Load main header
+    // Load base view header first (without version-specific link fields)
     fseek(cfilebuf, offset, SEEK_SET);
-    if (fread(&Head, VIEW32_HEADER_LINK_SIZE, 1, cfilebuf) != 1) {
+    if (fread(&Head, VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
         fclose(cfilebuf);
         return ID_CANTOPENFILE;
+    }
+    
+    // Conditionally read the extra link fields if version >= 0x84 (matching game client)
+    if (Head.view32links.version >= 0x84) {
+        if (fread(reinterpret_cast<char*>(&Head) + VIEW32_HEADER_SIZE,
+                  VIEW32_HEADER_LINK_SIZE - VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
+            fclose(cfilebuf);
+            return ID_CANTOPENFILE;
+        }
     }
     
     // Load palette if present
@@ -212,16 +221,21 @@ int V56file::loadCellOffset(void)
     }
     
     // Calculate palette offset.
+    // The game client navigates to loop headers at:
+    //   (char*)viewPtr + viewPtr->viewHeaderSize + 2
+    // So cellpos_base (where loop headers start) = viewHeaderSize + 2.
+    // Cell headers follow immediately after all loop headers.
     // paletteOffset must point directly to the game-client PalHeader (hdSize byte),
     // which is 6 bytes after the PALETTE_POS tag+size prefix.
     // Layout from start of resource data (after patch header):
-    //   viewHeaderSize bytes  (view header)
-    //   +2 bytes              (counter)
+    //   viewHeaderSize bytes              (view header)
+    //   +2 bytes                          (counter)
     //   loopHeaderSize * loopCount bytes  (loop headers)
     //   celHeaderSize * celCount bytes    (cell headers)
-    //   6 bytes               (PALETTE_POS tag + uint32 size)
+    //   6 bytes                           (PALETTE_POS tag + uint32 size)
     //   <- paletteOffset points here (hdSize byte of PalHeader)
-    const unsigned long paletteOffset = 2 + Head.view32.viewHeaderSize + 
+    const unsigned long cellpos_base_calc = Head.view32.viewHeaderSize + 2;
+    const unsigned long paletteOffset = cellpos_base_calc +
         Head.view32.loopHeaderSize * Head.view32.loopCount + 
         Head.view32.celHeaderSize * Head.view32.celCount + 6;
     
@@ -247,9 +261,10 @@ int V56file::loadCellOffset(void)
     }
     
     // Calculate base offsets for various data sections.
+    // cellpos_base: where loop headers start (= viewHeaderSize + 2, matching game client).
     // The palette block starts at (paletteOffset - 6) [tag+size prefix] and is
     // paletteBlockSize bytes long.  Image data follows immediately after.
-    const unsigned long cellpos_base  = VIEW32_HEADER_LINK_SIZE + LOOPHEADERSIZE * Head.view32.loopCount;
+    const unsigned long cellpos_base  = cellpos_base_calc;
     const unsigned long imagepos_base = palSCI->palData
         ? (paletteOffset - 6 + paletteBlockSize)
         : (paletteOffset);
@@ -339,10 +354,19 @@ int V56file::writeViewHeader(FILE* cfilebuf)
         return 0;
     }
     
-    const ViewHeaderLinks* bView = reinterpret_cast<const ViewHeaderLinks*>(&Head);
-    const size_t headerSize = bView->version ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
+    // Write only the fields that belong to the stored version.
+    // If version >= 0x84, write the full ViewHeaderLinks; otherwise write ViewHeader32 only.
+    const size_t headerSize = (Head.view32links.version >= 0x84) ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
     
     if (fwrite(&Head, headerSize, 1, cfilebuf) != 1) {
+        return 0;
+    }
+    
+    // Write the 2 counter bytes that follow the view header in the resource.
+    // The game client navigates to loop headers at viewPtr + viewHeaderSize + 2,
+    // so these 2 bytes must always be present.
+    const unsigned short counter = 0;
+    if (fwrite(&counter, 2, 1, cfilebuf) != 1) {
         return 0;
     }
     
@@ -404,13 +428,30 @@ int V56file::writeImages(FILE* cfilebuf)
         return 1; // Success - nothing to write
     }
     
+    // For split-view format, image and pack are separate sections.
+    // The image section tag size covers only the image (control/tag) data.
+    // For non-split, image and pack are interleaved and totalImageSize covers both.
+    unsigned long imageTagSize = totalImageSize;
+    if (Head.view32.splitView) {
+        // Recalculate: only the image (tag) bytes, not pack bytes
+        imageTagSize = 0;
+        for (int l = 0; l < Head.view32.loopCount; l++) {
+            if (!loops[l]) continue;
+            for (int i = 0; i < loops[l]->Head.numCels; i++) {
+                if (loops[l]->cells[i] && loops[l]->cells[i]->cellImage) {
+                    imageTagSize += loops[l]->cells[i]->cellImage->imageSize;
+                }
+            }
+        }
+    }
+    
     // Write image section header
     const unsigned short ttag = VIEW32_IMAGE_POS;
     if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
         return 0;
     }
     
-    if (fwrite(&totalImageSize, 4, 1, cfilebuf) != 1) {
+    if (fwrite(&imageTagSize, 4, 1, cfilebuf) != 1) {
         return 0;
     }
     

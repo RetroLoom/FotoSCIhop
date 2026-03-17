@@ -125,8 +125,7 @@ void Cell::makeSCI()
     const unsigned short height = static_cast<unsigned short>(-bmInfo->bmiHeader.biHeight);
     
     // Setup cell base
-    CelBase* bCell = new CelBase;
-    bCell = reinterpret_cast<CelBase*>(&Head);
+    CelBase* bCell = reinterpret_cast<CelBase*>(&Head);
     bCell->xDim = width;
     bCell->yDim = height;
     
@@ -295,8 +294,7 @@ long Cell::makeBitmap()
     bmInfo = nullptr;
     
     // Extract dimensions
-    CelBase* bCell = new CelBase;
-    bCell = reinterpret_cast<CelBase*>(&Head);
+    CelBase* bCell = reinterpret_cast<CelBase*>(&Head);
     
     const unsigned long width = bCell->xDim;
     const unsigned long height = bCell->yDim;

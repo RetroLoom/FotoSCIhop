@@ -176,9 +176,10 @@ int P56file32::LoadPic32(FILE* cfilebuf, unsigned char offset)
     if (bPic->celCount > 0) {
         fseek(cfilebuf, offset + bPic->picHeaderSize, SEEK_SET);
         
-        // Load all cell headers first
+        // Load all cell headers first, using celHeaderSize as stride (matching game client)
         for (int i = 0; i < bPic->celCount; i++) {
             cells[i] = new Cell;
+            fseek(cfilebuf, offset + bPic->picHeaderSize + i * bPic->celHeaderSize, SEEK_SET);
             if (fread(&(cells[i]->Head), CELHEADERPICSIZE, 1, cfilebuf) != 1) {
                 // Cleanup on error
                 for (int cleanup = 0; cleanup <= i; cleanup++) {
