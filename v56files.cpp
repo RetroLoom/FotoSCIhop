@@ -111,9 +111,11 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
     
     // Load palette if present
     if (Head.view32.paletteOffset) {
+        // paletteOffset points directly to the game-client PalHeader (hdSize byte).
+        // The 6-byte section tag+size prefix sits immediately before it.
         fseek(cfilebuf, offset + Head.view32.paletteOffset - 6, SEEK_SET);
         
-        int ttag = 0;
+        unsigned short ttag = 0;
         if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
             fclose(cfilebuf);
             return ID_WRONGPALETTELOC;
@@ -125,6 +127,7 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
             return ID_CANTOPENFILE;
         }
         
+        // File pointer is now at paletteOffset (hdSize byte) — pass directly to loadPalette
         palSCI = new Palette;
         palSCI->loadPalette(cfilebuf, tpalsize);
     } else {
@@ -203,12 +206,21 @@ int V56file::loadCellOffset(void)
     unsigned long linesTotalSize = 0;
     
     // Calculate palette size if palette data exists
-    unsigned long paletteSize = 0;
+    unsigned long paletteBlockSize = 0;
     if (palSCI->palData) {
-        paletteSize = COMPPALSIZE + (palSCI->Head.nColors * (palSCI->Head.type ? 3 : 4));
+        paletteBlockSize = palSCI->PaletteBlockSize(false);
     }
     
-    // Calculate palette offset
+    // Calculate palette offset.
+    // paletteOffset must point directly to the game-client PalHeader (hdSize byte),
+    // which is 6 bytes after the PALETTE_POS tag+size prefix.
+    // Layout from start of resource data (after patch header):
+    //   viewHeaderSize bytes  (view header)
+    //   +2 bytes              (counter)
+    //   loopHeaderSize * loopCount bytes  (loop headers)
+    //   celHeaderSize * celCount bytes    (cell headers)
+    //   6 bytes               (PALETTE_POS tag + uint32 size)
+    //   <- paletteOffset points here (hdSize byte of PalHeader)
     const unsigned long paletteOffset = 2 + Head.view32.viewHeaderSize + 
         Head.view32.loopHeaderSize * Head.view32.loopCount + 
         Head.view32.celHeaderSize * Head.view32.celCount + 6;
@@ -234,9 +246,13 @@ int V56file::loadCellOffset(void)
         }
     }
     
-    // Calculate base offsets for various data sections
-    const unsigned long cellpos_base = VIEW32_HEADER_LINK_SIZE + LOOPHEADERSIZE * Head.view32.loopCount;
-    const unsigned long imagepos_base = paletteOffset + paletteSize + (palSCI->palData ? 6 : 0);
+    // Calculate base offsets for various data sections.
+    // The palette block starts at (paletteOffset - 6) [tag+size prefix] and is
+    // paletteBlockSize bytes long.  Image data follows immediately after.
+    const unsigned long cellpos_base  = VIEW32_HEADER_LINK_SIZE + LOOPHEADERSIZE * Head.view32.loopCount;
+    const unsigned long imagepos_base = palSCI->palData
+        ? (paletteOffset - 6 + paletteBlockSize)
+        : (paletteOffset);
     const unsigned long packpos_base = Head.view32.splitView ? (imagepos_base + tagsTotalSize) : 0;
     const unsigned long linespos_base = imagepos_base + totalImageSize + 6;
     const unsigned long linkspos_base = linespos_base + linesTotalSize + 6;

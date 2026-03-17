@@ -79,6 +79,43 @@ struct CompPal : public PalHeader
 #define COMPPALSIZE (sizeof(CompPal))
 
 // ============================================================================
+// SIZE CONSTANTS (continued)
+// ============================================================================
+
+// The game client's HunkPalette::PalHeader does NOT include palID.
+// It is: { hdSize(1), palName[9], palCount(1), reserved(2) } = 13 bytes.
+// PalAddr() then skips sizeof(PalHeader) + 2*count bytes to reach CompPal.
+// paletteOffset in the resource header must point directly to this PalHeader.
+//
+// FotoSCIhop's CompPal extends PalHeader which includes palID(2) at the front.
+// When writing, we skip palID and write from hdSize onward so the layout matches
+// exactly what the game client expects at paletteOffset.
+//
+// On-disk palette block layout (at paletteOffset):
+//   [0]     hdSize      (1 byte)   -- start of game-client PalHeader
+//   [1..9]  palName     (9 bytes)
+//   [10]    palCount    (1 byte)
+//   [11..12] reserved   (2 bytes)
+//   [13]    title[10]   (10 bytes) -- start of CompPal (PalAddr() result)
+//   [23]    startOffset (1 byte)
+//   [24]    nCycles     (1 byte)
+//   [25..26] fe         (2 bytes)
+//   [27..28] nColors    (2 bytes)
+//   [29]    def         (1 byte)
+//   [30]    type        (1 byte)
+//   [31..34] valid      (4 bytes)
+//   [35..]  color entries
+//
+// Total PalHeader size (game client) = 13 bytes
+// Total CompPal size (game client)   = 22 bytes
+// PAL_HEADER_GAME_SIZE = 13 (sizeof game-client PalHeader, without palID)
+// PAL_COMPPAL_GAME_SIZE = 22 (sizeof game-client CompPal)
+// PAL_BLOCK_HEADER_SIZE = PAL_HEADER_GAME_SIZE + PAL_COMPPAL_GAME_SIZE = 35
+
+#define PAL_HEADER_GAME_SIZE  13   // game-client PalHeader: hdSize+palName+palCount+reserved
+#define PAL_COMPPAL_GAME_SIZE 22   // game-client CompPal: title+startOffset+nCycles+fe+nColors+def+type+valid
+
+// ============================================================================
 // FORMAT CONSTANTS
 // ============================================================================
 
@@ -152,9 +189,16 @@ public:
     /**
      * @brief Write palette to file
      * @param cfb File buffer to write to
-     * @param writesciheader Whether to write SCI header
+     * @param writesciheader Whether to write SCI header (standalone .pal patch)
      */
     void WritePalette(FILE* cfb, bool writesciheader);
+
+    /**
+     * @brief Return total bytes written by WritePalette (tag+size prefix + data)
+     * @param writesciheader Must match the value passed to WritePalette
+     * @return Total byte count
+     */
+    unsigned long PaletteBlockSize(bool writesciheader) const;
     
     // ============================================================================
     // PUBLIC MEMBER DATA

@@ -153,10 +153,12 @@ int P56file32::LoadPic32(FILE* cfilebuf, unsigned char offset)
     
     const PicHeader32* bPic = reinterpret_cast<const PicHeader32*>(&Head);
     
-    // Load palette
+    // Load palette.
+    // paletteOffset points directly to the game-client PalHeader (hdSize byte).
+    // The 6-byte section tag+size prefix sits immediately before it.
     fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
     
-    int ttag = 0;
+    unsigned short ttag = 0;
     if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
         return ID_WRONGPALETTELOC;
     }
@@ -166,6 +168,7 @@ int P56file32::LoadPic32(FILE* cfilebuf, unsigned char offset)
         return ID_CANTOPENFILE;
     }
     
+    // File pointer is now at paletteOffset (hdSize byte) — pass directly to loadPalette
     palSCI = new Palette;
     palSCI->loadPalette(cfilebuf, tpalsize);
     
@@ -234,10 +237,12 @@ int P56file32::LoadPic11(FILE* cfilebuf, unsigned char offset)
         return ID_CANTOPENFILE;
     }
     
-    // Load palette
+    // Load palette.
+    // paletteOffset points directly to the game-client PalHeader (hdSize byte).
+    // The 6-byte section tag+size prefix sits immediately before it.
     fseek(cfilebuf, offset - 6 + bPic->paletteOffset, SEEK_SET);
     
-    int ttag = 0;
+    unsigned short ttag = 0;
     if (fread(&ttag, 2, 1, cfilebuf) != 1 || ttag != PALETTE_POS) {
         delete[] vector;
         return ID_WRONGPALETTELOC;
@@ -249,6 +254,7 @@ int P56file32::LoadPic11(FILE* cfilebuf, unsigned char offset)
         return ID_CANTOPENFILE;
     }
     
+    // File pointer is now at paletteOffset (hdSize byte) — pass directly to loadPalette
     palSCI = new Palette;
     palSCI->loadPalette(cfilebuf, tpalsize);
     
@@ -304,10 +310,9 @@ int P56file32::loadCellOffset()
         return 0; // Error: no palette loaded
     }
     
-    // Calculate palette size
-    const unsigned long paletteSize = COMPPALSIZE + 
-        (palSCI->Head.nColors * (palSCI->Head.type ? 3 : 4));
-    
+    // Calculate the full on-disk palette block size (tag+size prefix + PalHeader + CompPal + entries)
+    const unsigned long palFullBlockSize = palSCI->PaletteBlockSize(false);
+
     unsigned long imagepos = 0;
     unsigned long tagsTotalSize = 0;
     int cellCount = 0;
@@ -328,9 +333,10 @@ int P56file32::loadCellOffset()
                 }
             }
             
-            // Set format-specific offsets
+            // paletteOffset points to PalHeader (hdSize byte), 6 bytes after the tag+size prefix.
+            // Layout: picHeaderSize bytes + celHeaders + 6-byte prefix + PalHeader...
             bPic32->paletteOffset = bPic32->picHeaderSize + CELHEADERPICSIZE * cellCount + 6;
-            imagepos = bPic32->paletteOffset + paletteSize + 6;
+            imagepos = bPic32->paletteOffset - 6 + palFullBlockSize;
             break;
         }
         
@@ -355,12 +361,14 @@ int P56file32::loadCellOffset()
                 bPic11->visualHeaderOffset += 4;
             }
             
+            // For PIC_11: images come before palette
+            // paletteOffset = visualHeaderOffset + cellHeaders + imageBlock + 6-byte prefix
             bPic11->paletteOffset = bPic11->visualHeaderOffset + CELHEADER11SIZE * cellCount + 6;
             if (imageAllSize > 0) {
                 bPic11->paletteOffset += imageAllSize + 6;
             }
             
-            bPic11->vectorOffset = bPic11->paletteOffset + paletteSize + 6;
+            bPic11->vectorOffset = bPic11->paletteOffset - 6 + palFullBlockSize;
             imagepos = bPic11->visualHeaderOffset + cellCount * PIC11CELLRECSIZE + 6;
             break;
         }
