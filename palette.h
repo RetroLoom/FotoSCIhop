@@ -207,6 +207,7 @@ public:
     PalEntry palData[256];          // Palette data array
     CompPal Head;                   // Palette header
     bool hasPalette = false;        // True when a real palette has been loaded
+    unsigned short palIndexTable[256] = {}; // Palette index table (2*palCount bytes), preserved from file
 
 private:
     // ============================================================================

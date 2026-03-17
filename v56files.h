@@ -353,6 +353,7 @@ public:
     unsigned long totalImageSize;      // Total size of all image data (image + pack bytes)
     unsigned long tagsTotalSize;       // Total size of image/tag bytes only (no pack), for split-view section header
     bool hasLinkVersion;               // True if this file uses the extended ViewHeaderLinks format (version >= 0x84)
+    unsigned long loadedPatchID;       // Patch ID as read from file, preserved for round-trip saving
 
 private:
     // ============================================================================

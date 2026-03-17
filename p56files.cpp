@@ -337,9 +337,10 @@ int P56file32::loadCellOffset()
             }
             
             // paletteOffset points to PalHeader (hdSize byte), SECTION_TAG_SIZE bytes after the tag+size prefix.
-            // Layout: picHeaderSize bytes + celHeaders + SECTION_TAG_SIZE prefix + PalHeader...
-            bPic32->paletteOffset = bPic32->picHeaderSize + CELHEADERPICSIZE * cellCount + SECTION_TAG_SIZE;
-            imagepos = bPic32->paletteOffset - SECTION_TAG_SIZE + palFullBlockSize;
+            // Use celHeaderSize (on-disk stride) not CELHEADERPICSIZE (struct size).
+            bPic32->paletteOffset = bPic32->picHeaderSize + bPic32->celHeaderSize * cellCount + SECTION_TAG_SIZE;
+            // imagepos must point PAST the image section tag+size to the actual image bytes.
+            imagepos = bPic32->paletteOffset - SECTION_TAG_SIZE + palFullBlockSize + SECTION_TAG_SIZE;
             break;
         }
         
@@ -508,15 +509,38 @@ int P56file32::writeCellHeaders(FILE* cfilebuf, int cellCount)
         return 1; // Success - nothing to write
     }
     
-    const size_t cellHeaderSize = (format == _PIC_11) ? CELHEADER11SIZE : CELHEADERPICSIZE;
+    // Determine the on-disk cell header stride from the stored header.
+    // For PIC_32 this is bPic->celHeaderSize (0x2a = 42); for PIC_11 it's CELHEADER11SIZE.
+    int celHdrSize = 0;
+    int structSize = 0;
+    if (format == _PIC_32) {
+        const PicHeader32* bPic = reinterpret_cast<const PicHeader32*>(&Head);
+        celHdrSize = bPic->celHeaderSize;
+        structSize = CELHEADERPICSIZE;
+    } else {
+        celHdrSize = CELHEADER11SIZE;
+        structSize = CELHEADER11SIZE;
+    }
+    const int padBytes = celHdrSize - structSize;
     
     for (int i = 0; i < cellCount; i++) {
         if (!cells[i]) {
-            return 0; // Invalid cell
+            return 0;
         }
         
-        if (fwrite(&cells[i]->Head, cellHeaderSize, 1, cfilebuf) != 1) {
+        if (fwrite(&cells[i]->Head, structSize, 1, cfilebuf) != 1) {
             return 0;
+        }
+        
+        // Pad to celHeaderSize if needed
+        if (padBytes > 0) {
+            const unsigned long zero = 0;
+            int remaining = padBytes;
+            while (remaining > 0) {
+                const int chunk = (remaining > 4) ? 4 : remaining;
+                if (fwrite(&zero, chunk, 1, cfilebuf) != 1) return 0;
+                remaining -= chunk;
+            }
         }
     }
     
@@ -550,29 +574,60 @@ int P56file32::writePic32Images(FILE* cfilebuf, int cellCount)
     
     // Write images if cells exist
     if (bPic32->celCount > 0 && cellCount > 0) {
+        // For split-view, image section covers only control (tag) bytes.
+        // For non-split, image and pack are interleaved so imageAllSize covers both.
+        // tagsTotalSize was computed in loadCellOffset.
+        unsigned long imageTagSize = bPic32->splitFlag ? (imageAllSize - /* packSize */ 0) : imageAllSize;
+        // Recalculate: tagsTotalSize is image-only, (imageAllSize - tagsTotalSize) is pack-only
+        // We need tagsTotalSize here but it's a local in loadCellOffset. Use imageAllSize for non-split.
+        // For split: write image section with only image bytes, then pack section separately.
+        // Since we don't store tagsTotalSize in P56file32, compute it now.
+        unsigned long imageSectionSize = 0;
+        unsigned long packSectionSize  = 0;
+        for (int i = 0; i < cellCount; i++) {
+            if (cells[i] && cells[i]->cellImage) {
+                const CelBase* bCell = reinterpret_cast<const CelBase*>(&cells[i]->Head);
+                if (bCell->compressType) {
+                    imageSectionSize += cells[i]->cellImage->imageSize;
+                    packSectionSize  += cells[i]->cellImage->packSize;
+                } else {
+                    imageSectionSize += cells[i]->cellImage->imageSize;
+                }
+            }
+        }
+        
         // Write image section header
         const unsigned short ttag = PIC32_IMAGE_POS;
         if (fwrite(&ttag, 2, 1, cfilebuf) != 1) {
             return 0;
         }
-        if (fwrite(&imageAllSize, 4, 1, cfilebuf) != 1) {
+        const unsigned long sectionSize = bPic32->splitFlag ? imageSectionSize : imageAllSize;
+        if (fwrite(&sectionSize, 4, 1, cfilebuf) != 1) {
             return 0;
         }
         
-        // Write all cell images
+        // Write all cell images (control/tag bytes)
         for (int i = 0; i < cellCount; i++) {
             if (!cells[i]) {
-                return 0; // Invalid cell
+                return 0;
             }
             cells[i]->WriteImage(cfilebuf);
         }
         
-        // Write all pack data
-        for (int i = 0; i < cellCount; i++) {
-            if (!cells[i]) {
-                return 0; // Invalid cell
+        // Write all pack data (color bytes) — for split these go after all image bytes
+        if (bPic32->splitFlag) {
+            for (int i = 0; i < cellCount; i++) {
+                if (!cells[i]) return 0;
+                cells[i]->WritePack(cfilebuf);
             }
-            cells[i]->WritePack(cfilebuf);
+        } else {
+            // Non-split: pack data is interleaved per-cell (image then pack per cell)
+            // Actually for non-split, image and pack are written together per cell
+            // WritePack writes nothing for uncompressed cells, so this is safe
+            for (int i = 0; i < cellCount; i++) {
+                if (!cells[i]) return 0;
+                cells[i]->WritePack(cfilebuf);
+            }
         }
     }
     
@@ -590,7 +645,7 @@ int P56file32::writePic32Images(FILE* cfilebuf, int cellCount)
         
         for (int i = 0; i < cellCount; i++) {
             if (!cells[i]) {
-                return 0; // Invalid cell
+                return 0;
             }
             cells[i]->WriteScanLines(cfilebuf);
         }

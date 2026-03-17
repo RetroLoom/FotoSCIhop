@@ -56,6 +56,7 @@ Palette::~Palette(void)
 void Palette::initializeMembers()
 {
     memset(&Head, 0, sizeof(Head));
+    memset(palIndexTable, 0, sizeof(palIndexTable));
     initializeDefaultPalette();
 }
 
@@ -157,9 +158,16 @@ bool Palette::loadPalette(FILE* cfilebuf, unsigned long /*palsize*/)
     if (fread(&palCount, 1,  1, cfilebuf) != 1) return false;
     if (fread(&reserved, 2,  1, cfilebuf) != 1) return false;
 
-    // Skip 2*palCount bytes (palette index table, always 1 entry = 2 bytes)
-    if (palCount > 0)
-        fseek(cfilebuf, 2 * palCount, SEEK_CUR);
+    // Read and store 2*palCount bytes (palette index table)
+    if (palCount > 0) {
+        const int tableEntries = (palCount <= 256) ? palCount : 256;
+        for (int i = 0; i < tableEntries; i++) {
+            if (fread(&palIndexTable[i], 2, 1, cfilebuf) != 1) return false;
+        }
+        // Skip any excess entries beyond what we can store
+        if (palCount > 256)
+            fseek(cfilebuf, 2 * (palCount - 256), SEEK_CUR);
+    }
 
     // Read CompPal (22 bytes)
     char           title[10];
@@ -249,9 +257,9 @@ void Palette::WritePalette(FILE* cfb, bool writesciheader)
     if (!cfb)
         return;
 
-    // Size of the palette data block (PalHeader + CompPal + entries), no tag/size prefix
+    // Size of the palette data block (PalHeader + index table + CompPal + entries), no tag/size prefix
     const unsigned long entryBytes = Head.nColors * (!Head.type ? PalEntrySIZE : PalEntryOldSIZE);
-    const unsigned long blockSize  = PAL_HEADER_GAME_SIZE + PAL_COMPPAL_GAME_SIZE + entryBytes;
+    const unsigned long blockSize  = PAL_HEADER_GAME_SIZE + (2 * Head.palCount) + PAL_COMPPAL_GAME_SIZE + entryBytes;
 
     if (writesciheader)
     {
@@ -275,12 +283,11 @@ void Palette::WritePalette(FILE* cfb, bool writesciheader)
     fwrite(&palCount,      1,  1, cfb);
     fwrite(&Head.reserved, 2,  1, cfb);
 
-    // Write 2*palCount palette index bytes (one entry = 2 bytes, value = 0)
+    // Write 2*palCount palette index bytes (preserved from loaded file, or zeros for new palettes)
     if (palCount > 0)
     {
-        unsigned short idx = 0;
         for (int i = 0; i < palCount; i++)
-            fwrite(&idx, 2, 1, cfb);
+            fwrite(&palIndexTable[i], 2, 1, cfb);
     }
 
     // Write CompPal (22 bytes)

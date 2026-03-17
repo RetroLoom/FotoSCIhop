@@ -33,6 +33,7 @@ void V56file::initializeMembers()
     totalImageSize = 0;
     tagsTotalSize = 0;
     hasLinkVersion = false;
+    loadedPatchID = V56PATCH;
     
     // Initialize Head structure
     memset(&Head, 0, sizeof(Head));
@@ -85,7 +86,8 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         return ID_WRONGHEADER;
     }
     
-    // Validate loop record size
+    // Store the patchID as loaded so we can write it back exactly.
+    this->loadedPatchID = patchID;
     fseek(cfilebuf, offset + 12, SEEK_SET);
     unsigned char tlooprecsize = 0;
     if (fread(&tlooprecsize, 1, 1, cfilebuf) != 1 || tlooprecsize != 0x10) {
@@ -106,25 +108,27 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         return ID_WRONGCELLRECSIZE;
     }
     
-    // Determine if this is a version >= 0x84 file (has link table extension) from the patch ID
-    const bool hasLinkVersion = (patchID == V56PATCH84);
-    this->hasLinkVersion = hasLinkVersion;
-
-    // Load base view header first (without version-specific link fields)
+    // Load base view header (VIEW32_HEADER_SIZE = 18 bytes)
     fseek(cfilebuf, offset, SEEK_SET);
     if (fread(&Head, VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
         fclose(cfilebuf);
         return ID_CANTOPENFILE;
     }
     
-    // Conditionally read the extra link fields if version >= 0x84 (matching game client)
-    if (hasLinkVersion) {
-        if (fread(reinterpret_cast<char*>(&Head) + VIEW32_HEADER_SIZE,
-                  VIEW32_HEADER_LINK_SIZE - VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
-            fclose(cfilebuf);
-            return ID_CANTOPENFILE;
-        }
+    // Always read the 2 version+futureExpansion bytes that follow the view header.
+    // The game client's ViewHeader struct includes these fields (making it 20 bytes),
+    // but viewHeaderSize=18 means they sit outside the counted header. The game client
+    // code uses "viewHeaderSize + 2" to skip past them to reach loop headers.
+    if (fread(reinterpret_cast<char*>(&Head) + VIEW32_HEADER_SIZE,
+              VIEW32_HEADER_LINK_SIZE - VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
+        fclose(cfilebuf);
+        return ID_CANTOPENFILE;
     }
+    
+    // Determine link version from the version byte (not from patchID).
+    // A file with version >= 0x84 uses the extended CelHeaderView with link table fields.
+    const bool hasLinkVersion = (Head.view32links.version >= 0x84);
+    this->hasLinkVersion = hasLinkVersion;
     
     // Load palette if present
     if (Head.view32.paletteOffset) {
@@ -174,7 +178,16 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         for (unsigned short i = 0; i < loops[z]->Head.numCels; i++) {
             loops[z]->cells[i] = new Cell;
             
-            if (fread(&(loops[z]->cells[i]->Head.view), CELHEADERVIEWSIZE, 1, cfilebuf) != 1) {
+            // Read min(celHeaderSize, struct size) bytes, then skip any remainder.
+            // For non-link files celHeaderSize=0x24=36 < CELHEADERVIEWSIZE=52, so we
+            // read only 36 bytes (CelBase fields) and leave link fields zeroed.
+            // For link files celHeaderSize=0x34=52 == CELHEADERVIEWSIZE, read all 52.
+            const int readBytes = (Head.view32.celHeaderSize < CELHEADERVIEWSIZE)
+                ? Head.view32.celHeaderSize : CELHEADERVIEWSIZE;
+            const int skipBytes = Head.view32.celHeaderSize - readBytes;
+            
+            memset(&loops[z]->cells[i]->Head.view, 0, CELHEADERVIEWSIZE);
+            if (fread(&(loops[z]->cells[i]->Head.view), readBytes, 1, cfilebuf) != 1) {
                 // Cleanup on error
                 for (int cleanup_z = 0; cleanup_z <= z; cleanup_z++) {
                     for (unsigned short cleanup_i = 0; cleanup_i < ((cleanup_z == z) ? i : loops[cleanup_z]->Head.numCels); cleanup_i++) {
@@ -187,8 +200,8 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
                 return ID_CANTOPENFILE;
             }
             
-            // Skip remaining header data
-            fseek(cfilebuf, Head.view32.celHeaderSize - CELHEADERVIEWSIZE, SEEK_CUR);
+            if (skipBytes > 0)
+                fseek(cfilebuf, skipBytes, SEEK_CUR);
         }
         
         // Load image data and links for all cells in this loop
@@ -205,7 +218,8 @@ int V56file::LoadFile(HWND hwnd, LPSTR pszFileName)
         }
     }
     
-    Head.view32.celHeaderSize = CELHEADERVIEWSIZE;
+    // celHeaderSize is already correct from the loaded header — do not overwrite it.
+    // The on-disk value (0x24 or 0x34) is used by loadCellOffset and writeCellHeaders.
     fclose(cfilebuf);
     
     return ID_NOERROR;
@@ -216,6 +230,11 @@ int V56file::loadCellOffset(void)
     if (!palSCI) {
         return 0; // Error: no palette loaded
     }
+    
+    // Do NOT overwrite viewHeaderSize — preserve the value loaded from the file.
+    // The on-disk viewHeaderSize is always 18 (VIEW32_HEADER_SIZE) regardless of version,
+    // because the 2 version+futureExpansion bytes are always written separately after it.
+    // (The game client uses "viewHeaderSize + 2" to skip past them to reach loop headers.)
     
     // Initialize variables
     totalImageSize = 0;
@@ -245,10 +264,12 @@ int V56file::loadCellOffset(void)
         ? (celHeadersEnd + SECTION_TAG_SIZE)
         : 0;
 
-    // Image data starts immediately after the full palette block (or after cell headers if no palette)
-    const unsigned long imagepos_base = palSCI->hasPalette
+    // Image data starts immediately after the full palette block (or after cell headers if no palette),
+    // plus the 6-byte image section tag+size prefix. controlOffset must point PAST the tag+size
+    // to the actual image bytes, matching how the game client and loadImage() use it.
+    const unsigned long imagepos_base = (palSCI->hasPalette
         ? (celHeadersEnd + paletteBlockSize)
-        : celHeadersEnd;
+        : celHeadersEnd) + SECTION_TAG_SIZE;
     
     // First pass: calculate total sizes for all cells
     for (int l = 0; l < Head.view32.loopCount; l++) {
@@ -273,7 +294,8 @@ int V56file::loadCellOffset(void)
     const unsigned long linkspos_base = linespos_base + linesTotalSize + SECTION_TAG_SIZE;
     
     // Working offsets (advanced as we assign each cell)
-    unsigned long cellpos  = cellpos_base;
+    // cellpos starts at the first cell header, which is after viewHeader+counter+loopHeaders
+    unsigned long cellpos  = cellpos_base + Head.view32.loopHeaderSize * Head.view32.loopCount;
     unsigned long imagepos = imagepos_base;
     unsigned long packpos  = packpos_base;
     unsigned long linespos = linespos_base;
@@ -323,17 +345,20 @@ int V56file::writeFileHeader(FILE* cfilebuf)
         return 0;
     }
     
-    // Write the correct patch ID based on whether this file has link table support
-    const unsigned long patchID = hasLinkVersion ? V56PATCH84 : V56PATCH;
-    if (fwrite(&patchID, 4, 1, cfilebuf) != 1) {
+    // Write 3-byte patch ID — preserve exactly what was loaded from the original file.
+    if (fwrite(&loadedPatchID, 3, 1, cfilebuf) != 1) {
         return 0;
     }
     
-    // Write standard header values
-    const unsigned short headerValues[] = {320, 200, 5, 6, 256, 0, 0, 0, 0, 0, 0};
-    const size_t numValues = sizeof(headerValues) / sizeof(headerValues[0]);
+    // Write pascal string length byte (0 = empty string).
+    const unsigned char pascalLen = 0;
+    if (fwrite(&pascalLen, 1, 1, cfilebuf) != 1) {
+        return 0;
+    }
     
-    if (fwrite(headerValues, sizeof(unsigned short), numValues, cfilebuf) != numValues) {
+    // Write 11 zero shorts (22 bytes) — original game files have zeros here.
+    const unsigned char zeros[22] = {};
+    if (fwrite(zeros, 22, 1, cfilebuf) != 1) {
         return 0;
     }
     
@@ -346,19 +371,17 @@ int V56file::writeViewHeader(FILE* cfilebuf)
         return 0;
     }
     
-    // Write only the fields that belong to the stored version.
-    // If hasLinkVersion, write the full ViewHeaderLinks; otherwise write ViewHeader32 only.
-    const size_t headerSize = hasLinkVersion ? VIEW32_HEADER_LINK_SIZE : VIEW32_HEADER_SIZE;
-    
-    if (fwrite(&Head, headerSize, 1, cfilebuf) != 1) {
+    // Always write VIEW32_HEADER_SIZE (18) bytes for the base view header.
+    // viewHeaderSize on disk is always 18 — the version bytes follow separately.
+    if (fwrite(&Head, VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
         return 0;
     }
     
-    // Write the 2 counter bytes that follow the view header in the resource.
-    // The game client navigates to loop headers at viewPtr + viewHeaderSize + 2,
-    // so these 2 bytes must always be present.
-    const unsigned short counter = 0;
-    if (fwrite(&counter, 2, 1, cfilebuf) != 1) {
+    // Always write the 2 version+futureExpansion bytes that follow the view header.
+    // These are always present on disk (game client uses "viewHeaderSize + 2" to skip them).
+    // For link files these carry version=0x84; for non-link files they carry the original value.
+    if (fwrite(reinterpret_cast<const char*>(&Head) + VIEW32_HEADER_SIZE,
+               VIEW32_HEADER_LINK_SIZE - VIEW32_HEADER_SIZE, 1, cfilebuf) != 1) {
         return 0;
     }
     
@@ -390,18 +413,37 @@ int V56file::writeCellHeaders(FILE* cfilebuf)
         return 0;
     }
     
+    // celHeaderSize is the on-disk stride for each cell header.
+    // Write min(CELHEADERVIEWSIZE, celHdrSize) bytes from the struct, then zero-pad
+    // to celHdrSize. For non-link files celHdrSize (0x24=36) < CELHEADERVIEWSIZE (52),
+    // so we must NOT write the full struct — only the first celHdrSize bytes.
+    const int celHdrSize  = Head.view32.celHeaderSize;
+    const int writeBytes  = (CELHEADERVIEWSIZE < celHdrSize) ? CELHEADERVIEWSIZE : celHdrSize;
+    const int padBytes    = celHdrSize - writeBytes;
+    
     for (int j = 0; j < Head.view32.loopCount; j++) {
         if (!loops[j]) {
-            return 0; // Invalid loop
+            return 0;
         }
         
         for (int i = 0; i < loops[j]->Head.numCels; i++) {
             if (!loops[j]->cells[i]) {
-                return 0; // Invalid cell
+                return 0;
             }
             
-            if (fwrite(&loops[j]->cells[i]->Head.view, CELHEADERVIEWSIZE, 1, cfilebuf) != 1) {
+            if (fwrite(&loops[j]->cells[i]->Head.view, writeBytes, 1, cfilebuf) != 1) {
                 return 0;
+            }
+            
+            // Pad to celHeaderSize if needed
+            if (padBytes > 0) {
+                const unsigned long zero = 0;
+                int remaining = padBytes;
+                while (remaining > 0) {
+                    const int chunk = (remaining > 4) ? 4 : remaining;
+                    if (fwrite(&zero, chunk, 1, cfilebuf) != 1) return 0;
+                    remaining -= chunk;
+                }
             }
         }
     }
@@ -420,11 +462,11 @@ int V56file::writeImages(FILE* cfilebuf)
         return 1; // Success - nothing to write
     }
     
-    // For split-view format, image and pack are separate sections.
-    // The image section tag size covers only the image (control/tag) data.
-    // For non-split, image and pack are interleaved so totalImageSize covers both.
-    // tagsTotalSize was computed in loadCellOffset — no need to re-iterate.
-    const unsigned long imageTagSize = Head.view32.splitView ? tagsTotalSize : totalImageSize;
+    // The image section (tag 0x0400) covers all image data including pack bytes.
+    // For split-view, image bytes come first then pack bytes — both within this section.
+    // For non-split, image and pack are interleaved per cell — also within this section.
+    // Either way, the section size is totalImageSize (image + pack for all cells).
+    const unsigned long imageTagSize = totalImageSize;
     
     // Write image section header
     const unsigned short ttag = VIEW32_IMAGE_POS;
