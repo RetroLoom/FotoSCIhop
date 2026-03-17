@@ -214,7 +214,6 @@ public:
 
 	LinkPoint linkPoints[10];
 	void loadImage( FILE *cfilebuf, unsigned char offset );
-	void loadImageOffset (void);
 				
 	CellHeader Head;
 	CellImage *cellImage;

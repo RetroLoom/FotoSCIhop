@@ -16,13 +16,12 @@
 
 // Constructor and destructor implementations for scicell.cpp
 
-Cell::Cell(void) : cellImage(new CellImage), 
-                   bmInfo(new BITMAPINFO), 
-                   bmImage(new unsigned char),
+Cell::Cell(void) : cellImage(nullptr), 
+                   bmInfo(nullptr), 
+                   bmImage(nullptr),
                    changed(false), 
-                   palette(0)
+                   palette(nullptr)
 {
-    initializeMembers();
 }
 
 Cell::~Cell(void) 
@@ -32,53 +31,25 @@ Cell::~Cell(void)
 
 void Cell::initializeMembers()
 {
-    cellImage->image = 0;
-    cellImage->imageSize = 0;
-    cellImage->pack = 0;
-    cellImage->packSize = 0;
-    cellImage->lines = 0;
-    cellImage->lineSize = 0;
+    // No-op: constructor now initializes all members to nullptr directly.
 }
 
 void Cell::cleanup()
 {
-    // Check if cellImage exists before accessing its members
     if (cellImage) {
-        // Store bmImage comparison before we delete cellImage->image
-        unsigned char* originalImage = cellImage->image;
-        
-        // Safely delete cellImage components
-        if (cellImage->image) {
-            delete[] cellImage->image;
-            cellImage->image = nullptr;
-        }
-        
-        if (cellImage->pack) {
-            delete[] cellImage->pack;
-            cellImage->pack = nullptr;
-        }
-        
-        if (cellImage->lines) {
-            delete[] cellImage->lines;
-            cellImage->lines = nullptr;
-        }
-        
-        // Now safely handle bmImage - check if it's different from the original image
-        if (bmImage && (bmImage != originalImage)) {
-            delete[] bmImage;
-            bmImage = nullptr;
-        }
-        
-        // Delete the cellImage structure itself
+        delete[] cellImage->image;
+        delete[] cellImage->pack;
+        delete[] cellImage->lines;
         delete cellImage;
         cellImage = nullptr;
     }
     
-    // Clean up bmInfo
-    if (bmInfo) {
-        delete bmInfo;
-        bmInfo = nullptr;
-    }
+    // bmImage is always an independent allocation (never aliased to cellImage->image)
+    delete[] bmImage;
+    bmImage = nullptr;
+    
+    delete[] reinterpret_cast<char*>(bmInfo);
+    bmInfo = nullptr;
 }
 
 void Cell::GetImage(BITMAPINFO **imhd, unsigned char **im) 
@@ -175,7 +146,6 @@ void Cell::makeSCI()
         for (unsigned short i = 0; i < height; i++) {
             unsigned short j = 0;
             const unsigned char* pcached = bmImage + (i * bmpwidth);
-            const unsigned char* const rowEnd = pcached + width; // Cache row end
             
             if (hasLines) {
                 ptaglines[i] = static_cast<unsigned long>(pimage - cellImage->image);
@@ -278,19 +248,29 @@ void Cell::makeSCI()
             }
         }
         
-        // Update final sizes
-        cellImage->packSize = static_cast<unsigned long>(ppack - cellImage->pack);
+        // Update final sizes and shrink buffers to actual encoded size
         cellImage->imageSize = static_cast<unsigned long>(pimage - cellImage->image);
+        cellImage->packSize  = static_cast<unsigned long>(ppack  - cellImage->pack);
+        
+        unsigned char* shrunkImage = new unsigned char[cellImage->imageSize];
+        memcpy(shrunkImage, cellImage->image, cellImage->imageSize);
+        delete[] cellImage->image;
+        cellImage->image = shrunkImage;
+        
+        unsigned char* shrunkPack = new unsigned char[cellImage->packSize];
+        memcpy(shrunkPack, cellImage->pack, cellImage->packSize);
+        delete[] cellImage->pack;
+        cellImage->pack = shrunkPack;
     }
 }
 
 long Cell::makeBitmap()
 {
-    // Clean up existing data
-    delete bmImage;
+    // Clean up existing bitmap data
+    delete[] bmImage;
     bmImage = nullptr;
     
-    delete bmInfo;
+    delete[] reinterpret_cast<char*>(bmInfo);
     bmInfo = nullptr;
     
     // Extract dimensions
@@ -344,22 +324,18 @@ long Cell::makeBitmap()
     unsigned char* initdata;
     
     if (!bCell->compressType) {
-        // Uncompressed data
+        // Uncompressed data — always allocate an independent buffer so bmImage
+        // is never aliased to cellImage->image (simplifies cleanup).
+        initdata = new unsigned char[imsize];
         if (!dwremainder) {
-            // No padding needed - direct assignment
-            initdata = cellImage->image;
+            memcpy(initdata, cellImage->image, imsize);
         } else {
-            // Has padding - copy with padding
-            initdata = new unsigned char[imsize];
             const unsigned char* pdata = cellImage->image;
             unsigned char* pinit = initdata;
-            
             for (unsigned long i = 0; i < height; i++) {
                 memcpy(pinit, pdata, width);
                 pinit += width;
                 pdata += width;
-                
-                // Add padding bytes
                 memset(pinit, 0, 4 - dwremainder);
                 pinit += (4 - dwremainder);
             }
@@ -443,11 +419,6 @@ long Cell::makeBitmap()
     bmInfo = binfo;
     
     return 0; // Success (was returning imsize difference, but 0 for success is clearer)
-}
-
-void Cell::loadImageOffset()
-{
-	
 }
 
 
