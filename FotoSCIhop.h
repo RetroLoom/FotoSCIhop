@@ -144,6 +144,7 @@ void ShowLoopCell(unsigned char newloop, unsigned char newcell);
 void ShowCell(unsigned char newcell);
 bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
 bool ImportBMPToCurrentCell(const char* filename, bool applyPalette);
+void UpdateScrollBars(HWND hwnd);
 
 // Dialog functions
 extern bool g_dialogActive;

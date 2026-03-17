@@ -198,6 +198,11 @@ BOOL DoFileOpen(HWND hwnd, const char *filename, const char *ext)
 	  }
 
 	  InvalidateRgn(hwnd, NULL, true);
+	  // Reset scroll and zoom on new file load
+	  zScale = 100;
+	  picX = isPicture ? 0 : 220;
+	  picY = 30;
+	  UpdateScrollBars(hwnd);
 
       char wname[MAX_PATH + 15] = "FotoSCIhop";
       if (result==ID_NOERROR)

@@ -75,6 +75,10 @@ int picX = 0;
 int picY = 30;
 int tableX = 0;
 
+// Zoom step levels (percentages)
+static const int kZoomLevels[] = { 25, 50, 75, 100, 150, 200, 300, 400 };
+static const int kZoomLevelCount = sizeof(kZoomLevels) / sizeof(kZoomLevels[0]);
+
 // UI elements and drawing
 RECT rc;
 HWND hWndTopBar;
@@ -425,7 +429,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     int y = (screenHeight - windowHeight) / 2;
 
     // Create the window
-    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
+    hWnd = CreateWindow(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW | WS_HSCROLL | WS_VSCROLL,
                        x, y, windowWidth, windowHeight, NULL, NULL, hInstance, NULL);
 
     if (!hWnd)
@@ -501,6 +505,79 @@ void exit_proc(HWND hwnd)
     }
     
     DestroyWindow(hwnd);
+}
+
+// ============================================================================
+// ZOOM AND SCROLL HELPERS
+// ============================================================================
+
+// Returns the total zoomed content size for the current cell/view
+static SIZE GetZoomedContentSize() {
+    SIZE sz = {0, 0};
+    int scale = (zScale > 0) ? zScale : 100;
+    if (curCell && *curCell && (*curCell)->bmInfo) {
+        sz.cx = ((*curCell)->bmInfo->bmiHeader.biWidth  * scale) / 100;
+        sz.cy = (-(*curCell)->bmInfo->bmiHeader.biHeight * scale) / 100;
+    }
+    return sz;
+}
+
+void UpdateScrollBars(HWND hwnd) {
+    RECT client;
+    GetClientRect(hwnd, &client);
+    int clientW = client.right  - UI_LEFT_MARGIN - tableX;
+    int clientH = client.bottom - UI_TOP_MARGIN  - UI_INFO_HEIGHT;
+
+    SIZE content = GetZoomedContentSize();
+
+    SCROLLINFO si = {};
+    si.cbSize = sizeof(si);
+    si.fMask  = SIF_RANGE | SIF_PAGE | SIF_POS;
+
+    // Horizontal
+    si.nMin  = 0;
+    si.nMax  = (content.cx > clientW) ? content.cx : 0;
+    si.nPage = (clientW > 0) ? clientW : 1;
+    si.nPos  = -picX; // picX is negative offset
+    SetScrollInfo(hwnd, SB_HORZ, &si, TRUE);
+
+    // Vertical (picY starts at 30, so offset from that base)
+    si.nMin  = 0;
+    si.nMax  = (content.cy > clientH) ? content.cy : 0;
+    si.nPage = (clientH > 0) ? clientH : 1;
+    si.nPos  = -(picY - 30);
+    SetScrollInfo(hwnd, SB_VERT, &si, TRUE);
+}
+
+static void ClampScroll(HWND hwnd) {
+    RECT client;
+    GetClientRect(hwnd, &client);
+    int clientW = client.right  - UI_LEFT_MARGIN - tableX;
+    int clientH = client.bottom - UI_TOP_MARGIN  - UI_INFO_HEIGHT;
+    SIZE content = GetZoomedContentSize();
+
+    int maxScrollX = (content.cx > clientW) ? (content.cx - clientW) : 0;
+    int maxScrollY = (content.cy > clientH) ? (content.cy - clientH) : 0;
+
+    if (-picX < 0)          picX = 0;
+    if (-picX > maxScrollX) picX = -maxScrollX;
+    if (-(picY - 30) < 0)          picY = 30;
+    if (-(picY - 30) > maxScrollY) picY = 30 - maxScrollY;
+}
+
+static void ZoomStep(HWND hwnd, int delta) {
+    // Find current level index
+    int idx = kZoomLevelCount - 1;
+    for (int i = 0; i < kZoomLevelCount; i++) {
+        if (kZoomLevels[i] >= zScale) { idx = i; break; }
+    }
+    idx += delta;
+    if (idx < 0) idx = 0;
+    if (idx >= kZoomLevelCount) idx = kZoomLevelCount - 1;
+    zScale = kZoomLevels[idx];
+    ClampScroll(hwnd);
+    UpdateScrollBars(hwnd);
+    InvalidateRect(hwnd, NULL, FALSE);
 }
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -728,6 +805,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             if (DoSaveChangesDialog(hWnd) != IDCANCEL)   
                 exit_proc(hWnd);
             break;
+
+        case ID_ZOOM_IN:
+            ZoomStep(hWnd, +1);
+            break;
+
+        case ID_ZOOM_OUT:
+            ZoomStep(hWnd, -1);
+            break;
+
+        case ID_ZOOM_RESET:
+            zScale = 100;
+            picX = (globalView) ? 220 : 0;
+            picY = 30;
+            UpdateScrollBars(hWnd);
+            InvalidateRect(hWnd, NULL, FALSE);
+            break;
             
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
@@ -763,16 +856,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         FotoSCIhopStyles::DrawRoundedRect(hdcBuffer, topBar, colors.surface, colors.border, 0);
 
         // Initialize layout variables properly based on file type
-        if (globalView)
-        {
-            picX = 220; // Views need space for loop information
-        }
-        if (globalPicture)
-        {
-            picX = 0; // Pictures start at left edge
-        }
-
-        // Enhanced palette with unified styling
+        // (picX is only set on file load, not every paint - scroll offset is preserved)
         if (tableX > 0)
         {
             DrawPaletteTable(hdcBuffer);
@@ -825,8 +909,69 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         return 1; // Non-zero means "we handled it"
 
     case WM_SIZE:
+        ClampScroll(hWnd);
+        UpdateScrollBars(hWnd);
         InvalidateRect(hWnd, NULL, FALSE);
         break;
+
+    case WM_MOUSEWHEEL:
+    {
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        if (GetKeyState(VK_CONTROL) & 0x8000) {
+            // Ctrl+wheel = zoom
+            ZoomStep(hWnd, (delta > 0) ? +1 : -1);
+        } else {
+            // Plain wheel = vertical scroll
+            int step = 40;
+            picY += (delta > 0) ? step : -step;
+            ClampScroll(hWnd);
+            UpdateScrollBars(hWnd);
+            InvalidateRect(hWnd, NULL, FALSE);
+        }
+        return 0;
+    }
+
+    case WM_HSCROLL:
+    {
+        SCROLLINFO si = {};
+        si.cbSize = sizeof(si);
+        si.fMask  = SIF_ALL;
+        GetScrollInfo(hWnd, SB_HORZ, &si);
+        int pos = si.nPos;
+        switch (LOWORD(wParam)) {
+            case SB_LINELEFT:   pos -= 20; break;
+            case SB_LINERIGHT:  pos += 20; break;
+            case SB_PAGELEFT:   pos -= si.nPage; break;
+            case SB_PAGERIGHT:  pos += si.nPage; break;
+            case SB_THUMBTRACK: pos = HIWORD(wParam); break;
+        }
+        picX = -pos;
+        ClampScroll(hWnd);
+        UpdateScrollBars(hWnd);
+        InvalidateRect(hWnd, NULL, FALSE);
+        return 0;
+    }
+
+    case WM_VSCROLL:
+    {
+        SCROLLINFO si = {};
+        si.cbSize = sizeof(si);
+        si.fMask  = SIF_ALL;
+        GetScrollInfo(hWnd, SB_VERT, &si);
+        int pos = si.nPos;
+        switch (LOWORD(wParam)) {
+            case SB_LINEUP:     pos -= 20; break;
+            case SB_LINEDOWN:   pos += 20; break;
+            case SB_PAGEUP:     pos -= si.nPage; break;
+            case SB_PAGEDOWN:   pos += si.nPage; break;
+            case SB_THUMBTRACK: pos = HIWORD(wParam); break;
+        }
+        picY = 30 - pos;
+        ClampScroll(hWnd);
+        UpdateScrollBars(hWnd);
+        InvalidateRect(hWnd, NULL, FALSE);
+        return 0;
+    }
 
     case WM_LBUTTONDOWN:
     {

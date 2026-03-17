@@ -66,6 +66,9 @@
 #define IDM_                            32845
 #define IDM_PREFERENCES                 32846
 #define IDM_PALETTE_MANAGER             32847
+#define ID_ZOOM_IN                      32848
+#define ID_ZOOM_OUT                     32849
+#define ID_ZOOM_RESET                   32850
 #define ID_LINKS                        -200
 #define ID_NOPALETTE                    -121
 #define ID_WRONGPALETTELOC              -120

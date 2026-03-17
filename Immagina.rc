@@ -70,6 +70,10 @@ BEGIN
         MENUITEM "&Properties...\tCtrl+P",      IDM_PROPERTIES
         MENUITEM SEPARATOR
         MENUITEM "Show Priority Bars",          ID_PRIORITYBARS
+        MENUITEM SEPARATOR
+        MENUITEM "Zoom In\t+",                  ID_ZOOM_IN
+        MENUITEM "Zoom Out\t-",                 ID_ZOOM_OUT
+        MENUITEM "Zoom Reset\tCtrl+0",          ID_ZOOM_RESET
     END
     POPUP "&Go"
     BEGIN
@@ -108,6 +112,9 @@ BEGIN
     "P",            IDM_PROPERTIES,         VIRTKEY, CONTROL, NOINVERT
     "T",            ID_PALETTE,             VIRTKEY, CONTROL, NOINVERT
     "R",            IDM_REFERENCE,          VIRTKEY, CONTROL, NOINVERT
+    VK_OEM_PLUS,    ID_ZOOM_IN,             VIRTKEY, NOINVERT
+    VK_OEM_MINUS,   ID_ZOOM_OUT,            VIRTKEY, NOINVERT
+    "0",            ID_ZOOM_RESET,          VIRTKEY, CONTROL, NOINVERT
 END
 
 #endif    // English (United States) resources

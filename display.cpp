@@ -28,6 +28,7 @@ RGBQUAD skipColor;
 // Simple display origin calculation
 static POINT GetDisplayOrigin() {
     POINT origin;
+    // picX/picY are scroll offsets (negative when scrolled right/down)
     origin.x = UI_LEFT_MARGIN + picX + tableX;
     origin.y = UI_TOP_MARGIN + picY;
     return origin;
@@ -204,25 +205,35 @@ void DisplayImage(HDC hdc, unsigned char *bmImage, BITMAPINFO *bmInfo, int xPos,
     if (!bmImage || !bmInfo) return;
 
     POINT origin = GetDisplayOrigin();
-    
-    int scaledX = origin.x + xPos;
-    int scaledY = origin.y + yPos;
 
-    int bmWidth = bmInfo->bmiHeader.biWidth;
-    int bmHeight = bmInfo->bmiHeader.biHeight;
+    int bmWidth  = bmInfo->bmiHeader.biWidth;
+    int bmHeight = -bmInfo->bmiHeader.biHeight; // biHeight is negative (top-down)
 
-    HBITMAP hbm = CreateCompatibleBitmap(hdc, bmWidth, -bmHeight);
+    // Apply zoom: zScale is a percentage (100 = 1x, 200 = 2x, 50 = 0.5x)
+    int scale = (zScale > 0) ? zScale : 100;
+    int dstW = (bmWidth  * scale) / 100;
+    int dstH = (bmHeight * scale) / 100;
+    if (dstW < 1) dstW = 1;
+    if (dstH < 1) dstH = 1;
+
+    int dstX = origin.x + (xPos * scale) / 100;
+    int dstY = origin.y + (yPos * scale) / 100;
+
+    // Use a memory DC so we can TransparentBlt with zoom
+    HBITMAP hbm = CreateCompatibleBitmap(hdc, dstW, dstH);
     HDC memdc = CreateCompatibleDC(hdc);
     HBITMAP oldBitmap = (HBITMAP)SelectObject(memdc, hbm);
 
-    SetDIBitsToDevice(memdc, 0, 0, bmWidth, -bmHeight, 0, 0, 0, -bmHeight,
-                      bmImage, bmInfo, DIB_RGB_COLORS);
+    // Stretch the DIB into the memory DC at the zoomed size
+    StretchDIBits(memdc, 0, 0, dstW, dstH,
+                  0, 0, bmWidth, bmHeight,
+                  bmImage, bmInfo, DIB_RGB_COLORS, SRCCOPY);
 
-    TransparentBlt(hdc, scaledX, scaledY, bmWidth, -bmHeight, 
-                   memdc, 0, 0, bmWidth, -bmHeight, 
+    // Blit to screen with transparency
+    TransparentBlt(hdc, dstX, dstY, dstW, dstH,
+                   memdc, 0, 0, dstW, dstH,
                    RGBQUADToColorRef(skipColor));
 
-    // Cleanup
     SelectObject(memdc, oldBitmap);
     DeleteObject(hbm);
     DeleteDC(memdc);
@@ -288,20 +299,21 @@ void DisplayCellWithFrame(HDC hdc, int index) {
     int imageWidth = globalPicture->cells[index]->bmInfo->bmiHeader.biWidth;
     int imageHeight = abs(globalPicture->cells[index]->bmInfo->bmiHeader.biHeight);
     
+    int scale = (zScale > 0) ? zScale : 100;
     RECT frameRect = {
-        origin.x + bCell->xpos - UI_PADDING,
-        origin.y + bCell->ypos - UI_PADDING,
-        origin.x + bCell->xpos + imageWidth + UI_PADDING,
-        origin.y + bCell->ypos + imageHeight + UI_PADDING
+        origin.x + (bCell->xpos * scale) / 100 - UI_PADDING,
+        origin.y + (bCell->ypos * scale) / 100 - UI_PADDING,
+        origin.x + (bCell->xpos * scale) / 100 + (imageWidth  * scale) / 100 + UI_PADDING,
+        origin.y + (bCell->ypos * scale) / 100 + (imageHeight * scale) / 100 + UI_PADDING
     };
-    
+
     // Draw shadow
     RECT shadowRect = frameRect;
     OffsetRect(&shadowRect, 2, 2);
     HBRUSH shadowBrush = CreateSolidBrush(RGB(0, 0, 0));
     FillRect(hdc, &shadowRect, shadowBrush);
     DeleteObject(shadowBrush);
-    
+
     // Draw frame
     FotoSCIhopStyles::DrawThemedFrame(hdc, frameRect);
 
@@ -363,11 +375,12 @@ void DisplayCurrentViewWithFrame(HDC hdc) {
     int imageWidth = (*curCell)->bmInfo->bmiHeader.biWidth;
     int imageHeight = abs((*curCell)->bmInfo->bmiHeader.biHeight);
     
+    int scale2 = (zScale > 0) ? zScale : 100;
     RECT frameRect = {
-        origin.x - UI_PADDING + bCell->xHot,
-        origin.y - UI_PADDING + bCell->yHot,
-        origin.x + imageWidth + UI_PADDING + bCell->xHot,
-        origin.y + imageHeight + UI_PADDING + bCell->yHot
+        origin.x + (bCell->xHot * scale2) / 100 - UI_PADDING,
+        origin.y + (bCell->yHot * scale2) / 100 - UI_PADDING,
+        origin.x + (bCell->xHot * scale2) / 100 + (imageWidth  * scale2) / 100 + UI_PADDING,
+        origin.y + (bCell->yHot * scale2) / 100 + (imageHeight * scale2) / 100 + UI_PADDING
     };
     
     // Draw shadow
@@ -391,60 +404,49 @@ void DisplayLinkPoints(HDC hdc) {
     if (bCell->linkTableCount <= 0) return;
 
     POINT origin = GetDisplayOrigin();
-    
-    int xHot = bCell->xHot;
-    int yHot = bCell->yHot;
+    int scale = (zScale > 0) ? zScale : 100;
+
+    int xHotScaled = (bCell->xHot * scale) / 100;
+    int yHotScaled = (bCell->yHot * scale) / 100;
     int pointSize = LINK_POINT_BASE_SIZE;
 
-    // Create base pens
+    auto scaledX = [&](int lx) { return origin.x + xHotScaled + (lx * scale) / 100; };
+    auto scaledY = [&](int ly) { return origin.y + yHotScaled + (ly * scale) / 100; };
+
     HPEN accentPen = CreatePen(PS_SOLID, pointSize + LINK_POINT_ACCENT_THICKNESS, COLOR_WHITE);
-    
-    // Calculate and draw last link point with accent
+
     int lastIndex = (bCell->linkTableCount - 1 < MAX_LINK_POINTS - 1) ? bCell->linkTableCount - 1 : MAX_LINK_POINTS - 1;
-    int linkX = (*curCell)->linkPoints[lastIndex].x;
-    int linkY = (*curCell)->linkPoints[lastIndex].y;
-    int xPos = origin.x + xHot + linkX;
-    int yPos = origin.y + yHot + linkY;
+    int xPos = scaledX((*curCell)->linkPoints[lastIndex].x);
+    int yPos = scaledY((*curCell)->linkPoints[lastIndex].y);
 
     HPEN lastPointPen = CreatePen(PS_SOLID, pointSize, COLOR_RED);
     DrawPoint(hdc, xPos, yPos, accentPen);
     DrawPoint(hdc, xPos, yPos, lastPointPen);
 
-    // Early exit if only one point
     if (bCell->linkTableCount <= 1) {
         SafeDeleteGDIObject(accentPen);
         SafeDeleteGDIObject(lastPointPen);
         return;
     }
 
-    // Set up for line drawing
     HPEN oldPen = (HPEN)SelectObject(hdc, accentPen);
 
-    // Draw trail through all link points
     int maxPoints = (bCell->linkTableCount < MAX_LINK_POINTS) ? bCell->linkTableCount : MAX_LINK_POINTS;
     for (int i = 0; i < maxPoints; i++) {
-        // Calculate coordinates for current link point
-        linkX = (*curCell)->linkPoints[i].x;
-        linkY = (*curCell)->linkPoints[i].y;
-        xPos = origin.x + xHot + linkX;
-        yPos = origin.y + yHot + linkY;
+        xPos = scaledX((*curCell)->linkPoints[i].x);
+        yPos = scaledY((*curCell)->linkPoints[i].y);
 
-        // Use smooth color interpolation
         COLORREF pointColor = InterpolateColor(i, bCell->linkTableCount - 1, COLOR_RED, RGB(0, 0, 255));
-        
-        // Create colored pens for this point
-        HPEN coloredDottedPen = CreatePen(PS_DOT, DOTTED_LINE_THICKNESS, pointColor);
-        HPEN coloredSolidPen = CreatePen(PS_SOLID, pointSize, pointColor);
 
-        // Draw dotted line to current point
+        HPEN coloredDottedPen = CreatePen(PS_DOT, DOTTED_LINE_THICKNESS, pointColor);
+        HPEN coloredSolidPen  = CreatePen(PS_SOLID, pointSize, pointColor);
+
         SelectObject(hdc, coloredDottedPen);
         LineTo(hdc, xPos, yPos);
 
-        // Draw accent and colored point
         DrawPoint(hdc, xPos, yPos, accentPen);
         DrawPoint(hdc, xPos, yPos, coloredSolidPen);
-        
-        // Cleanup colored pens
+
         SafeDeleteGDIObject(coloredDottedPen);
         SafeDeleteGDIObject(coloredSolidPen);
     }
@@ -725,5 +727,12 @@ void DrawCellInfo(HDC hdc) {
     if ((*curCell)->changed) {
         FotoSCIhopStyles::DrawStatusText(hdc, "* Modified", xPos, 5, 80, 15, FotoSCIhopStyles::STATUS_WARNING);
         xPos += 85;
+    }
+
+    // Zoom level indicator (right-aligned)
+    {
+        char zoomBuf[16];
+        sprintf(zoomBuf, "%d%%", zScale);
+        FotoSCIhopStyles::DrawThemedText(hdc, zoomBuf, clientRect.right - 55, 5, 45, 15);
     }
 }
