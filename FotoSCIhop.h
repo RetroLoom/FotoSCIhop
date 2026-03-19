@@ -143,6 +143,8 @@ BOOL CALLBACK DoImportImageDlg(HWND hwndDlg,
 void ShowLoopCell(unsigned char newloop, unsigned char newcell);
 void ShowCell(unsigned char newcell);
 bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
+bool ImportPaletteFromBMP(const char* filename, Palette* targetPal,
+                           const uint8_t* pixels, int w, int h, int rowStride);
 bool ImportBMPToCurrentCell(const char* filename, bool applyPalette);
 void UpdateScrollBars(HWND hwnd);
 

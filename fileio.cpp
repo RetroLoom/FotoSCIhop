@@ -523,6 +523,56 @@ bool ImportPaletteFromBMP(const char* filename, Palette* targetPal) {
     return true;
 }
 
+// Pixel-aware variant: reads RGB values from the BMP palette then derives
+// remap flags from which palette indices are actually referenced by the image
+// pixels.  Only used entries get remap=1; all others get remap=0.
+// After updating the palette data the header range and palCount are fixed so
+// the game engine will recognise the embedded palette.
+bool ImportPaletteFromBMP(const char* filename, Palette* targetPal,
+                           const uint8_t* pixels, int w, int h, int rowStride)
+{
+    if (!filename || !targetPal) return false;
+
+    FILE* file = fopen(filename, "rb");
+    if (!file) return false;
+
+    BITMAPFILEHEADER fileHeader;
+    BITMAPINFOHEADER infoHeader;
+
+    if (!ValidateBitmapHeader(file, fileHeader, infoHeader)) {
+        fclose(file);
+        return false;
+    }
+
+    RGBQUAD palette[256];
+    fread(palette, sizeof(palette), 1, file);
+    fclose(file);
+
+    // Write RGB values directly (bypass SetPalEntry to avoid inadvertent
+    // nColors/startOffset expansion at this stage; flags are set below).
+    for (int i = 0; i < 256; ++i) {
+        targetPal->palData[i].red   = palette[i].rgbRed;
+        targetPal->palData[i].green = palette[i].rgbGreen;
+        targetPal->palData[i].blue  = palette[i].rgbBlue;
+        targetPal->palData[i].remap = 0;
+    }
+
+    // Build usage table from image pixels.
+    bool used[256] = {};
+    if (pixels && w > 0 && h > 0) {
+        int stride = (rowStride > 0) ? rowStride : w;
+        for (int row = 0; row < h; row++)
+            for (int col = 0; col < w; col++)
+                used[pixels[row * stride + col]] = true;
+    }
+
+    targetPal->ApplyUsageFlags(used);
+    targetPal->RecalculateHeaderRange();
+    targetPal->EnsureValidPalCount();
+
+    return true;
+}
+
 // ============================================================================
 // UNIFIED IMPORT/EXPORT FUNCTIONS (GUI OR CLI)
 // ============================================================================

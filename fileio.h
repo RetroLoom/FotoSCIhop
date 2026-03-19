@@ -65,6 +65,10 @@ BOOL ImportBitmapUnified(HWND hwnd, const char* path, BOOL applyPalette);
 
 // Palette functions
 bool ImportPaletteFromBMP(const char* filename, Palette* targetPal);
+// Pixel-aware overload: scans image pixels to assign remap flags correctly.
+// pixels/w/h/rowStride describe the DWORD-padded 8-bit indexed image buffer.
+bool ImportPaletteFromBMP(const char* filename, Palette* targetPal,
+                           const uint8_t* pixels, int w, int h, int rowStride);
 BOOL ImportPaletteUnified(HWND hwnd, const char* path);
 BOOL ExportPaletteUnified(HWND hwnd, const char* path);
 

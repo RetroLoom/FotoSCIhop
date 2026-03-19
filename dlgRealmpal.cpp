@@ -682,7 +682,21 @@ void RenderRealmpalDialog()
             {
                 if (ImportBMPToCurrentCell(tempFile, TRUE)) {
                     Palette* gpal = isPicture ? globalPicture->palSCI : globalView->palSCI;
-                    if (gpal && ImportPaletteFromBMP(tempFile, gpal))
+                    bool palOk = false;
+                    if (gpal) {
+                        // Use the pixel-aware overload so remap flags are derived from actual
+                        // image usage rather than preserved from the previously loaded file.
+                        if (curCell && *curCell && (*curCell)->bmInfo && (*curCell)->bmImage) {
+                            int w         = (*curCell)->bmInfo->bmiHeader.biWidth;
+                            int h         = abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                            int rowStride = (w + 3) & ~3;
+                            palOk = ImportPaletteFromBMP(tempFile, gpal,
+                                                          (*curCell)->bmImage, w, h, rowStride);
+                        } else {
+                            palOk = ImportPaletteFromBMP(tempFile, gpal);
+                        }
+                    }
+                    if (palOk)
                         importStatus = "Image and palette imported.";
                     else
                         importStatus = "Image imported (palette import failed).";

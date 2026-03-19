@@ -57,6 +57,12 @@ void Palette::initializeMembers()
 {
     memset(&Head, 0, sizeof(Head));
     memset(palIndexTable, 0, sizeof(palIndexTable));
+    // Ensure new palettes are recognized by the game engine.
+    // HunkPalette::Init() bails out if palCount == 0; SOLPalette::Merge() skips flag==0 entries.
+    Head.palCount = 1;
+    Head.valid    = 1;
+    Head.type     = 0;  // Per-entry flag mode (each RGB has its own remap byte)
+    Head.def      = 1;  // Default flag value consistent with original SCI files
     initializeDefaultPalette();
 }
 
@@ -102,9 +108,9 @@ bool Palette::SetPalEntry(PalEntry value, unsigned short which)
         Head.nColors += (Head.startOffset - which);
         Head.startOffset = which;
     }
-    else if (which > (unsigned short)(Head.startOffset + Head.nColors))
+    else if (which >= (unsigned short)(Head.startOffset + Head.nColors))
     {
-        Head.nColors = which - Head.startOffset;
+        Head.nColors = which - Head.startOffset + 1;
     }
 
     return true;
@@ -330,4 +336,69 @@ unsigned long Palette::PaletteBlockSize(bool writesciheader) const
                                    + PAL_COMPPAL_GAME_SIZE
                                    + entryBytes;
     return (writesciheader ? 2 : 6) + dataSize;
+}
+
+// ----------------------------------------------------------------------------
+// RecalculateHeaderRange
+//
+// Scans all 256 palData entries and tightens startOffset/nColors so they cover
+// only the range that contains at least one flagged (remap != 0) entry.
+// Call this after ApplyUsageFlags() or after manually editing remap bytes.
+// ----------------------------------------------------------------------------
+void Palette::RecalculateHeaderRange()
+{
+    int first = -1, last = -1;
+    for (int i = 0; i < 256; i++)
+    {
+        if (palData[i].remap != 0)
+        {
+            if (first == -1) first = i;
+            last = i;
+        }
+    }
+    if (first == -1)
+    {
+        // No flagged entries at all — keep a minimal valid block (game still needs nColors >= 1)
+        Head.startOffset = 0;
+        Head.nColors     = 1;
+    }
+    else
+    {
+        Head.startOffset = (uchar)first;
+        Head.nColors     = (UInt16)(last - first + 1);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// EnsureValidPalCount
+//
+// Makes sure the palette header fields required by HunkPalette::Init() are set:
+//   palCount >= 1  (Init() skips the palette entirely if this is 0)
+//   valid    != 0  (marks the palette block as initialized)
+//   type     == 0  (per-entry flag mode; type==1 would use the shared def flag)
+//
+// Call after RecalculateHeaderRange() when creating or importing a palette.
+// ----------------------------------------------------------------------------
+void Palette::EnsureValidPalCount()
+{
+    if (Head.palCount == 0) Head.palCount = 1;
+    if (Head.valid    == 0) Head.valid    = 1;
+    Head.type  = 0;    // Per-entry flag mode
+    hasPalette = true;
+}
+
+// ----------------------------------------------------------------------------
+// ApplyUsageFlags
+//
+// Sets remap = 1 for every palette index that appears in usedIndices[], and
+// remap = 0 for every index that does not.  The caller is responsible for
+// building the usage table by scanning the image pixel data.
+//
+// After calling this, call RecalculateHeaderRange() + EnsureValidPalCount()
+// to tighten the palette block range and fix the header fields.
+// ----------------------------------------------------------------------------
+void Palette::ApplyUsageFlags(const bool usedIndices[256])
+{
+    for (int i = 0; i < 256; i++)
+        palData[i].remap = usedIndices[i] ? 1 : 0;
 }

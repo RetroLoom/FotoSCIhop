@@ -194,6 +194,22 @@ public:
     void WritePalette(FILE* cfb, bool writesciheader);
 
     /**
+     * @brief Tighten startOffset/nColors to cover only flagged (remap != 0) entries
+     */
+    void RecalculateHeaderRange();
+
+    /**
+     * @brief Ensure palCount >= 1, valid != 0, type == 0 so game engine loads this palette
+     */
+    void EnsureValidPalCount();
+
+    /**
+     * @brief Set remap=1 for each index where usedIndices[i] is true, remap=0 otherwise
+     * @param usedIndices 256-element bool array, true = index is referenced by image pixels
+     */
+    void ApplyUsageFlags(const bool usedIndices[256]);
+
+    /**
      * @brief Return total bytes written by WritePalette (tag+size prefix + data)
      * @param writesciheader Must match the value passed to WritePalette
      * @return Total byte count

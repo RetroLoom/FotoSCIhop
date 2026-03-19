@@ -2,93 +2,172 @@
  *  Copyright (C) Enrico Rolfi 'Endroz', 2004-2021.
  *  Copyright (C) Daniel Arnold 'Dhel', 2022-2024.
  *
- *  Complete Palette Manager Dialog - Direct Edit with All Features
+ *  Palette Editor Dialog
  *
+ *  Layout: palette grid (left, ~55%) | tabbed tools panel (right, ~45%)
+ *
+ *  Tabs:
+ *    Edit   — selection, single-color RGB editor, flag controls, copy/paste
+ *    Adjust — brightness/contrast/hue/sat sliders, color tint, swap ranges
+ *    File   — import/export, palette analysis, header diagnostics
  */
 
 #include "stdafx.h"
 #include "FotoSCIhop.h"
 
 // Global variables for palette manager file dialogs
-std::string g_palMgrInputFile = "";
+std::string g_palMgrInputFile  = "";
 std::string g_palMgrOutputFile = "";
-bool g_requestPalMgrInputDialog = false;
+bool g_requestPalMgrInputDialog  = false;
 bool g_requestPalMgrOutputDialog = false;
 
-void RenderPaletteManagerDialog() {
+// ============================================================================
+// Inline HSL helpers (the realmpal versions are static, not accessible here)
+// ============================================================================
+static void PalMgr_RGBtoHSL(float r, float g, float b, float& h, float& s, float& l)
+{
+    float maxC = fmaxf(r, fmaxf(g, b));
+    float minC = fminf(r, fminf(g, b));
+    l = (maxC + minC) * 0.5f;
+    float d = maxC - minC;
+    if (d < 1e-6f) { h = 0.0f; s = 0.0f; return; }
+    s = (l > 0.5f) ? d / (2.0f - maxC - minC) : d / (maxC + minC);
+    if      (maxC == r) h = (g - b) / d + (g < b ? 6.0f : 0.0f);
+    else if (maxC == g) h = (b - r) / d + 2.0f;
+    else                h = (r - g) / d + 4.0f;
+    h /= 6.0f;
+}
+
+static float PalMgr_HueToRGB(float p, float q, float t)
+{
+    if (t < 0.0f) t += 1.0f;
+    if (t > 1.0f) t -= 1.0f;
+    if (t < 1.0f/6.0f) return p + (q - p) * 6.0f * t;
+    if (t < 1.0f/2.0f) return q;
+    if (t < 2.0f/3.0f) return p + (q - p) * (2.0f/3.0f - t) * 6.0f;
+    return p;
+}
+
+static void PalMgr_HSLtoRGB(float h, float s, float l, float& r, float& g, float& b)
+{
+    if (s < 1e-6f) { r = g = b = l; return; }
+    float q = (l < 0.5f) ? l * (1.0f + s) : l + s - l * s;
+    float p = 2.0f * l - q;
+    r = PalMgr_HueToRGB(p, q, h + 1.0f/3.0f);
+    g = PalMgr_HueToRGB(p, q, h);
+    b = PalMgr_HueToRGB(p, q, h - 1.0f/3.0f);
+}
+
+// ============================================================================
+// Helper: get the current open palette (view or picture)
+// ============================================================================
+static Palette* GetCurrentPalette()
+{
+    if (globalView    && globalView->palSCI)    return globalView->palSCI;
+    if (globalPicture && globalPicture->palSCI) return globalPicture->palSCI;
+    return nullptr;
+}
+
+// ============================================================================
+// Helper: force a display refresh after palette changes
+// ============================================================================
+static void RefreshDisplay()
+{
+    if (isPicture && globalPicture && curCell && (*curCell)) {
+        (*curCell)->bmInfo  = nullptr;
+        (*curCell)->bmImage = nullptr;
+        ShowCell(curCellIndex);
+    } else if (globalView) {
+        ShowLoopCell(curLoopIndex, curCellIndex);
+    }
+    InvalidateRect(hWnd, NULL, TRUE);
+}
+
+// ============================================================================
+// Helper: convert RGB bytes to a hex string like "FF8000"
+// ============================================================================
+static void RGBToHex(uint8_t r, uint8_t g, uint8_t b, char out[7])
+{
+    sprintf(out, "%02X%02X%02X", r, g, b);
+}
+
+// ============================================================================
+// Helper: parse a 6-char hex string to RGB (returns false on invalid input)
+// ============================================================================
+static bool HexToRGB(const char* hex, uint8_t& r, uint8_t& g, uint8_t& b)
+{
+    if (!hex) return false;
+    // Strip leading '#' if present
+    if (hex[0] == '#') hex++;
+    if (strlen(hex) < 6) return false;
+    unsigned int ri = 0, gi = 0, bi = 0;
+    if (sscanf(hex, "%02x%02x%02x", &ri, &gi, &bi) != 3) return false;
+    r = (uint8_t)ri; g = (uint8_t)gi; b = (uint8_t)bi;
+    return true;
+}
+
+void RenderPaletteManagerDialog()
+{
     using namespace ImGuiDialogs;
     using namespace FotoSCIhopStyles;
-    
-    // Ensure theme is applied
+
     FotoSCIhopStyles::RefreshTheme();
-    
-    // Static variables for dialog state - NO CACHING, DIRECT EDIT
-    static bool configInitialized = false;
-    static std::string statusMessage = "";
-    static bool showStatus = false;
-    static RGB8 originalPalette[256];     // Only store original for revert
-    static bool paletteModified = false;
-    static int lastClickedIndex = -1;
-    static bool shouldCloseDialog = false;
-    
+
+    // -------------------------------------------------------------------------
+    // Per-session state
+    // -------------------------------------------------------------------------
+    struct PalEntrySnapshot { uint8_t r, g, b, remap; };
+    static bool              configInitialized  = false;
+    static std::string       statusMessage      = "";
+    static bool              showStatus         = false;
+    static int               statusCounter      = 0;
+    static PalEntrySnapshot  originalPalette[256];
+    static bool              paletteModified    = false;
+    static bool              shouldCloseDialog  = false;
+
+    // Selection state
+    static std::vector<bool> selectedIndices(256, false);
+    static int               lastClickedIndex   = -1;
+
+    // Clipboard
+    static std::vector<PalEntrySnapshot> clipboardColors;
+    static int               clipboardStart     = -1;
+
     // Palette analysis results
     static RealmpalPaletteStats paletteStats;
-    static bool statsValid = false;
-    
-    // Selection state for interactive palette grid
-    static std::vector<bool> selectedIndices(256, false);
-    static int selectionStart = -1;
-    static int selectionEnd = -1;
-    
-    // Clipboard for copy/paste operations
-    static std::vector<RGB8> clipboardColors;
-    static int clipboardStart = -1;
-    static int clipboardSize = 0;
-    
-    // Swap buffer for two-step swapping
-    static std::vector<RGB8> swapBuffer;
-    static int swapStart = -1;
-    static int swapEnd = -1;
-    static bool hasSwapSelection = false;
-    
-    // Initialize - store original palette on first run
+    static bool              statsValid         = false;
+
+    // Active tab
+    static int               activeTab          = 0;  // 0=Edit 1=Adjust 2=File
+
+    // -------------------------------------------------------------------------
+    // Initialise on first open
+    // -------------------------------------------------------------------------
     if (!configInitialized) {
-        // Get current global palette
-        Palette* currentPalette = nullptr;
-        if (globalView && globalView->palSCI) {
-            currentPalette = globalView->palSCI;
-        } else if (globalPicture && globalPicture->palSCI) {
-            currentPalette = globalPicture->palSCI;
-        }
-        
-        if (currentPalette) {
-            // Store original palette for revert functionality
-            for (int i = 0; i < 256; i++) {
-                originalPalette[i].r = currentPalette->palData[i].red;
-                originalPalette[i].g = currentPalette->palData[i].green;
-                originalPalette[i].b = currentPalette->palData[i].blue;
-            }
-        } else {
-            // Default grayscale palette if none available
-            for (int i = 0; i < 256; i++) {
-                originalPalette[i] = {(uint8_t)i, (uint8_t)i, (uint8_t)i};
+        Palette* pal = GetCurrentPalette();
+        for (int i = 0; i < 256; i++) {
+            if (pal) {
+                originalPalette[i] = { pal->palData[i].red,
+                                       pal->palData[i].green,
+                                       pal->palData[i].blue,
+                                       pal->palData[i].remap };
+            } else {
+                originalPalette[i] = { (uint8_t)i, (uint8_t)i, (uint8_t)i, 1 };
             }
         }
-        
         configInitialized = true;
-        paletteModified = false;
-        statsValid = false;
+        paletteModified   = false;
+        statsValid        = false;
         std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-        selectionStart = selectionEnd = -1;
+        lastClickedIndex  = -1;
         clipboardColors.clear();
-        clipboardStart = clipboardSize = -1;
-        swapBuffer.clear();
-        hasSwapSelection = false;
+        clipboardStart    = -1;
     }
-    
-    // Calculate selection range once for the entire dialog
-    int firstSel = -1, lastSel = -1;
-    int selectedCount = 0;
+
+    // -------------------------------------------------------------------------
+    // Compute selection range once per frame
+    // -------------------------------------------------------------------------
+    int firstSel = -1, lastSel = -1, selectedCount = 0;
     for (int i = 0; i < 256; i++) {
         if (selectedIndices[i]) {
             selectedCount++;
@@ -96,1540 +175,965 @@ void RenderPaletteManagerDialog() {
             lastSel = i;
         }
     }
-    bool hasSelection = (firstSel != -1);
-    bool hasClipboard = !clipboardColors.empty();
-    
+    bool hasSelection  = (firstSel != -1);
+    bool hasClipboard  = !clipboardColors.empty();
+
+    // -------------------------------------------------------------------------
+    // Window
+    // -------------------------------------------------------------------------
     bool open = true;
-    SetNextWindowSize(1200, 800);
-    
-    if (!BeginDialog("Enhanced Palette Manager - Direct Edit", &open)) {
+    SetNextWindowSize(1400, 900);
+    if (!BeginDialog("Palette Editor", &open)) {
         EndDialog();
         return;
     }
-    
-    // Handle close button
     if (!open) {
         configInitialized = false;
-        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
+        HideDialog(DIALOG_PALETTE_MANAGER);
         EndDialog();
         return;
     }
-    
-    float availableWidth = ImGui::GetContentRegionAvail().x;
-    
-    // =========================================================================
-    // HEADER SECTION
-    // =========================================================================
-    
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.1f, 0.1f, 0.15f, 0.8f));
-    if (ImGui::BeginChild("HeaderSection", ImVec2(0, 60), true)) {
-        
-        ImGui::BeginGroup();
-        {
-            HeaderText("Enhanced Palette Index Manager");
-            ImGui::SameLine();
-            if (paletteModified) {
-                WarningText("* Modified - changes are live");
-            } else {
-                DisabledText("- No changes");
-            }
-            
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(30, 0));
-            
-            ImGui::SameLine();
-            if (ImGui::Button("Revert All Changes")) {
-                // Restore original palette to global palette
-                Palette* currentPalette = nullptr;
-                if (globalView && globalView->palSCI) {
-                    currentPalette = globalView->palSCI;
-                } else if (globalPicture && globalPicture->palSCI) {
-                    currentPalette = globalPicture->palSCI;
+
+    float availW = ImGui::GetContentRegionAvail().x;
+
+    // -------------------------------------------------------------------------
+    // Header bar
+    // -------------------------------------------------------------------------
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.08f, 0.08f, 0.12f, 0.9f));
+    if (ImGui::BeginChild("PalHdr", ImVec2(0, 50), true)) {
+        HeaderText("Palette Editor");
+        ImGui::SameLine();
+        if (paletteModified) {
+            WarningText("* Modified");
+        } else {
+            DisabledText("- No changes");
+        }
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(20, 0));
+        ImGui::SameLine();
+
+        if (ImGui::Button("Revert")) {
+            Palette* pal = GetCurrentPalette();
+            if (pal) {
+                for (int i = 0; i < 256; i++) {
+                    pal->palData[i].red   = originalPalette[i].r;
+                    pal->palData[i].green = originalPalette[i].g;
+                    pal->palData[i].blue  = originalPalette[i].b;
+                    pal->palData[i].remap = originalPalette[i].remap;
                 }
-                
-                if (currentPalette) {
-                    for (int i = 0; i < 256; i++) {
-                        currentPalette->palData[i].red = originalPalette[i].r;
-                        currentPalette->palData[i].green = originalPalette[i].g;
-                        currentPalette->palData[i].blue = originalPalette[i].b;
-                    }
-                    
-                    // Force display refresh
-                    if (isPicture && globalPicture && curCell && (*curCell)) {
-                        // For P56 files, clear cached image data to force regeneration
-                        (*curCell)->bmInfo = nullptr;
-                        (*curCell)->bmImage = nullptr;
-                        ShowCell(curCellIndex);
-                    } else if (globalView) {
-                        ShowLoopCell(curLoopIndex, curCellIndex);
-                    }
-                    
-                    InvalidateRect(hWnd, NULL, TRUE);
-                    
-                    paletteModified = false;
-                    statsValid = false;
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    selectionStart = selectionEnd = -1;
-                    clipboardColors.clear();
-                    clipboardStart = clipboardSize = -1;
-                    swapBuffer.clear();
-                    hasSwapSelection = false;
-                    
-                    statusMessage = "All changes reverted to original palette";
-                    showStatus = true;
-                }
-            }
-            
-            ImGui::SameLine();
-            if (ApplyButton("Apply & Close")) {
-                // Changes are already applied to global palette, just mark as saved
-                if (paletteModified) {
-                    // Update the stored original to current state (makes changes permanent)
-                    Palette* currentPalette = nullptr;
-                    if (globalView && globalView->palSCI) {
-                        currentPalette = globalView->palSCI;
-                    } else if (globalPicture && globalPicture->palSCI) {
-                        currentPalette = globalPicture->palSCI;
-                    }
-                    
-                    if (currentPalette) {
-                        for (int i = 0; i < 256; i++) {
-                            originalPalette[i].r = currentPalette->palData[i].red;
-                            originalPalette[i].g = currentPalette->palData[i].green;
-                            originalPalette[i].b = currentPalette->palData[i].blue;
-                        }
-                    }
-                    
-                    // Mark file as needing save
-                    datasaved = false;
-                    
-                    statusMessage = "Palette changes applied and made permanent!";
-                    showStatus = true;
-                }
-                
-                // Set flag to close dialog after UI is complete
-                shouldCloseDialog = true;
+                RefreshDisplay();
+                paletteModified = false;
+                statsValid      = false;
+                std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                clipboardColors.clear();
+                clipboardStart = -1;
+                statusMessage = "Reverted to original palette";
+                showStatus = true;
             }
         }
-        ImGui::EndGroup();
-        
+        ImGui::SameLine();
+        if (ApplyButton("Apply & Close")) {
+            Palette* pal = GetCurrentPalette();
+            if (pal && paletteModified) {
+                for (int i = 0; i < 256; i++) {
+                    originalPalette[i] = { pal->palData[i].red,
+                                           pal->palData[i].green,
+                                           pal->palData[i].blue,
+                                           pal->palData[i].remap };
+                }
+                datasaved = false;
+            }
+            shouldCloseDialog = true;
+        }
     }
     ImGui::EndChild();
     ImGui::PopStyleColor();
-    
     ImGui::Spacing();
-    
+
     // =========================================================================
-    // MAIN CONTENT - Two Column Layout
+    // MAIN CONTENT — left: palette grid | right: tools
     // =========================================================================
-    
-    if (ImGui::BeginChild("MainContent", ImVec2(0, -80))) { // Reserve space for bottom
-        
-        // Left Column: Tools (60% width)
-        if (ImGui::BeginChild("ToolsColumn", ImVec2(availableWidth * 0.60f, 0), true)) {
-            
-            // =================================================================
-            // SELECTION INFO SECTION
-            // =================================================================
-            if (ImGui::CollapsingHeader("Selection", ImGuiTreeNodeFlags_DefaultOpen)) {
-                
-                if (selectedCount == 0) {
-                    DisabledText("No indices selected - click palette grid to select");
-                } else if (selectedCount == 1) {
-                    char selText[64];
-                    sprintf(selText, "Selected: Index %d", firstSel);
-                    SuccessText(selText);
-                } else {
-                    char selText[128];
-                    sprintf(selText, "Selected: %d indices (%d-%d)", selectedCount, firstSel, lastSel);
-                    SuccessText(selText);
-                }
-                
-                ImGui::Spacing();
-                
-                // Quick selection tools
-                if (ImGui::Button("Select All", ImVec2(80, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), true);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear", ImVec2(80, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    selectionStart = selectionEnd = -1;
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Invert", ImVec2(80, 0))) {
-                    for (int i = 0; i < 256; i++) {
-                        selectedIndices[i] = !selectedIndices[i];
+    if (ImGui::BeginChild("PalMain", ImVec2(0, -50))) {
+
+        const float GRID_W   = availW * 0.55f;
+        const float TOOLS_W  = availW - GRID_W - 8.0f;
+
+        // =====================================================================
+        // LEFT — Palette grid
+        // =====================================================================
+        if (ImGui::BeginChild("PalGridOuter", ImVec2(GRID_W, 0), true)) {
+
+            Palette* pal = GetCurrentPalette();
+
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.04f, 0.04f, 0.08f, 1.0f));
+            if (ImGui::BeginChild("PalGridInner", ImVec2(0, 0), false)) {
+
+                const int   COLS        = 16;
+                const float SWATCH      = 28.0f;
+                const float GAP         = 2.0f;
+                const float LABEL_W     = 30.0f;
+                const float LABEL_H     = 18.0f;
+
+                ImGuiIO& io = ImGui::GetIO();
+
+                if (pal) {
+                    // Column labels (hex 0–F)
+                    ImGui::Dummy(ImVec2(LABEL_W, LABEL_H));
+                    for (int col = 0; col < COLS; col++) {
+                        ImGui::SameLine(LABEL_W + col * (SWATCH + GAP) + SWATCH * 0.3f);
+                        char lbl[4]; sprintf(lbl, "%X", col);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.7f, 1.0f));
+                        ImGui::Text("%s", lbl);
+                        ImGui::PopStyleColor();
                     }
-                }
-                
-                ImGui::Spacing();
-                
-                // Range selection
-                static int rangeStart = 0;
-                static int rangeEnd = 255;
-                
-                ImGui::Text("Select Range:");
-                ImGui::PushItemWidth(70);
-                if (ImGui::InputInt("From##range", &rangeStart)) {
-                    rangeStart = realmpal_clamp_int(rangeStart, 0, 255);
-                }
-                ImGui::SameLine();
-                if (ImGui::InputInt("To##range", &rangeEnd)) {
-                    rangeEnd = realmpal_clamp_int(rangeEnd, rangeStart, 255);
-                }
-                ImGui::PopItemWidth();
-                
-                ImGui::SameLine();
-                if (ImGui::Button("Select##range", ImVec2(60, 0))) {
-                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                    for (int i = rangeStart; i <= rangeEnd; i++) {
-                        selectedIndices[i] = true;
-                    }
-                }
-            }
-            
-            ImGui::Spacing();
-            
-            // =================================================================
-            // COPY/PASTE AND SWAP OPERATIONS
-            // =================================================================
-            if (ImGui::CollapsingHeader("Copy, Paste & Swap", ImGuiTreeNodeFlags_DefaultOpen)) {
-                
-                HeaderText("Copy & Paste:");
-                
-                // Copy to clipboard
-                if (hasSelection) {
-                    if (ImGui::Button("Copy Selected##clipboard", ImVec2(120, 0))) {
-                        clipboardColors.clear();
-                        clipboardStart = firstSel;
-                        clipboardSize = 0;
-                        
-                        // Get current global palette
-                        Palette* currentPalette = nullptr;
-                        if (globalView && globalView->palSCI) {
-                            currentPalette = globalView->palSCI;
-                        } else if (globalPicture && globalPicture->palSCI) {
-                            currentPalette = globalPicture->palSCI;
-                        }
-                        
-                        if (currentPalette) {
-                            for (int i = firstSel; i <= lastSel; i++) {
-                                if (selectedIndices[i]) {
-                                    RGB8 color = {currentPalette->palData[i].red, currentPalette->palData[i].green, currentPalette->palData[i].blue};
-                                    clipboardColors.push_back(color);
-                                    clipboardSize++;
-                                }
+
+                    for (int row = 0; row < 16; row++) {
+                        // Row label
+                        char rowLbl[8]; sprintf(rowLbl, " %X0", row);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.7f, 1.0f));
+                        ImGui::Text("%s", rowLbl);
+                        ImGui::PopStyleColor();
+
+                        for (int col = 0; col < COLS; col++) {
+                            int idx = row * COLS + col;
+                            bool isSelected = selectedIndices[idx];
+                            bool isUsed     = (pal->palData[idx].remap != 0);
+
+                            float r = pal->palData[idx].red   / 255.0f;
+                            float g = pal->palData[idx].green / 255.0f;
+                            float b = pal->palData[idx].blue  / 255.0f;
+
+                            // Brighten selected
+                            if (isSelected) {
+                                r = fminf(r + 0.28f, 1.0f);
+                                g = fminf(g + 0.28f, 1.0f);
+                                b = fminf(b + 0.28f, 1.0f);
                             }
-                        }
-                        
-                        char msg[128];
-                        sprintf(msg, "Copied %d colors to clipboard", clipboardSize);
-                        statusMessage = msg;
-                        showStatus = true;
-                    }
-                } else {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Copy Selected##clipboard", ImVec2(120, 0));
-                    ImGui::PopStyleVar();
-                }
-                
-                ImGui::SameLine();
-                
-                // Paste from clipboard
-                if (hasClipboard && hasSelection) {
-                    if (ImGui::Button("Paste Here##clipboard", ImVec2(120, 0))) {
-                        // Get current global palette
-                        Palette* currentPalette = nullptr;
-                        if (globalView && globalView->palSCI) {
-                            currentPalette = globalView->palSCI;
-                        } else if (globalPicture && globalPicture->palSCI) {
-                            currentPalette = globalPicture->palSCI;
-                        }
-                        
-                        if (currentPalette) {
-                            // Paste colors starting at first selected index
-                            int pasteCount = 0;
-                            for (int i = 0; i < clipboardSize && (firstSel + i) < 256; i++) {
-                                currentPalette->palData[firstSel + i].red = clipboardColors[i].r;
-                                currentPalette->palData[firstSel + i].green = clipboardColors[i].g;
-                                currentPalette->palData[firstSel + i].blue = clipboardColors[i].b;
-                                pasteCount++;
-                            }
-                            
-                            paletteModified = true;
-                            statsValid = false;
-                            
-                            // Force immediate display update
-                            if (isPicture && globalPicture && curCell && (*curCell)) {
-                                (*curCell)->bmInfo = nullptr;
-                                (*curCell)->bmImage = nullptr;
-                                ShowCell(curCellIndex);
-                            } else if (globalView) {
-                                ShowLoopCell(curLoopIndex, curCellIndex);
-                            }
-                            InvalidateRect(hWnd, NULL, TRUE);
-                            
-                            char msg[128];
-                            sprintf(msg, "Pasted %d colors at index %d", pasteCount, firstSel);
-                            statusMessage = msg;
-                            showStatus = true;
-                        }
-                    }
-                } else {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Paste Here##clipboard", ImVec2(120, 0));
-                    ImGui::PopStyleVar();
-                }
-                
-                ImGui::Spacing();
-                
-                // Clipboard info
-                if (hasClipboard) {
-                    char clipInfo[128];
-                    sprintf(clipInfo, "Clipboard: %d colors from %d-%d", clipboardSize, clipboardStart, clipboardStart + clipboardSize - 1);
-                    InfoText(clipInfo);
-                } else {
-                    DisabledText("Clipboard empty");
-                }
-                
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-                
-                HeaderText("Two-Step Swap:");
-                
-                // Mark for swap (step 1)
-                if (hasSelection) {
-                    if (ImGui::Button("Mark for Swap##twoStep", ImVec2(120, 0))) {
-                        // Store current selection for swapping
-                        swapBuffer.clear();
-                        swapStart = firstSel;
-                        swapEnd = lastSel;
-                        
-                        // Get current global palette
-                        Palette* currentPalette = nullptr;
-                        if (globalView && globalView->palSCI) {
-                            currentPalette = globalView->palSCI;
-                        } else if (globalPicture && globalPicture->palSCI) {
-                            currentPalette = globalPicture->palSCI;
-                        }
-                        
-                        if (currentPalette) {
-                            for (int i = firstSel; i <= lastSel; i++) {
-                                if (selectedIndices[i]) {
-                                    RGB8 color = {currentPalette->palData[i].red, currentPalette->palData[i].green, currentPalette->palData[i].blue};
-                                    swapBuffer.push_back(color);
-                                }
-                            }
-                        }
-                        
-                        hasSwapSelection = true;
-                        
-                        char msg[128];
-                        sprintf(msg, "Marked range %d-%d for swapping", firstSel, lastSel);
-                        statusMessage = msg;
-                        showStatus = true;
-                    }
-                } else {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Mark for Swap##twoStep", ImVec2(120, 0));
-                    ImGui::PopStyleVar();
-                }
-                
-                ImGui::SameLine();
-                
-                // Swap with marked range (step 2)
-                if (hasSwapSelection && hasSelection) {
-                    if (ImGui::Button("Swap Here##twoStep", ImVec2(120, 0))) {
-                        // Get current global palette
-                        Palette* currentPalette = nullptr;
-                        if (globalView && globalView->palSCI) {
-                            currentPalette = globalView->palSCI;
-                        } else if (globalPicture && globalPicture->palSCI) {
-                            currentPalette = globalPicture->palSCI;
-                        }
-                        
-                        if (currentPalette) {
-                            // Convert global palette to realmpal format for swapping
-                            RGB8 globalPalette[256];
-                            for (int i = 0; i < 256; i++) {
-                                globalPalette[i].r = currentPalette->palData[i].red;
-                                globalPalette[i].g = currentPalette->palData[i].green;
-                                globalPalette[i].b = currentPalette->palData[i].blue;
-                            }
-                            
-                            RealmpalPaletteContext ctx;
-                            ctx.palette = globalPalette;
-                            ctx.width = ctx.height = 0;
-                            ctx.indices = nullptr;
-                            ctx.update_indices = false;
-                            
-                            if (realmpal_palette_swap_ranges(&ctx, swapStart, swapEnd, firstSel, lastSel)) {
-                                // Copy back to global palette
-                                for (int i = 0; i < 256; i++) {
-                                    currentPalette->palData[i].red = globalPalette[i].r;
-                                    currentPalette->palData[i].green = globalPalette[i].g;
-                                    currentPalette->palData[i].blue = globalPalette[i].b;
-                                }
-                                
-                                paletteModified = true;
-                                statsValid = false;
-                                hasSwapSelection = false;
-                                swapBuffer.clear();
-                                
-                                // Force display update
-                                if (isPicture && globalPicture && curCell && (*curCell)) {
-                                    (*curCell)->bmInfo = nullptr;
-                                    (*curCell)->bmImage = nullptr;
-                                    ShowCell(curCellIndex);
-                                } else if (globalView) {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
-                                
-                                char msg[128];
-                                sprintf(msg, "Swapped ranges %d-%d with %d-%d", swapStart, swapEnd, firstSel, lastSel);
-                                statusMessage = msg;
-                                showStatus = true;
-                            } else {
-                                statusMessage = "ERROR: Failed to swap ranges";
-                                showStatus = true;
-                            }
-                        }
-                    }
-                } else {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Swap Here##twoStep", ImVec2(120, 0));
-                    ImGui::PopStyleVar();
-                }
-                
-                ImGui::Spacing();
-                
-                // Swap status info
-                if (hasSwapSelection) {
-                    char swapInfo[128];
-                    sprintf(swapInfo, "Marked for swap: %d-%d (%d colors)", swapStart, swapEnd, (int)swapBuffer.size());
-                    WarningText(swapInfo);
-                } else {
-                    DisabledText("No range marked for swapping");
-                }
-            }
-            
-            ImGui::Spacing();
-            
-            // =================================================================
-            // ATMOSPHERIC EFFECTS
-            // =================================================================
-            if (ImGui::CollapsingHeader("Atmospheric Effects##main_section")) {
-    
-                if (!hasSelection) {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    DisabledText("Select indices to apply effects");
-                    ImGui::PopStyleVar();
-                } else {
-                    
-                    // Effect variables
-                    static float brightness = 0.0f;
-                    static float contrast = 0.0f;
-                    static float hueShift = 0.0f;
-                    static float satFactor = 1.0f;
-                    static float sepiaIntensity = 0.0f;
-                    static float temperature = 0.0f;
-                    static float gamma = 1.0f;
-                    static float exposure = 0.0f;
-                    static float shadows = 0.0f;
-                    static float highlights = 0.0f;
-                    static float fogIntensity = 0.0f;
-                    static float colorTintR = 0.0f;
-                    static float colorTintG = 0.0f;
-                    static float colorTintB = 0.0f;
-                    static float vibrance = 0.0f;
-                    static float blackPoint = 0.0f;
-                    static float whitePoint = 1.0f;
-                    
-                    static RGB8 effectsBackupPalette[256];
-                    static bool effectsBackupValid = false;
-                    
-                    // Create backup when first adjusting
-                    if (!effectsBackupValid && hasSelection) {
-                        for (int i = firstSel; i <= lastSel; i++) {
-                            if (selectedIndices[i]) {
-                                effectsBackupPalette[i] = originalPalette[i];
-                            }
-                        }
-                        effectsBackupValid = true;
-                    }
-                    
-                    bool anyEffectChanged = false;
-                    
-                    // Organize effects into collapsible sections
-                    if (ImGui::TreeNodeEx("Basic Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::PushItemWidth(150);
-                        if (ImGui::SliderFloat("Brightness", &brightness, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Contrast", &contrast, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Gamma", &gamma, 0.1f, 3.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Exposure", &exposure, -3.0f, 3.0f, "%.2f")) anyEffectChanged = true;
-                        ImGui::PopItemWidth();
-                        ImGui::TreePop();
-                    }
-                    
-                    if (ImGui::TreeNodeEx("Shadow & Highlight", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::PushItemWidth(150);
-                        if (ImGui::SliderFloat("Shadows", &shadows, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjust dark areas only");
-                        
-                        if (ImGui::SliderFloat("Highlights", &highlights, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adjust bright areas only");
-                        
-                        if (ImGui::SliderFloat("Black Point", &blackPoint, 0.0f, 0.5f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("White Point", &whitePoint, 0.5f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        ImGui::PopItemWidth();
-                        ImGui::TreePop();
-                    }
-                    
-                    if (ImGui::TreeNodeEx("Color & Saturation", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::PushItemWidth(150);
-                        if (ImGui::SliderFloat("Hue Shift", &hueShift, -180.0f, 180.0f, "%.0f°")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Saturation", &satFactor, 0.0f, 2.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Vibrance", &vibrance, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Smart saturation that preserves skin tones");
-                        ImGui::PopItemWidth();
-                        ImGui::TreePop();
-                    }
-                    
-                    if (ImGui::TreeNodeEx("Atmospheric Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
-                        ImGui::PushItemWidth(150);
-                        if (ImGui::SliderFloat("Temperature", &temperature, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cool (blue) to Warm (orange)");
-                        
-                        if (ImGui::SliderFloat("Fog/Haze", &fogIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulates atmospheric perspective");
-                        
-                        if (ImGui::SliderFloat("Sepia Tone", &sepiaIntensity, 0.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        ImGui::PopItemWidth();
-                        ImGui::TreePop();
-                    }
-                    
-                    if (ImGui::TreeNode("Color Tinting")) {
-                        ImGui::Text("Custom Color Tint:");
-                        ImGui::PushItemWidth(120);
-                        if (ImGui::SliderFloat("Red Tint", &colorTintR, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Green Tint", &colorTintG, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        if (ImGui::SliderFloat("Blue Tint", &colorTintB, -1.0f, 1.0f, "%.2f")) anyEffectChanged = true;
-                        ImGui::PopItemWidth();
-                        ImGui::TreePop();
-                    }
-                    
-                    ImGui::Spacing();
-                    
-                    // Preset Effects for Common Atmospheres
-                    struct AtmosphericPreset {
-                        const char* name;
-                        const char* category;
-                        float brightness, contrast, gamma, exposure, shadows, highlights;
-                        float hueShift, satFactor, vibrance, blackPoint, whitePoint;
-                        float temperature, fogIntensity, sepiaIntensity;
-                        float colorTintR, colorTintG, colorTintB;
-                        const char* description;
-                    };
 
-                    // Comprehensive preset database
-                    static AtmosphericPreset g_atmosphericPresets[] = {
-                        // === TIME OF DAY ===
-                        {"Dawn", "Time of Day", 0.2f, 0.1f, 1.1f, 0.3f, 0.1f, 0.0f, 
-                        10.0f, 1.1f, 0.2f, 0.0f, 1.0f, 0.2f, 0.1f, 0.0f, 
-                        0.3f, 0.2f, 0.1f, "Soft morning light with warm orange glow"},
-                        
-                        {"Morning", "Time of Day", 0.3f, 0.2f, 1.0f, 0.2f, 0.2f, 0.0f,
-                        0.0f, 1.2f, 0.1f, 0.0f, 1.0f, 0.1f, 0.0f, 0.0f,
-                        0.2f, 0.1f, 0.0f, "Bright, clear morning atmosphere"},
-                        
-                        {"Noon", "Time of Day", 0.4f, 0.3f, 0.9f, 0.1f, 0.0f, 0.1f,
-                        0.0f, 1.3f, 0.2f, 0.0f, 1.0f, -0.1f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.0f, "High contrast midday sun"},
-                        
-                        {"Dusk", "Time of Day", 0.0f, 0.2f, 1.2f, 0.0f, -0.1f, -0.2f,
-                        15.0f, 1.0f, -0.1f, 0.1f, 0.9f, 0.4f, 0.0f, 0.1f,
-                        0.4f, 0.2f, -0.1f, "Golden hour with warm sunset colors"},
-                        
-                        {"Night", "Time of Day", -0.3f, 0.2f, 1.3f, -0.5f, 0.0f, -0.3f,
-                        0.0f, 0.7f, -0.2f, 0.2f, 0.8f, -0.4f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.2f, "Dark night with reduced saturation"},
-                        
-                        {"Moonlight", "Time of Day", -0.4f, 0.1f, 1.4f, -0.3f, 0.1f, -0.4f,
-                        0.0f, 0.6f, -0.3f, 0.1f, 0.9f, -0.5f, 0.2f, 0.0f,
-                        -0.2f, -0.1f, 0.3f, "Cool moonlit atmosphere"},
+                            // Dim unused entries so they read as "not in play"
+                            float dimFactor = isUsed ? 1.0f : 0.45f;
 
-                        // === WEATHER CONDITIONS ===
-                        {"Foggy Morning", "Weather", 0.2f, -0.3f, 1.1f, 0.2f, -0.1f, 0.0f,
-                        0.0f, 0.6f, -0.2f, 0.0f, 0.9f, 0.0f, 0.6f, 0.0f,
-                        0.0f, 0.0f, 0.0f, "Misty, low contrast morning fog"},
-                        
-                        {"Heavy Fog", "Weather", 0.1f, -0.5f, 1.2f, 0.1f, -0.2f, 0.0f,
-                        0.0f, 0.4f, -0.4f, 0.1f, 0.8f, 0.0f, 0.8f, 0.0f,
-                        0.0f, 0.0f, 0.0f, "Dense, visibility-reducing fog"},
-                        
-                        {"Rainy Day", "Weather", -0.2f, -0.2f, 1.1f, -0.1f, 0.0f, -0.1f,
-                        0.0f, 0.8f, -0.1f, 0.0f, 0.9f, -0.2f, 0.3f, 0.0f,
-                        -0.1f, 0.0f, 0.1f, "Overcast, muted colors"},
-                        
-                        {"Storm", "Weather", -0.4f, 0.4f, 1.3f, -0.2f, 0.2f, -0.2f,
-                        0.0f, 0.7f, -0.2f, 0.2f, 0.8f, -0.3f, 0.1f, 0.0f,
-                        0.0f, 0.0f, 0.2f, "Dark, dramatic storm atmosphere"},
-                        
-                        {"Blizzard", "Weather", 0.3f, -0.4f, 1.0f, 0.3f, -0.3f, 0.1f,
-                        0.0f, 0.3f, -0.5f, 0.0f, 1.0f, -0.6f, 0.7f, 0.0f,
-                        -0.3f, -0.1f, 0.0f, "White-out snow conditions"},
-                        
-                        {"Heat Haze", "Weather", 0.3f, -0.3f, 0.8f, 0.4f, 0.0f, 0.2f,
-                        10.0f, 0.9f, 0.0f, 0.0f, 1.0f, 0.6f, 0.4f, 0.0f,
-                        0.3f, 0.2f, 0.0f, "Shimmering desert heat"},
+                            ImGui::SameLine(LABEL_W + col * (SWATCH + GAP), 0.0f);
 
-                        // === ENVIRONMENTS ===
-                        {"Deep Cave", "Environment", -0.5f, 0.5f, 1.5f, -0.4f, 0.3f, -0.5f,
-                        0.0f, 0.5f, -0.4f, 0.3f, 0.7f, -0.2f, 0.1f, 0.0f,
-                        0.0f, 0.0f, 0.1f, "Dark, high contrast underground"},
-                        
-                        {"Forest Canopy", "Environment", -0.1f, 0.1f, 1.1f, -0.1f, 0.1f, -0.1f,
-                        0.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.0f, 0.2f, 0.0f,
-                        -0.1f, 0.2f, 0.0f, "Dappled green forest light"},
-                        
-                        {"Deep Ocean", "Environment", -0.3f, -0.1f, 1.2f, -0.2f, 0.0f, -0.3f,
-                        0.0f, 0.8f, 0.0f, 0.1f, 0.9f, -0.5f, 0.4f, 0.0f,
-                        -0.2f, 0.0f, 0.4f, "Deep underwater blue atmosphere"},
-                        
-                        {"Mountain Peak", "Environment", 0.2f, 0.4f, 0.9f, 0.2f, 0.0f, 0.1f,
-                        0.0f, 1.2f, 0.3f, 0.0f, 1.0f, -0.3f, 0.1f, 0.0f,
-                        -0.2f, -0.1f, 0.2f, "Clear, crisp high altitude air"},
-                        
-                        {"Swampland", "Environment", -0.1f, 0.0f, 1.1f, 0.0f, 0.0f, -0.1f,
-                        20.0f, 0.9f, -0.1f, 0.1f, 0.9f, 0.1f, 0.3f, 0.0f,
-                        -0.1f, 0.2f, 0.1f, "Murky, green-tinted wetland"},
-                        
-                        {"Desert Noon", "Environment", 0.4f, 0.5f, 0.8f, 0.5f, 0.0f, 0.3f,
-                        5.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.7f, 0.2f, 0.1f,
-                        0.4f, 0.2f, 0.0f, "Harsh, bleaching desert sun"},
+                            char btnId[16]; sprintf(btnId, "##pc%d", idx);
+                            ImGui::PushStyleColor(ImGuiCol_Button,
+                                ImVec4(r * dimFactor, g * dimFactor, b * dimFactor, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                                ImVec4(fminf(r * 1.25f, 1.0f), fminf(g * 1.25f, 1.0f), fminf(b * 1.25f, 1.0f), 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonActive,
+                                ImVec4(r * 0.75f, g * 0.75f, b * 0.75f, 1.0f));
 
-                        // === MAGICAL/FANTASY ===
-                        {"Poison Cloud", "Magical", 0.0f, 0.2f, 1.1f, 0.0f, 0.0f, 0.0f,
-                        30.0f, 1.4f, 0.3f, 0.0f, 1.0f, 0.0f, 0.1f, 0.0f,
-                        -0.2f, 0.6f, -0.1f, "Toxic green magical atmosphere"},
-                        
-                        {"Fire Realm", "Magical", 0.2f, 0.4f, 0.9f, 0.3f, 0.1f, 0.1f,
-                        15.0f, 1.3f, 0.2f, 0.0f, 1.0f, 0.8f, 0.0f, 0.0f,
-                        0.5f, 0.2f, 0.0f, "Blazing magical fire environment"},
-                        
-                        {"Ice Cavern", "Magical", 0.1f, 0.3f, 1.2f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.9f, -0.1f, 0.0f, 1.0f, -0.6f, 0.2f, 0.0f,
-                        -0.3f, 0.0f, 0.3f, "Crystalline blue ice magic"},
-                        
-                        {"Shadow Realm", "Magical", -0.6f, 0.6f, 1.4f, -0.3f, 0.4f, -0.6f,
-                        0.0f, 0.4f, -0.5f, 0.4f, 0.6f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 0.1f, "Dark magical shadow dimension"},
-                        
-                        {"Holy Light", "Magical", 0.5f, -0.2f, 0.8f, 0.4f, -0.2f, 0.3f,
-                        10.0f, 1.0f, 0.1f, 0.0f, 1.0f, 0.3f, 0.3f, 0.0f,
-                        0.2f, 0.2f, 0.1f, "Divine golden radiance"},
-                        
-                        {"Arcane Energy", "Magical", 0.0f, 0.3f, 1.0f, 0.1f, 0.0f, 0.0f,
-                        -30.0f, 1.2f, 0.4f, 0.0f, 1.0f, -0.2f, 0.0f, 0.0f,
-                        0.0f, -0.1f, 0.4f, "Purple-blue magical energy"},
+                            ImVec2 btnPos = ImGui::GetCursorScreenPos();
+                            bool clicked  = ImGui::Button(btnId, ImVec2(SWATCH, SWATCH));
+                            ImGui::PopStyleColor(3);
 
-                        // === SCI-FI/CYBERPUNK ===
-                        {"Neon Night", "Sci-Fi", -0.2f, 0.4f, 1.1f, 0.0f, 0.2f, -0.1f,
-                        0.0f, 1.5f, 0.5f, 0.1f, 0.9f, -0.3f, 0.0f, 0.0f,
-                        0.0f, 0.1f, 0.3f, "Cyberpunk neon-lit streets"},
-                        
-                        {"Space Station", "Sci-Fi", -0.1f, 0.2f, 1.2f, -0.1f, 0.1f, -0.1f,
-                        0.0f, 0.8f, -0.2f, 0.0f, 1.0f, -0.4f, 0.0f, 0.0f,
-                        -0.1f, 0.0f, 0.2f, "Sterile artificial lighting"},
-                        
-                        {"Alien World", "Sci-Fi", 0.1f, 0.2f, 1.0f, 0.2f, 0.0f, 0.0f,
-                        45.0f, 1.2f, 0.2f, 0.0f, 1.0f, 0.2f, 0.1f, 0.0f,
-                        0.2f, 0.3f, 0.2f, "Strange otherworldly atmosphere"},
-                        
-                        {"Nuclear Glow", "Sci-Fi", 0.2f, 0.1f, 1.1f, 0.3f, 0.0f, 0.0f,
-                        20.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.1f, 0.2f, 0.0f,
-                        0.1f, 0.4f, 0.0f, "Radioactive green luminescence"},
-
-                        // === HORROR/MOOD ===
-                        {"Gothic Horror", "Horror/Mood", -0.4f, 0.5f, 1.3f, -0.2f, 0.3f, -0.4f,
-                        0.0f, 0.6f, -0.3f, 0.3f, 0.7f, 0.0f, 0.1f, 0.3f,
-                        0.0f, 0.0f, 0.0f, "Dark, foreboding Gothic atmosphere"},
-                        
-                        {"Blood Moon", "Horror/Mood", -0.2f, 0.3f, 1.2f, 0.0f, 0.1f, -0.2f,
-                        0.0f, 1.0f, 0.0f, 0.1f, 0.9f, 0.2f, 0.0f, 0.0f,
-                        0.4f, -0.1f, -0.1f, "Ominous red-tinted moonlight"},
-                        
-                        {"Peaceful Meadow", "Horror/Mood", 0.3f, -0.1f, 0.9f, 0.2f, -0.1f, 0.1f,
-                        5.0f, 1.1f, 0.2f, 0.0f, 1.0f, 0.1f, 0.0f, 0.0f,
-                        0.1f, 0.2f, 0.0f, "Soft, calming natural light"},
-                        
-                        {"Romantic Sunset", "Horror/Mood", 0.1f, 0.0f, 1.0f, 0.2f, -0.1f, 0.0f,
-                        25.0f, 1.2f, 0.1f, 0.0f, 1.0f, 0.5f, 0.0f, 0.2f,
-                        0.3f, 0.2f, 0.1f, "Warm, golden romantic atmosphere"},
-
-                        // === SEASONAL ===
-                        {"Spring Fresh", "Seasonal", 0.2f, 0.1f, 0.9f, 0.2f, -0.1f, 0.1f,
-                        0.0f, 1.2f, 0.3f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 0.2f, 0.0f, "Fresh, vibrant spring colors"},
-                        
-                        {"Summer Heat", "Seasonal", 0.3f, 0.2f, 0.8f, 0.4f, 0.0f, 0.2f,
-                        0.0f, 1.1f, 0.1f, 0.0f, 1.0f, 0.5f, 0.2f, 0.0f,
-                        0.2f, 0.1f, 0.0f, "Intense summer sunshine"},
-                        
-                        {"Autumn Leaves", "Seasonal", 0.1f, 0.2f, 1.0f, 0.1f, 0.0f, 0.0f,
-                        20.0f, 1.1f, 0.0f, 0.0f, 1.0f, 0.3f, 0.0f, 0.2f,
-                        0.3f, 0.2f, 0.0f, "Warm autumn foliage colors"},
-                        
-                        {"Winter Twilight", "Seasonal", -0.2f, 0.1f, 1.2f, -0.1f, 0.0f, -0.2f,
-                        0.0f, 0.8f, -0.2f, 0.0f, 0.9f, -0.3f, 0.1f, 0.0f,
-                        -0.2f, 0.0f, 0.2f, "Cold, crisp winter evening"}
-                    };
-
-                    // Atmospheric Presets section
-                    if (ImGui::CollapsingHeader("Atmospheric Presets##presets_section")) {
-                        
-                        static int selectedPresetIndex = -1;
-                        static char filterText[128] = "";
-                        static char categoryFilter[64] = "All Categories";
-                        
-                        // Category filter
-                        ImGui::Text("Category Filter:");
-                        ImGui::SameLine();
-                        ImGui::PushItemWidth(180);
-                        if (ImGui::BeginCombo("##category_filter", categoryFilter)) {
-                            if (ImGui::Selectable("All Categories", strcmp(categoryFilter, "All Categories") == 0)) {
-                                strcpy(categoryFilter, "All Categories");
-                            }
-                            
-                            // Get unique categories
-                            std::set<std::string> categories;
-                            for (size_t i = 0; i < sizeof(g_atmosphericPresets) / sizeof(g_atmosphericPresets[0]); i++) {
-                                categories.insert(g_atmosphericPresets[i].category);
-                            }
-                            
-                            for (const auto& category : categories) {
-                                if (ImGui::Selectable(category.c_str(), strcmp(categoryFilter, category.c_str()) == 0)) {
-                                    strcpy(categoryFilter, category.c_str());
-                                }
-                            }
-                            ImGui::EndCombo();
-                        }
-                        ImGui::PopItemWidth();
-                        
-                        ImGui::SameLine();
-                        ImGui::Text("Search:");
-                        ImGui::SameLine();
-                        ImGui::PushItemWidth(150);
-                        ImGui::InputText("##preset_search", filterText, sizeof(filterText));
-                        ImGui::PopItemWidth();
-                        
-                        ImGui::Spacing();
-                        
-                        // Preset list
-                        ImGui::PushItemWidth(-1);
-                        if (ImGui::BeginListBox("##preset_list", ImVec2(-1, 200))) {
-                            
-                            int presetCount = sizeof(g_atmosphericPresets) / sizeof(g_atmosphericPresets[0]);
-                            for (int i = 0; i < presetCount; i++) {
-                                AtmosphericPreset& preset = g_atmosphericPresets[i];
-                                
-                                // Apply filters
-                                bool matchesCategory = (strcmp(categoryFilter, "All Categories") == 0) || 
-                                                    (strcmp(categoryFilter, preset.category) == 0);
-                                bool matchesSearch = (strlen(filterText) == 0) || 
-                                                (strstr(preset.name, filterText) != nullptr) ||
-                                                (strstr(preset.description, filterText) != nullptr);
-                                
-                                if (matchesCategory && matchesSearch) {
-                                    char displayText[512];
-                                    sprintf(displayText, "[%s] %s", preset.category, preset.name);
-                                    
-                                    if (ImGui::Selectable(displayText, selectedPresetIndex == i)) {
-                                        selectedPresetIndex = i;
-                                    }
-                                    
-                                    if (ImGui::IsItemHovered()) {
-                                        ImGui::SetTooltip("%s", preset.description);
-                                    }
-                                }
-                            }
-                            
-                            ImGui::EndListBox();
-                        }
-                        ImGui::PopItemWidth();
-                        
-                        ImGui::Spacing();
-                        
-                        // Apply preset button
-                        if (selectedPresetIndex >= 0) {
-                            AtmosphericPreset& preset = g_atmosphericPresets[selectedPresetIndex];
-                            
-                            char buttonText[256];
-                            sprintf(buttonText, "Apply: %s", preset.name);
-                            
-                            if (ImGui::Button(buttonText, ImVec2(-1, 0))) {
-                                // Apply all preset values
-                                brightness = preset.brightness;
-                                contrast = preset.contrast;
-                                gamma = preset.gamma;
-                                exposure = preset.exposure;
-                                shadows = preset.shadows;
-                                highlights = preset.highlights;
-                                hueShift = preset.hueShift;
-                                satFactor = preset.satFactor;
-                                vibrance = preset.vibrance;
-                                blackPoint = preset.blackPoint;
-                                whitePoint = preset.whitePoint;
-                                temperature = preset.temperature;
-                                fogIntensity = preset.fogIntensity;
-                                sepiaIntensity = preset.sepiaIntensity;
-                                colorTintR = preset.colorTintR;
-                                colorTintG = preset.colorTintG;
-                                colorTintB = preset.colorTintB;
-                                
-                                anyEffectChanged = true;
-                                
-                                char msg[256];
-                                sprintf(msg, "Applied preset: %s", preset.name);
-                                statusMessage = msg;
-                                showStatus = true;
-                            }
-                            
-                            // Show preset description
-                            ImGui::Spacing();
-                            ImGui::TextWrapped("Description: %s", preset.description);
-                            
-                        } else {
-                            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                            ImGui::Button("Select a preset to apply", ImVec2(-1, 0));
-                            ImGui::PopStyleVar();
-                        }
-                    }
-                    
-                    ImGui::Spacing();
-                    
-                    // Control buttons
-                    if (ImGui::Button("Reset All Effects", ImVec2(120, 0))) {
-                        brightness = contrast = hueShift = exposure = shadows = highlights = 0.0f;
-                        gamma = satFactor = whitePoint = 1.0f;
-                        temperature = sepiaIntensity = fogIntensity = vibrance = blackPoint = 0.0f;
-                        colorTintR = colorTintG = colorTintB = 0.0f;
-                        effectsBackupValid = false;
-                        
-                        if (hasSelection) {
-                            // Get current global palette
-                            Palette* currentPalette = nullptr;
-                            if (globalView && globalView->palSCI) {
-                                currentPalette = globalView->palSCI;
-                            } else if (globalPicture && globalPicture->palSCI) {
-                                currentPalette = globalPicture->palSCI;
-                            }
-                            
-                            if (currentPalette) {
-                                for (int i = firstSel; i <= lastSel; i++) {
-                                    if (selectedIndices[i]) {
-                                        currentPalette->palData[i].red = originalPalette[i].r;
-                                        currentPalette->palData[i].green = originalPalette[i].g;
-                                        currentPalette->palData[i].blue = originalPalette[i].b;
-                                    }
-                                }
-                                paletteModified = true;
-                                statsValid = false;
-                                
-                                // Force display update
-                                if (isPicture && globalPicture && curCell && (*curCell)) {
-                                    (*curCell)->bmInfo = nullptr;
-                                    (*curCell)->bmImage = nullptr;
-                                    ShowCell(curCellIndex);
-                                } else if (globalView) {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
-                            }
-                        }
-                    }
-                    
-                    ImGui::SameLine();
-                    
-                    if (ImGui::Button("Grayscale", ImVec2(90, 0))) {
-                        if (hasSelection) {
-                            // Get current global palette
-                            Palette* currentPalette = nullptr;
-                            if (globalView && globalView->palSCI) {
-                                currentPalette = globalView->palSCI;
-                            } else if (globalPicture && globalPicture->palSCI) {
-                                currentPalette = globalPicture->palSCI;
-                            }
-                            
-                            if (currentPalette) {
-                                RGB8 globalPalette[256];
-                                for (int i = 0; i < 256; i++) {
-                                    globalPalette[i].r = currentPalette->palData[i].red;
-                                    globalPalette[i].g = currentPalette->palData[i].green;
-                                    globalPalette[i].b = currentPalette->palData[i].blue;
-                                }
-                                
-                                RealmpalPaletteContext ctx;
-                                ctx.palette = globalPalette;
-                                ctx.indices = nullptr;
-                                ctx.width = ctx.height = 0;
-                                ctx.update_indices = false;
-                                
-                                if (realmpal_palette_to_grayscale(&ctx, firstSel, lastSel)) {
-                                    for (int i = 0; i < 256; i++) {
-                                        currentPalette->palData[i].red = globalPalette[i].r;
-                                        currentPalette->palData[i].green = globalPalette[i].g;
-                                        currentPalette->palData[i].blue = globalPalette[i].b;
-                                    }
-                                    
-                                    paletteModified = true;
-                                    statsValid = false;
-                                    effectsBackupValid = false;
-                                    
-                                    // Force display update
-                                    if (isPicture && globalPicture && curCell && (*curCell)) {
-                                        (*curCell)->bmInfo = nullptr;
-                                        (*curCell)->bmImage = nullptr;
-                                        ShowCell(curCellIndex);
-                                    } else if (globalView) {
-                                        ShowLoopCell(curLoopIndex, curCellIndex);
-                                    }
-                                    InvalidateRect(hWnd, NULL, TRUE);
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Reset backup when selection changes
-                    static int lastFirstSel = -1;
-                    static int lastLastSel = -1;
-                    if (firstSel != lastFirstSel || lastSel != lastLastSel) {
-                        effectsBackupValid = false;
-                        lastFirstSel = firstSel;
-                        lastLastSel = lastSel;
-                    }
-                    
-                    // Apply all effects in real-time to global palette
-                    if (anyEffectChanged && hasSelection && effectsBackupValid) {
-                        // Get current global palette
-                        Palette* currentPalette = nullptr;
-                        if (globalView && globalView->palSCI) {
-                            currentPalette = globalView->palSCI;
-                        } else if (globalPicture && globalPicture->palSCI) {
-                            currentPalette = globalPicture->palSCI;
-                        }
-                        
-                        if (currentPalette) {
-                            for (int i = firstSel; i <= lastSel; i++) {
-                                if (selectedIndices[i]) {
-                                    RGB8 baseColor = effectsBackupPalette[i];
-                                    
-                                    float r = baseColor.r / 255.0f;
-                                    float g = baseColor.g / 255.0f;
-                                    float b = baseColor.b / 255.0f;
-                                    
-                                    // Helper functions for color space conversion
-                                    auto rgb_to_hsl = [](float r, float g, float b, float& h, float& s, float& l) {
-                                        float max = fmax(fmax(r, g), b);
-                                        float min = fmin(fmin(r, g), b);
-                                        float delta = max - min;
-                                        
-                                        l = (max + min) / 2.0f;
-                                        
-                                        if (delta < 0.001f) {
-                                            s = 0.0f;
-                                            h = 0.0f;
-                                        } else {
-                                            s = (l > 0.5f) ? delta / (2.0f - max - min) : delta / (max + min);
-                                            
-                                            if (max == r) {
-                                                h = (g - b) / delta + (g < b ? 6.0f : 0.0f);
-                                            } else if (max == g) {
-                                                h = (b - r) / delta + 2.0f;
-                                            } else {
-                                                h = (r - g) / delta + 4.0f;
-                                            }
-                                            h /= 6.0f;
-                                        }
-                                    };
-
-                                    auto hsl_to_rgb = [](float h, float s, float l, float& r, float& g, float& b) {
-                                        if (s < 0.001f) {
-                                            r = g = b = l;
-                                        } else {
-                                            auto hue_to_rgb = [](float p, float q, float t) {
-                                                if (t < 0.0f) t += 1.0f;
-                                                if (t > 1.0f) t -= 1.0f;
-                                                if (t < 1.0f/6.0f) return p + (q - p) * 6.0f * t;
-                                                if (t < 1.0f/2.0f) return q;
-                                                if (t < 2.0f/3.0f) return p + (q - p) * (2.0f/3.0f - t) * 6.0f;
-                                                return p;
-                                            };
-                                            
-                                            float q = (l < 0.5f) ? l * (1.0f + s) : l + s - l * s;
-                                            float p = 2.0f * l - q;
-                                            
-                                            r = hue_to_rgb(p, q, h + 1.0f/3.0f);
-                                            g = hue_to_rgb(p, q, h);
-                                            b = hue_to_rgb(p, q, h - 1.0f/3.0f);
-                                        }
-                                    };
-
-                                    // Apply gamma correction
-                                    if (gamma != 1.0f) {
-                                        r = powf(fmax(r, 0.0f), 1.0f / gamma);
-                                        g = powf(fmax(g, 0.0f), 1.0f / gamma);
-                                        b = powf(fmax(b, 0.0f), 1.0f / gamma);
-                                    }
-
-                                    // Apply exposure (multiplicative)
-                                    if (exposure != 0.0f) {
-                                        float exposureMult = powf(2.0f, exposure);
-                                        r *= exposureMult;
-                                        g *= exposureMult;
-                                        b *= exposureMult;
-                                    }
-
-                                    // Apply brightness (additive)
-                                    if (brightness != 0.0f) {
-                                        r += brightness;
-                                        g += brightness;
-                                        b += brightness;
-                                    }
-
-                                    // Apply contrast
-                                    if (contrast != 0.0f) {
-                                        float contrastFactor = (1.0f + contrast);
-                                        r = (r - 0.5f) * contrastFactor + 0.5f;
-                                        g = (g - 0.5f) * contrastFactor + 0.5f;
-                                        b = (b - 0.5f) * contrastFactor + 0.5f;
-                                    }
-
-                                    // Apply black/white point adjustment
-                                    if (blackPoint != 0.0f || whitePoint != 1.0f) {
-                                        float range = whitePoint - blackPoint;
-                                        if (range > 0.001f) {
-                                            r = (fmax(r - blackPoint, 0.0f)) / range;
-                                            g = (fmax(g - blackPoint, 0.0f)) / range;
-                                            b = (fmax(b - blackPoint, 0.0f)) / range;
-                                        }
-                                    }
-
-                                    // Apply shadow/highlight adjustments
-                                    if (shadows != 0.0f || highlights != 0.0f) {
-                                        float luminance = 0.299f * r + 0.587f * g + 0.114f * b;
-                                        
-                                        // Shadow adjustment (affects darker areas more)
-                                        if (shadows != 0.0f) {
-                                            float shadowMask = 1.0f - luminance;
-                                            shadowMask = shadowMask * shadowMask; // Quadratic falloff
-                                            float shadowAdjust = shadows * shadowMask;
-                                            r += shadowAdjust;
-                                            g += shadowAdjust;
-                                            b += shadowAdjust;
-                                        }
-                                        
-                                        // Highlight adjustment (affects brighter areas more)
-                                        if (highlights != 0.0f) {
-                                            float highlightMask = luminance;
-                                            highlightMask = highlightMask * highlightMask; // Quadratic falloff
-                                            float highlightAdjust = highlights * highlightMask;
-                                            r += highlightAdjust;
-                                            g += highlightAdjust;
-                                            b += highlightAdjust;
-                                        }
-                                    }
-
-                                    // Color temperature adjustment
-                                    if (temperature != 0.0f) {
-                                        if (temperature > 0.0f) {
-                                            // Warmer (more orange/red)
-                                            r += temperature * 0.3f;
-                                            g += temperature * 0.1f;
-                                            b -= temperature * 0.2f;
-                                        } else {
-                                            // Cooler (more blue)
-                                            r += temperature * 0.2f;
-                                            g += temperature * 0.1f;
-                                            b -= temperature * 0.3f;
-                                        }
-                                    }
-
-                                    // Custom color tinting
-                                    r += colorTintR;
-                                    g += colorTintG;
-                                    b += colorTintB;
-
-                                    // Convert to HSL for hue/saturation adjustments
-                                    float h, s, l;
-                                    rgb_to_hsl(fmax(0.0f, fmin(1.0f, r)), 
-                                              fmax(0.0f, fmin(1.0f, g)), 
-                                              fmax(0.0f, fmin(1.0f, b)), h, s, l);
-
-                                    // Apply hue shift
-                                    if (hueShift != 0.0f) {
-                                        h += hueShift / 360.0f;
-                                        while (h < 0.0f) h += 1.0f;
-                                        while (h > 1.0f) h -= 1.0f;
-                                    }
-
-                                    // Apply saturation
-                                    if (satFactor != 1.0f) {
-                                        s *= satFactor;
-                                        s = fmax(0.0f, fmin(1.0f, s));
-                                    }
-
-                                    // Apply vibrance (smart saturation that preserves skin tones)
-                                    if (vibrance != 0.0f) {
-                                        float maxSat = fmax(s, 0.5f); // Reduce effect on highly saturated colors
-                                        float vibranceAdjust = vibrance * (1.0f - maxSat);
-                                        s += vibranceAdjust;
-                                        s = fmax(0.0f, fmin(1.0f, s));
-                                    }
-
-                                    // Convert back to RGB
-                                    hsl_to_rgb(h, s, l, r, g, b);
-
-                                    // Apply fog/haze effect (desaturates and brightens)
-                                    if (fogIntensity > 0.0f) {
-                                        float fogR = 0.9f, fogG = 0.95f, fogB = 1.0f; // Slightly blue-tinted fog
-                                        r = r * (1.0f - fogIntensity) + fogR * fogIntensity;
-                                        g = g * (1.0f - fogIntensity) + fogG * fogIntensity;
-                                        b = b * (1.0f - fogIntensity) + fogB * fogIntensity;
-                                    }
-
-                                    // Apply sepia effect
-                                    if (sepiaIntensity > 0.0f) {
-                                        float sepiaR = (r * 0.393f) + (g * 0.769f) + (b * 0.189f);
-                                        float sepiaG = (r * 0.349f) + (g * 0.686f) + (b * 0.168f);
-                                        float sepiaB = (r * 0.272f) + (g * 0.534f) + (b * 0.131f);
-                                        
-                                        r = r * (1.0f - sepiaIntensity) + sepiaR * sepiaIntensity;
-                                        g = g * (1.0f - sepiaIntensity) + sepiaG * sepiaIntensity;
-                                        b = b * (1.0f - sepiaIntensity) + sepiaB * sepiaIntensity;
-                                    }
-
-                                    // Final clamping
-                                    r = fmax(0.0f, fmin(1.0f, r));
-                                    g = fmax(0.0f, fmin(1.0f, g));
-                                    b = fmax(0.0f, fmin(1.0f, b));
-                                    
-                                    // Set final values to global palette
-                                    currentPalette->palData[i].red = (uint8_t)realmpal_clamp_int((int)(r * 255), 0, 255);
-                                    currentPalette->palData[i].green = (uint8_t)realmpal_clamp_int((int)(g * 255), 0, 255);
-                                    currentPalette->palData[i].blue = (uint8_t)realmpal_clamp_int((int)(b * 255), 0, 255);
-                                }
-                            }
-                            
-                            paletteModified = true;
-                            statsValid = false;
-                            
-                            // Force display update
-                            if (isPicture && globalPicture && curCell && (*curCell)) {
-                                (*curCell)->bmInfo = nullptr;
-                                (*curCell)->bmImage = nullptr;
-                                ShowCell(curCellIndex);
-                            } else if (globalView) {
-                                ShowLoopCell(curLoopIndex, curCellIndex);
-                            }
-                            InvalidateRect(hWnd, NULL, TRUE);
-                        }
-                    }
-                }
-            }
-            
-            ImGui::Spacing();
-            
-            // =================================================================
-            // IMPORT/EXPORT SECTION
-            // =================================================================
-            if (ImGui::CollapsingHeader("Import / Export")) {
-                
-                ImGui::Text("Import Palette From:");
-                
-                // Show current input file
-                if (!g_palMgrInputFile.empty()) {
-                    const char* fileName = strrchr(g_palMgrInputFile.c_str(), '\\');
-                    if (fileName) {
-                        char displayName[64];
-                        strncpy(displayName, fileName + 1, 60);
-                        displayName[60] = '\0';
-                        InfoText(displayName);
-                    }
-                } else {
-                    DisabledText("No file selected");
-                }
-                
-                if (ImGui::Button("Browse File...##import", ImVec2(-1, 0))) {
-                    g_requestPalMgrInputDialog = true;
-                }
-                
-                ImGui::Spacing();
-                
-                // Import button
-                if (!g_palMgrInputFile.empty()) {
-                    if (ImGui::Button("Import Palette##import", ImVec2(-1, 0))) {
-                        // Clear error state
-                        realmpal_clear_error();
-                        
-                        RGB8 importedPalette[256];
-                        int colors = realmpal_read_any_palette(g_palMgrInputFile.c_str(), importedPalette, 256);
-                        if (colors > 0) {
-                            // Get current global palette
-                            Palette* currentPalette = nullptr;
-                            if (globalView && globalView->palSCI) {
-                                currentPalette = globalView->palSCI;
-                            } else if (globalPicture && globalPicture->palSCI) {
-                                currentPalette = globalPicture->palSCI;
-                            }
-                            
-                            if (currentPalette) {
-                                // Import directly to global palette
-                                for (int i = 0; i < colors; i++) {
-                                    currentPalette->palData[i].red = importedPalette[i].r;
-                                    currentPalette->palData[i].green = importedPalette[i].g;
-                                    currentPalette->palData[i].blue = importedPalette[i].b;
-                                }
-                                
-                                paletteModified = true;
-                                statsValid = false;
-                                std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                                
-                                // Force display update
-                                if (isPicture && globalPicture && curCell && (*curCell)) {
-                                    (*curCell)->bmInfo = nullptr;
-                                    (*curCell)->bmImage = nullptr;
-                                    ShowCell(curCellIndex);
-                                } else if (globalView) {
-                                    ShowLoopCell(curLoopIndex, curCellIndex);
-                                }
-                                InvalidateRect(hWnd, NULL, TRUE);
-                                
-                                char msg[512];
-                                sprintf(msg, "SUCCESS: Imported %d colors", colors);
-                                statusMessage = msg;
-                                showStatus = true;
-                            }
-                        } else {
-                            const char* error = realmpal_get_last_error();
-                            char msg[512];
-                            sprintf(msg, "ERROR: Import failed - %s", error ? error : "Unknown error");
-                            statusMessage = msg;
-                            showStatus = true;
-                        }
-                    }
-                } else {
-                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
-                    ImGui::Button("Import Palette##import", ImVec2(-1, 0));
-                    ImGui::PopStyleVar();
-                }
-                
-                ImGui::Spacing();
-                ImGui::Separator();
-                ImGui::Spacing();
-                
-                ImGui::Text("Export Palette To:");
-                
-                if (ImGui::Button("Export Palette...##export", ImVec2(-1, 0))) {
-                    g_requestPalMgrOutputDialog = true;
-                }
-                
-                // Show export progress if file is selected
-                if (!g_palMgrOutputFile.empty()) {
-                    const char* fileName = strrchr(g_palMgrOutputFile.c_str(), '\\');
-                    if (fileName) {
-                        char displayName[64];
-                        strncpy(displayName, fileName + 1, 60);
-                        displayName[60] = '\0';
-                        InfoText(displayName);
-                        
-                        if (ImGui::Button("Export Now##export", ImVec2(-1, 0))) {
-                            // Create a simple 16x16 palette image for export
-                            uint8_t indices[256];
-                            for (int i = 0; i < 256; i++) {
-                                indices[i] = i;
-                            }
-                            
-                            // Clear error state
-                            realmpal_clear_error();
-                            
-                            // Get current global palette for export
-                            RGB8 exportPalette[256];
-                            Palette* currentPalette = nullptr;
-                            if (globalView && globalView->palSCI) {
-                                currentPalette = globalView->palSCI;
-                            } else if (globalPicture && globalPicture->palSCI) {
-                                currentPalette = globalPicture->palSCI;
-                            }
-                            
-                            if (currentPalette) {
-                                for (int i = 0; i < 256; i++) {
-                                    exportPalette[i].r = currentPalette->palData[i].red;
-                                    exportPalette[i].g = currentPalette->palData[i].green;
-                                    exportPalette[i].b = currentPalette->palData[i].blue;
-                                }
-                                
-                                if (realmpal_write_auto(g_palMgrOutputFile.c_str(), 16, 16, indices, exportPalette)) {
-                                    statusMessage = "SUCCESS: Palette exported";
-                                    showStatus = true;
+                            // Handle left-click selection
+                            if (clicked) {
+                                if (io.KeyShift && lastClickedIndex != -1) {
+                                    int lo = (lastClickedIndex < idx) ? lastClickedIndex : idx;
+                                    int hi = (lastClickedIndex > idx) ? lastClickedIndex : idx;
+                                    if (!io.KeyCtrl)
+                                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                                    for (int i = lo; i <= hi; i++) selectedIndices[i] = true;
+                                } else if (io.KeyCtrl) {
+                                    selectedIndices[idx] = !selectedIndices[idx];
+                                    lastClickedIndex = idx;
                                 } else {
-                                    const char* error = realmpal_get_last_error();
-                                    char msg[512];
-                                    sprintf(msg, "ERROR: Export failed - %s", error ? error : "Unknown error");
-                                    statusMessage = msg;
-                                    showStatus = true;
+                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                                    selectedIndices[idx] = true;
+                                    lastClickedIndex = idx;
                                 }
                             }
-                        }
-                    }
-                }
-            }
-            
-            ImGui::Spacing();
-            
-            // =================================================================
-            // PALETTE ANALYSIS
-            // =================================================================
-            if (ImGui::CollapsingHeader("Palette Analysis")) {
-                
-                if (ImGui::Button("Analyze Palette##analysis", ImVec2(-1, 0))) {
-                    uint8_t* indices = nullptr;
-                    int pixelCount = 0;
-                    
-                    // Get pixel data if available for usage analysis
-                    if (curCell && (*curCell)) {
-                        // Ensure image data is loaded
-                        if (!(*curCell)->bmInfo || !(*curCell)->bmImage) {
-                            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
-                        }
-                        
-                        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
-                            indices = (*curCell)->bmImage;
-                            pixelCount = (*curCell)->bmInfo->bmiHeader.biWidth * 
-                                        abs((*curCell)->bmInfo->bmiHeader.biHeight);
-                        }
-                    }
-                    
-                    // Get current global palette
-                    RGB8 analysisPalette[256];
-                    Palette* currentPalette = nullptr;
-                    if (globalView && globalView->palSCI) {
-                        currentPalette = globalView->palSCI;
-                    } else if (globalPicture && globalPicture->palSCI) {
-                        currentPalette = globalPicture->palSCI;
-                    }
-                    
-                    if (currentPalette) {
-                        for (int i = 0; i < 256; i++) {
-                            analysisPalette[i].r = currentPalette->palData[i].red;
-                            analysisPalette[i].g = currentPalette->palData[i].green;
-                            analysisPalette[i].b = currentPalette->palData[i].blue;
-                        }
-                        
-                        if (realmpal_palette_analyze(analysisPalette, indices, pixelCount, &paletteStats)) {
-                            statsValid = true;
-                            statusMessage = "Palette analysis complete";
-                            showStatus = true;
-                        } else {
-                            statusMessage = "ERROR: Failed to analyze palette";
-                            showStatus = true;
-                        }
-                    }
-                }
-                
-                if (statsValid) {
+
+                            // Right-click context menu
+                            char ctxId[24]; sprintf(ctxId, "##ctx%d", idx);
+                            if (ImGui::BeginPopupContextItem(ctxId)) {
+                                char ctxTitle[32]; sprintf(ctxTitle, "Index 0x%02X (%d)", idx, idx);
+                                ImGui::Text("%s", ctxTitle);
+                                ImGui::Separator();
+
+                                if (ImGui::MenuItem("Select This")) {
+                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                                    selectedIndices[idx] = true;
+                                    lastClickedIndex = idx;
+                                    activeTab = 0;
+                                }
+                                if (ImGui::MenuItem(pal->palData[idx].remap ? "Mark as Unused" : "Mark as Used")) {
+                                    pal->palData[idx].remap = pal->palData[idx].remap ? 0 : 1;
+                                    paletteModified = true;
+                                    datasaved = false;
+                                    RefreshDisplay();
+                                }
+                                ImGui::Separator();
+                                if (ImGui::MenuItem("Copy Color")) {
+                                    clipboardColors.clear();
+                                    clipboardColors.push_back({ pal->palData[idx].red,
+                                                                pal->palData[idx].green,
+                                                                pal->palData[idx].blue,
+                                                                pal->palData[idx].remap });
+                                    clipboardStart = idx;
+                                }
+                                if (hasClipboard && ImGui::MenuItem("Paste Color Here")) {
+                                    pal->palData[idx].red   = clipboardColors[0].r;
+                                    pal->palData[idx].green = clipboardColors[0].g;
+                                    pal->palData[idx].blue  = clipboardColors[0].b;
+                                    paletteModified = true;
+                                    datasaved = false;
+                                    RefreshDisplay();
+                                }
+                                ImGui::EndPopup();
+                            }
+
+                            // Draw selection border (yellow)
+                            if (isSelected) {
+                                ImDrawList* dl = ImGui::GetWindowDrawList();
+                                dl->AddRect(btnPos,
+                                    ImVec2(btnPos.x + SWATCH, btnPos.y + SWATCH),
+                                    IM_COL32(255, 220, 0, 255), 0.0f, 0, 2.0f);
+                            }
+
+                            // Unused slots get a diagonal strikethrough so it's obvious at a glance
+                            if (!isUsed) {
+                                ImDrawList* dl = ImGui::GetWindowDrawList();
+                                // Single diagonal line corner to corner, semi-transparent dark
+                                dl->AddLine(
+                                    ImVec2(btnPos.x + 2.0f,          btnPos.y + 2.0f),
+                                    ImVec2(btnPos.x + SWATCH - 2.0f, btnPos.y + SWATCH - 2.0f),
+                                    IM_COL32(0, 0, 0, 160), 1.5f);
+                                // Small "unused" dot in bottom-right corner
+                                dl->AddCircleFilled(
+                                    ImVec2(btnPos.x + SWATCH - 5.0f, btnPos.y + SWATCH - 5.0f),
+                                    3.0f, IM_COL32(180, 50, 50, 220));
+                            }
+
+                            // Tooltip
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip(
+                                    "Index 0x%02X (%d)\nRGB(%d, %d, %d)\n%s%s",
+                                    idx, idx,
+                                    pal->palData[idx].red,
+                                    pal->palData[idx].green,
+                                    pal->palData[idx].blue,
+                                    isUsed
+                                        ? "Used  — included in game palette"
+                                        : "Unused  — skipped by game (right-click to mark as Used)",
+                                    isSelected ? "\n[SELECTED]" : "");
+                            }
+                        } // col
+                    } // row
+
+                    // Legend
                     ImGui::Spacing();
                     ImGui::Separator();
                     ImGui::Spacing();
-                    
-                    char statsText[128];
-                    sprintf(statsText, "Unique colors: %d", paletteStats.unique_colors);
-                    InfoText(statsText);
-                    
-                    if (paletteStats.used_colors > 0) {
-                        sprintf(statsText, "Used in image: %d", paletteStats.used_colors);
-                        InfoText(statsText);
+                    DisabledText("Click=select  Shift+click=range  Ctrl+click=add  Right-click=menu");
+
+                    // Unused swatch example
+                    ImGui::Spacing();
+                    {
+                        const float SZ = 14.0f;
+                        ImVec2 p = ImGui::GetCursorScreenPos();
+                        ImDrawList* dl = ImGui::GetWindowDrawList();
+                        // dimmed gray swatch
+                        dl->AddRectFilled(p, ImVec2(p.x + SZ, p.y + SZ), IM_COL32(60, 60, 60, 255));
+                        dl->AddRect      (p, ImVec2(p.x + SZ, p.y + SZ), IM_COL32(100,100,100,200));
+                        // diagonal
+                        dl->AddLine(ImVec2(p.x+1, p.y+1), ImVec2(p.x+SZ-1, p.y+SZ-1), IM_COL32(0,0,0,160), 1.5f);
+                        // red dot
+                        dl->AddCircleFilled(ImVec2(p.x+SZ-4, p.y+SZ-4), 3.0f, IM_COL32(180,50,50,220));
+                        ImGui::Dummy(ImVec2(SZ + 4, SZ));
+                        ImGui::SameLine();
+                        DisabledText("= Unused  (game skips this slot)");
+
+                        ImGui::SameLine(0, 16.0f);
+                        ImVec2 p2 = ImGui::GetCursorScreenPos();
+                        dl->AddRectFilled(p2, ImVec2(p2.x + SZ, p2.y + SZ), IM_COL32(80, 140, 80, 255));
+                        dl->AddRect      (p2, ImVec2(p2.x + SZ, p2.y + SZ), IM_COL32(100,200,100,200));
+                        ImGui::Dummy(ImVec2(SZ + 4, SZ));
+                        ImGui::SameLine();
+                        DisabledText("= Used  (game includes this color)");
                     }
-                    
-                    sprintf(statsText, "Avg luminance: %.2f", paletteStats.average_luminance);
-                    InfoText(statsText);
-                    
-                    sprintf(statsText, "Darkest: %d, Brightest: %d", 
-                           paletteStats.darkest_index, paletteStats.brightest_index);
-                    InfoText(statsText);
-                }
-            }
-            
-        }
-        ImGui::EndChild();
-        
-        ImGui::SameLine();
-        
-        // Right Column: Interactive Palette Grid (40% width)
-        if (ImGui::BeginChild("PaletteColumn", ImVec2(0, 0), true)) {
-            
-            HeaderText("Direct Edit Palette Grid");
-            ImGui::Separator();
-            ImGui::Spacing();
-            
-            InfoText("Left-click = select, Shift+click = range, Ctrl+click = multi-select");
-            InfoText("Changes are applied immediately to live palette");
-            ImGui::Spacing();
-            
-            // Get current global palette for display
-            Palette* currentPalette = nullptr;
-            if (globalView && globalView->palSCI) {
-                currentPalette = globalView->palSCI;
-            } else if (globalPicture && globalPicture->palSCI) {
-                currentPalette = globalPicture->palSCI;
-            }
-            
-            // Palette grid display with selection
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.05f, 0.05f, 0.1f, 0.9f));
-            if (ImGui::BeginChild("DirectEditPalette", ImVec2(0, 0), true)) {
-                
-                if (currentPalette) {
-                    const int COLORS_PER_ROW = 16;
-                    const float BUTTON_SIZE = 18.0f;
-                    const float SPACING_VAL = 2.0f;
-                    
-                    ImGuiIO& io = ImGui::GetIO();
-                    
-                    for (int row = 0; row < 16; row++) {
-                        for (int col = 0; col < 16; col++) {
-                            int colorIndex = row * COLORS_PER_ROW + col;
-                            
-                            char buttonId[16];
-                            sprintf(buttonId, "##pal%d", colorIndex);
-                            
-                            float r = currentPalette->palData[colorIndex].red / 255.0f;
-                            float g = currentPalette->palData[colorIndex].green / 255.0f;
-                            float b = currentPalette->palData[colorIndex].blue / 255.0f;
-                            
-                            // Brighten selected colors
-                            bool isSelected = selectedIndices[colorIndex];
-                            if (isSelected) {
-                                r = fmin(r + 0.3f, 1.0f);
-                                g = fmin(g + 0.3f, 1.0f);
-                                b = fmin(b + 0.3f, 1.0f);
-                            }
-                            
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(r, g, b, 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(fmin(r * 1.3f, 1.0f), fmin(g * 1.3f, 1.0f), fmin(b * 1.3f, 1.0f), 1.0f));
-                            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(r * 0.7f, g * 0.7f, b * 0.7f, 1.0f));
-                            
-                            ImVec2 buttonPos = ImGui::GetCursorScreenPos();
-                            bool buttonClicked = ImGui::Button(buttonId, ImVec2(BUTTON_SIZE, BUTTON_SIZE));
-                            
-                            ImGui::PopStyleColor(3);
-                            
-                            // Handle selection
-                            if (buttonClicked) {
-                                bool ctrlPressed = io.KeyCtrl;
-                                bool shiftPressed = io.KeyShift;
-                                
-                                if (shiftPressed && lastClickedIndex != -1) {
-                                    // Shift+click: Select range from last clicked to current
-                                    int rangeStart = min(lastClickedIndex, colorIndex);
-                                    int rangeEnd = max(lastClickedIndex, colorIndex);
-                                    
-                                    if (!ctrlPressed) {
-                                        // Clear existing selection unless Ctrl is also held
-                                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                                    }
-                                    
-                                    // Select the range
-                                    for (int i = rangeStart; i <= rangeEnd; i++) {
-                                        selectedIndices[i] = true;
-                                    }
-                                    
-                                    selectionStart = rangeStart;
-                                    selectionEnd = rangeEnd;
-                                } else if (ctrlPressed) {
-                                    // Ctrl+click: Toggle individual selection
-                                    selectedIndices[colorIndex] = !selectedIndices[colorIndex];
-                                    lastClickedIndex = colorIndex;
-                                } else {
-                                    // Plain click: Start new selection
-                                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
-                                    selectedIndices[colorIndex] = true;
-                                    selectionStart = selectionEnd = colorIndex;
-                                    lastClickedIndex = colorIndex;
-                                }
-                            }
-                            
-                            // Draw selection border
-                            if (isSelected) {
-                                ImDrawList* drawList = ImGui::GetWindowDrawList();
-                                ImVec2 buttonMin = buttonPos;
-                                ImVec2 buttonMax = ImVec2(buttonPos.x + BUTTON_SIZE, buttonPos.y + BUTTON_SIZE);
-                                drawList->AddRect(buttonMin, buttonMax, IM_COL32(255, 255, 0, 255), 0.0f, 0, 2.0f);
-                            }
-                            
-                            // Tooltip
-                            if (ImGui::IsItemHovered()) {
-                                char tooltip[128];
-                                sprintf(tooltip, "Index %d\nRGB(%d, %d, %d)%s", 
-                                    colorIndex, 
-                                    currentPalette->palData[colorIndex].red, 
-                                    currentPalette->palData[colorIndex].green, 
-                                    currentPalette->palData[colorIndex].blue,
-                                    isSelected ? "\n[SELECTED]" : "");
-                                ImGui::SetTooltip("%s", tooltip);
-                            }
-                            
-                            if (col < 15) {
-                                ImGui::SameLine(0, SPACING_VAL);
-                            }
-                        }
-                    }
+
                 } else {
-                    ErrorText("No palette available");
+                    ErrorText("No palette loaded");
                 }
             }
             ImGui::EndChild();
             ImGui::PopStyleColor();
-            
         }
-        ImGui::EndChild();
-        
+        ImGui::EndChild(); // PalGridOuter
+
+        ImGui::SameLine();
+
+        // =====================================================================
+        // RIGHT — Tab panel
+        // =====================================================================
+        if (ImGui::BeginChild("PalTools", ImVec2(TOOLS_W, 0), true)) {
+
+            Palette* pal = GetCurrentPalette();
+
+            const char* tabLabels[] = { "Edit", "Adjust", "File" };
+            for (int t = 0; t < 3; t++) {
+                if (t > 0) ImGui::SameLine();
+                bool active = (activeTab == t);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.45f, 0.75f, 1.0f));
+                if (ImGui::Button(tabLabels[t], ImVec2(TOOLS_W / 3.0f - 6.0f, 30.0f)))
+                    activeTab = t;
+                if (active) ImGui::PopStyleColor();
+            }
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // =================================================================
+            // TAB 0 — Edit
+            // =================================================================
+            if (activeTab == 0) {
+
+                // --- Selection info ---
+                if (selectedCount == 0) {
+                    DisabledText("No selection — click palette grid");
+                } else if (selectedCount == 1) {
+                    char buf[48]; sprintf(buf, "Selected: Index 0x%02X (%d)", firstSel, firstSel);
+                    SuccessText(buf);
+                } else {
+                    char buf[64]; sprintf(buf, "Selected: %d indices  (0x%02X – 0x%02X)",
+                                          selectedCount, firstSel, lastSel);
+                    SuccessText(buf);
+                }
+                ImGui::Spacing();
+
+                // Quick selection buttons
+                if (ImGui::Button("All",    ImVec2(50, 0))) std::fill(selectedIndices.begin(), selectedIndices.end(), true);
+                ImGui::SameLine();
+                if (ImGui::Button("None",   ImVec2(50, 0))) {
+                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                    lastClickedIndex = -1;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Invert", ImVec2(55, 0)))
+                    for (int i = 0; i < 256; i++) selectedIndices[i] = !selectedIndices[i];
+
+                ImGui::Spacing();
+
+                // Range selection
+                static int rangeA = 0, rangeB = 255;
+                ImGui::Text("Range:");
+                ImGui::PushItemWidth(60);
+                ImGui::SameLine();
+                if (ImGui::InputInt("##rA", &rangeA)) rangeA = realmpal_clamp_int(rangeA, 0, 255);
+                ImGui::SameLine(); ImGui::Text("–");
+                ImGui::SameLine();
+                if (ImGui::InputInt("##rB", &rangeB)) rangeB = realmpal_clamp_int(rangeB, rangeA, 255);
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("Select##range")) {
+                    std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                    for (int i = rangeA; i <= rangeB; i++) selectedIndices[i] = true;
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // --- Single-color editor (shown when exactly 1 index selected) ---
+                if (selectedCount == 1 && pal) {
+                    HeaderText("Color Editor");
+                    ImGui::Spacing();
+
+                    uint8_t& cr = pal->palData[firstSel].red;
+                    uint8_t& cg = pal->palData[firstSel].green;
+                    uint8_t& cb = pal->palData[firstSel].blue;
+
+                    // Color preview swatch
+                    ImVec2 swatchPos = ImGui::GetCursorScreenPos();
+                    ImGui::Dummy(ImVec2(48, 48));
+                    ImDrawList* dl = ImGui::GetWindowDrawList();
+                    dl->AddRectFilled(swatchPos, ImVec2(swatchPos.x + 48, swatchPos.y + 48),
+                        IM_COL32(cr, cg, cb, 255));
+                    dl->AddRect(swatchPos, ImVec2(swatchPos.x + 48, swatchPos.y + 48),
+                        IM_COL32(160, 160, 160, 255));
+                    ImGui::SameLine();
+
+                    // RGB sliders
+                    ImGui::BeginGroup();
+                    int r = cr, g = cg, b = cb;
+                    bool changed = false;
+                    ImGui::PushItemWidth(140);
+                    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.9f,0.3f,0.3f,1.0f));
+                    if (ImGui::SliderInt("R##ce", &r, 0, 255)) changed = true;
+                    ImGui::PopStyleColor();
+                    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.3f,0.9f,0.3f,1.0f));
+                    if (ImGui::SliderInt("G##ce", &g, 0, 255)) changed = true;
+                    ImGui::PopStyleColor();
+                    ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.3f,0.5f,1.0f,1.0f));
+                    if (ImGui::SliderInt("B##ce", &b, 0, 255)) changed = true;
+                    ImGui::PopStyleColor();
+                    ImGui::PopItemWidth();
+                    if (changed) {
+                        cr = (uint8_t)r; cg = (uint8_t)g; cb = (uint8_t)b;
+                        paletteModified = true;
+                        datasaved = false;
+                        RefreshDisplay();
+                    }
+                    ImGui::EndGroup();
+
+                    // Hex input
+                    ImGui::Spacing();
+                    static char hexBuf[8] = "";
+                    RGBToHex(cr, cg, cb, hexBuf);
+                    ImGui::Text("#"); ImGui::SameLine(0,2);
+                    ImGui::PushItemWidth(65);
+                    if (ImGui::InputText("##hexin", hexBuf, 7, ImGuiInputTextFlags_CharsHexadecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
+                        uint8_t nr, ng, nb;
+                        if (HexToRGB(hexBuf, nr, ng, nb)) {
+                            cr = nr; cg = ng; cb = nb;
+                            paletteModified = true;
+                            datasaved = false;
+                            RefreshDisplay();
+                        }
+                    }
+                    ImGui::PopItemWidth();
+
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                }
+
+                // --- Used / Unused controls ---
+                HeaderText("Color Slot Usage");
+                ImGui::Spacing();
+                InfoText("Used = game includes this color.  Unused = game skips it.");
+                ImGui::Spacing();
+
+                if (pal) {
+                    // Show usage stats for current selection
+                    if (hasSelection) {
+                        int usedCount = 0;
+                        for (int i = 0; i < 256; i++)
+                            if (selectedIndices[i] && pal->palData[i].remap != 0) usedCount++;
+                        char buf[80];
+                        sprintf(buf, "%d / %d selected are Used", usedCount, selectedCount);
+                        InfoText(buf);
+                        ImGui::Spacing();
+                    }
+
+                    // Per-selection buttons
+                    bool canEditSel = hasSelection;
+                    if (!canEditSel) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+
+                    if (ImGui::Button("Mark Selected as Used", ImVec2(-1, 0)) && canEditSel) {
+                        for (int i = 0; i < 256; i++)
+                            if (selectedIndices[i]) pal->palData[i].remap = 1;
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                        statusMessage = "Selected slots marked as Used"; showStatus = true;
+                    }
+                    if (ImGui::Button("Mark Selected as Unused", ImVec2(-1, 0)) && canEditSel) {
+                        for (int i = 0; i < 256; i++)
+                            if (selectedIndices[i]) pal->palData[i].remap = 0;
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                        statusMessage = "Selected slots marked as Unused"; showStatus = true;
+                    }
+
+                    if (!canEditSel) ImGui::PopStyleVar();
+
+                    ImGui::Spacing();
+
+                    // Whole-palette operations
+                    if (ImGui::Button("Auto-Detect Used From Current Cell", ImVec2(-1, 0))) {
+                        if (curCell && *curCell) {
+                            Cell* cell = *curCell;
+                            if (!cell->bmInfo || !cell->bmImage)
+                                cell->GetImage(&cell->bmInfo, &cell->bmImage);
+                            if (cell->bmImage && cell->bmInfo) {
+                                bool used[256] = {};
+                                int w = cell->bmInfo->bmiHeader.biWidth;
+                                int h = abs(cell->bmInfo->bmiHeader.biHeight);
+                                int rowStride = (w + 3) & ~3;
+                                for (int row = 0; row < h; row++)
+                                    for (int col = 0; col < w; col++)
+                                        used[cell->bmImage[row * rowStride + col]] = true;
+                                pal->ApplyUsageFlags(used);
+                                pal->RecalculateHeaderRange();
+                                pal->EnsureValidPalCount();
+                                paletteModified = true; datasaved = false; RefreshDisplay();
+                                statusMessage = "Usage auto-detected from current cell pixels";
+                                showStatus = true;
+                            } else {
+                                statusMessage = "No cell image data available";
+                                showStatus = true;
+                            }
+                        }
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Scans the current cell's pixels and marks slots\n"
+                                          "as Used only if the image actually references them.\n"
+                                          "All other slots are marked Unused.");
+
+                    if (ImGui::Button("Mark All 256 as Used", ImVec2(-1, 0))) {
+                        for (int i = 0; i < 256; i++) pal->palData[i].remap = 1;
+                        pal->Head.startOffset = 0;
+                        pal->Head.nColors     = 256;
+                        pal->EnsureValidPalCount();
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                        statusMessage = "All 256 slots marked as Used"; showStatus = true;
+                    }
+                    if (ImGui::Button("Mark All 256 as Unused", ImVec2(-1, 0))) {
+                        for (int i = 0; i < 256; i++) pal->palData[i].remap = 0;
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                        statusMessage = "All slots marked as Unused"; showStatus = true;
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // --- Copy / Paste ---
+                HeaderText("Copy / Paste");
+                ImGui::Spacing();
+
+                bool canCopy  = hasSelection && pal;
+                bool canPaste = hasClipboard && hasSelection && pal;
+
+                if (!canCopy) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+                if (ImGui::Button("Copy Selected##cp", ImVec2(110, 0)) && canCopy) {
+                    clipboardColors.clear();
+                    clipboardStart = firstSel;
+                    for (int i = firstSel; i <= lastSel; i++) {
+                        if (selectedIndices[i])
+                            clipboardColors.push_back({ pal->palData[i].red,
+                                                        pal->palData[i].green,
+                                                        pal->palData[i].blue,
+                                                        pal->palData[i].remap });
+                    }
+                    char buf[64]; sprintf(buf, "Copied %d colors", (int)clipboardColors.size());
+                    statusMessage = buf; showStatus = true;
+                }
+                if (!canCopy) ImGui::PopStyleVar();
+
+                ImGui::SameLine();
+
+                if (!canPaste) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+                if (ImGui::Button("Paste Here##cp", ImVec2(110, 0)) && canPaste) {
+                    int pasteCount = 0;
+                    for (int i = 0; i < (int)clipboardColors.size() && (firstSel + i) < 256; i++) {
+                        pal->palData[firstSel + i].red   = clipboardColors[i].r;
+                        pal->palData[firstSel + i].green = clipboardColors[i].g;
+                        pal->palData[firstSel + i].blue  = clipboardColors[i].b;
+                        pasteCount++;
+                    }
+                    paletteModified = true; datasaved = false; RefreshDisplay();
+                    char buf[64]; sprintf(buf, "Pasted %d colors at index %d", pasteCount, firstSel);
+                    statusMessage = buf; showStatus = true;
+                }
+                if (!canPaste) ImGui::PopStyleVar();
+
+                if (hasClipboard) {
+                    ImGui::Spacing();
+                    char buf[64];
+                    sprintf(buf, "Clipboard: %d colors from index %d", (int)clipboardColors.size(), clipboardStart);
+                    InfoText(buf);
+                } else {
+                    ImGui::Spacing();
+                    DisabledText("Clipboard empty");
+                }
+
+            } // TAB 0 — Edit
+
+            // =================================================================
+            // TAB 1 — Adjust
+            // =================================================================
+            else if (activeTab == 1) {
+
+                if (!hasSelection || !pal) {
+                    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+                    DisabledText("Select palette indices to adjust");
+                    ImGui::PopStyleVar();
+                } else {
+
+                    static float brightness   = 0.0f;
+                    static float contrast     = 0.0f;
+                    static float hueShift     = 0.0f;
+                    static float satFactor    = 1.0f;
+                    static float colorTintR   = 0.0f;
+                    static float colorTintG   = 0.0f;
+                    static float colorTintB   = 0.0f;
+                    static RGB8  adjustBackup[256];
+                    static bool  adjustBackupValid = false;
+
+                    // Store backup when first entering this tab with a selection
+                    if (!adjustBackupValid) {
+                        for (int i = 0; i < 256; i++) {
+                            adjustBackup[i] = { pal->palData[i].red,
+                                                pal->palData[i].green,
+                                                pal->palData[i].blue };
+                        }
+                        adjustBackupValid = true;
+                    }
+
+                    HeaderText("Adjustments");
+                    ImGui::Spacing();
+
+                    bool anyChanged = false;
+                    ImGui::PushItemWidth(160);
+                    if (ImGui::SliderFloat("Brightness",  &brightness, -1.0f, 1.0f, "%.2f")) anyChanged = true;
+                    if (ImGui::SliderFloat("Contrast",    &contrast,   -1.0f, 1.0f, "%.2f")) anyChanged = true;
+                    if (ImGui::SliderFloat("Hue Shift",   &hueShift,  -180.0f, 180.0f, "%.0f°")) anyChanged = true;
+                    if (ImGui::SliderFloat("Saturation",  &satFactor,  0.0f, 2.0f, "%.2f")) anyChanged = true;
+                    ImGui::Spacing();
+                    ImGui::Text("Color Tint:");
+                    if (ImGui::SliderFloat("Red##tint",   &colorTintR, -1.0f, 1.0f, "%.2f")) anyChanged = true;
+                    if (ImGui::SliderFloat("Green##tint", &colorTintG, -1.0f, 1.0f, "%.2f")) anyChanged = true;
+                    if (ImGui::SliderFloat("Blue##tint",  &colorTintB, -1.0f, 1.0f, "%.2f")) anyChanged = true;
+                    ImGui::PopItemWidth();
+
+                    if (anyChanged) {
+                        // Apply from backup so sliders are non-destructive
+                        for (int i = 0; i < 256; i++) {
+                            if (!selectedIndices[i]) continue;
+
+                            float r = adjustBackup[i].r / 255.0f;
+                            float g = adjustBackup[i].g / 255.0f;
+                            float b = adjustBackup[i].b / 255.0f;
+
+                            r += brightness; g += brightness; b += brightness;
+
+                            if (contrast != 0.0f) {
+                                float cf = 1.0f + contrast;
+                                r = (r - 0.5f) * cf + 0.5f;
+                                g = (g - 0.5f) * cf + 0.5f;
+                                b = (b - 0.5f) * cf + 0.5f;
+                            }
+
+                            r += colorTintR; g += colorTintG; b += colorTintB;
+
+                            r = fmaxf(0.0f, fminf(1.0f, r));
+                            g = fmaxf(0.0f, fminf(1.0f, g));
+                            b = fmaxf(0.0f, fminf(1.0f, b));
+
+                            if (hueShift != 0.0f || satFactor != 1.0f) {
+                                float h, s, l;
+                                PalMgr_RGBtoHSL(r, g, b, h, s, l);
+                                h += hueShift / 360.0f;
+                                while (h < 0.0f) h += 1.0f;
+                                while (h > 1.0f) h -= 1.0f;
+                                s *= satFactor;
+                                s = fmaxf(0.0f, fminf(1.0f, s));
+                                PalMgr_HSLtoRGB(h, s, l, r, g, b);
+                            }
+
+                            pal->palData[i].red   = (uint8_t)(r * 255);
+                            pal->palData[i].green = (uint8_t)(g * 255);
+                            pal->palData[i].blue  = (uint8_t)(b * 255);
+                        }
+                        paletteModified = true;
+                        datasaved = false;
+                        RefreshDisplay();
+                    }
+
+                    ImGui::Spacing();
+                    if (ImGui::Button("Reset Adjustments", ImVec2(-1, 0))) {
+                        brightness = 0.0f; contrast = 0.0f;
+                        hueShift   = 0.0f; satFactor = 1.0f;
+                        colorTintR = 0.0f; colorTintG = 0.0f; colorTintB = 0.0f;
+                        // Restore backup for selected indices
+                        for (int i = 0; i < 256; i++) {
+                            if (!selectedIndices[i]) continue;
+                            pal->palData[i].red   = adjustBackup[i].r;
+                            pal->palData[i].green = adjustBackup[i].g;
+                            pal->palData[i].blue  = adjustBackup[i].b;
+                        }
+                        adjustBackupValid = false;
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                    }
+
+                    // Re-seed backup if selection changes
+                    static int prevSelCount = -1;
+                    if (selectedCount != prevSelCount) {
+                        adjustBackupValid = false;
+                        prevSelCount = selectedCount;
+                    }
+
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+
+                    // --- Quick presets ---
+                    HeaderText("Quick Presets");
+                    ImGui::Spacing();
+
+                    struct SimplePreset { const char* name; float br, co, hs, sa, tr, tg, tb; };
+                    static const SimplePreset presets[] = {
+                        { "Normal",       0.0f, 0.0f,   0.0f, 1.0f,  0.0f, 0.0f, 0.0f },
+                        { "Darken",      -0.25f, 0.1f,  0.0f, 1.0f,  0.0f, 0.0f, 0.0f },
+                        { "Brighten",     0.25f,-0.1f,  0.0f, 1.0f,  0.0f, 0.0f, 0.0f },
+                        { "Desaturate",   0.0f, 0.0f,   0.0f, 0.0f,  0.0f, 0.0f, 0.0f },
+                        { "Warm",         0.05f,0.0f,  10.0f, 1.0f,  0.15f,0.05f,-0.1f},
+                        { "Cool",        -0.05f,0.0f,  -10.0f,1.0f, -0.1f,0.0f, 0.15f },
+                        { "Night",       -0.35f,0.15f,  0.0f, 0.55f,-0.05f,0.0f, 0.1f },
+                    };
+                    for (auto& p : presets) {
+                        if (ImGui::Button(p.name, ImVec2(80, 0))) {
+                            brightness = p.br; contrast = p.co;
+                            hueShift   = p.hs; satFactor = p.sa;
+                            colorTintR = p.tr; colorTintG = p.tg; colorTintB = p.tb;
+                            adjustBackupValid = false; // re-seed from current state
+                        }
+                        ImGui::SameLine();
+                    }
+                    ImGui::NewLine();
+
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+
+                    // --- Range swap ---
+                    HeaderText("Swap Ranges");
+                    ImGui::Spacing();
+                    InfoText("Swap two palette ranges of equal size");
+                    ImGui::Spacing();
+
+                    static int swapA1 = 0,  swapA2 = 15;
+                    static int swapB1 = 16, swapB2 = 31;
+                    ImGui::PushItemWidth(55);
+                    ImGui::Text("Range A:"); ImGui::SameLine();
+                    if (ImGui::InputInt("##sa1", &swapA1)) swapA1 = realmpal_clamp_int(swapA1, 0, 255);
+                    ImGui::SameLine(); ImGui::Text("–"); ImGui::SameLine();
+                    if (ImGui::InputInt("##sa2", &swapA2)) swapA2 = realmpal_clamp_int(swapA2, swapA1, 255);
+                    ImGui::Text("Range B:"); ImGui::SameLine();
+                    if (ImGui::InputInt("##sb1", &swapB1)) swapB1 = realmpal_clamp_int(swapB1, 0, 255);
+                    ImGui::SameLine(); ImGui::Text("–"); ImGui::SameLine();
+                    if (ImGui::InputInt("##sb2", &swapB2)) swapB2 = realmpal_clamp_int(swapB2, swapB1, 255);
+                    ImGui::PopItemWidth();
+
+                    int sizeA = swapA2 - swapA1 + 1;
+                    int sizeB = swapB2 - swapB1 + 1;
+                    bool canSwap = (sizeA == sizeB) && pal &&
+                                   !(swapA1 <= swapB2 && swapB1 <= swapA2); // no overlap
+                    if (!canSwap) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+                        if (sizeA != sizeB) DisabledText("Ranges must be the same size");
+                        else if (swapA1 <= swapB2 && swapB1 <= swapA2) DisabledText("Ranges overlap");
+                    }
+                    if (ImGui::Button("Swap A \xe2\x86\x94 B", ImVec2(-1, 0)) && canSwap) {
+                        // Simple in-place swap
+                        for (int i = 0; i < sizeA; i++) {
+                            PalEntry tmp               = pal->palData[swapA1 + i];
+                            pal->palData[swapA1 + i]   = pal->palData[swapB1 + i];
+                            pal->palData[swapB1 + i]   = tmp;
+                        }
+                        paletteModified = true; datasaved = false; RefreshDisplay();
+                        char msg[64]; sprintf(msg, "Swapped %d-%d with %d-%d", swapA1, swapA2, swapB1, swapB2);
+                        statusMessage = msg; showStatus = true;
+                    }
+                    if (!canSwap) ImGui::PopStyleVar();
+
+                } // hasSelection
+
+            } // TAB 1 — Adjust
+
+            // =================================================================
+            // TAB 2 — File
+            // =================================================================
+            else if (activeTab == 2) {
+
+                // --- Import ---
+                HeaderText("Import Palette");
+                ImGui::Spacing();
+
+                if (!g_palMgrInputFile.empty()) {
+                    const char* fn = strrchr(g_palMgrInputFile.c_str(), '\\');
+                    InfoText(fn ? fn + 1 : g_palMgrInputFile.c_str());
+                } else {
+                    DisabledText("No file selected");
+                }
+                if (ImGui::Button("Browse...##import", ImVec2(-1, 0)))
+                    g_requestPalMgrInputDialog = true;
+
+                ImGui::Spacing();
+                bool canImport = !g_palMgrInputFile.empty() && pal;
+                if (!canImport) ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.45f);
+                if (ImGui::Button("Import Palette##do", ImVec2(-1, 0)) && canImport) {
+                    realmpal_clear_error();
+                    RGB8 importedPal[256];
+                    int colors = realmpal_read_any_palette(g_palMgrInputFile.c_str(), importedPal, 256);
+                    if (colors > 0) {
+                        for (int i = 0; i < colors; i++) {
+                            pal->palData[i].red   = importedPal[i].r;
+                            pal->palData[i].green = importedPal[i].g;
+                            pal->palData[i].blue  = importedPal[i].b;
+                        }
+                        paletteModified = true; datasaved = false;
+                        std::fill(selectedIndices.begin(), selectedIndices.end(), false);
+                        RefreshDisplay();
+                        char msg[64]; sprintf(msg, "Imported %d colors", colors);
+                        statusMessage = msg; showStatus = true;
+                    } else {
+                        const char* err = realmpal_get_last_error();
+                        char msg[256]; sprintf(msg, "Import failed: %s", err ? err : "unknown error");
+                        statusMessage = msg; showStatus = true;
+                    }
+                }
+                if (!canImport) ImGui::PopStyleVar();
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // --- Export ---
+                HeaderText("Export Palette");
+                ImGui::Spacing();
+
+                if (ImGui::Button("Export To...##export", ImVec2(-1, 0)))
+                    g_requestPalMgrOutputDialog = true;
+
+                if (!g_palMgrOutputFile.empty() && pal) {
+                    const char* fn = strrchr(g_palMgrOutputFile.c_str(), '\\');
+                    InfoText(fn ? fn + 1 : g_palMgrOutputFile.c_str());
+                    ImGui::Spacing();
+                    if (ImGui::Button("Export Now##do", ImVec2(-1, 0))) {
+                        uint8_t indices[256];
+                        RGB8 exportPal[256];
+                        for (int i = 0; i < 256; i++) {
+                            indices[i]    = (uint8_t)i;
+                            exportPal[i]  = { pal->palData[i].red,
+                                              pal->palData[i].green,
+                                              pal->palData[i].blue };
+                        }
+                        realmpal_clear_error();
+                        if (realmpal_write_auto(g_palMgrOutputFile.c_str(), 16, 16, indices, exportPal)) {
+                            statusMessage = "Palette exported"; showStatus = true;
+                        } else {
+                            const char* err = realmpal_get_last_error();
+                            char msg[256]; sprintf(msg, "Export failed: %s", err ? err : "unknown error");
+                            statusMessage = msg; showStatus = true;
+                        }
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // --- Palette analysis ---
+                HeaderText("Palette Analysis");
+                ImGui::Spacing();
+
+                if (ImGui::Button("Analyze Current Cell", ImVec2(-1, 0)) && pal) {
+                    uint8_t* pixData  = nullptr;
+                    int pixCount = 0;
+                    if (curCell && *curCell) {
+                        if (!(*curCell)->bmInfo || !(*curCell)->bmImage)
+                            (*curCell)->GetImage(&(*curCell)->bmInfo, &(*curCell)->bmImage);
+                        if ((*curCell)->bmImage && (*curCell)->bmInfo) {
+                            pixData  = (*curCell)->bmImage;
+                            pixCount = (*curCell)->bmInfo->bmiHeader.biWidth *
+                                       abs((*curCell)->bmInfo->bmiHeader.biHeight);
+                        }
+                    }
+                    RGB8 analysisPal[256];
+                    for (int i = 0; i < 256; i++) {
+                        analysisPal[i] = { pal->palData[i].red,
+                                           pal->palData[i].green,
+                                           pal->palData[i].blue };
+                    }
+                    if (realmpal_palette_analyze(analysisPal, pixData, pixCount, &paletteStats))
+                        statsValid = true;
+                    else
+                        statusMessage = "Analysis failed"; showStatus = true;
+                }
+
+                if (statsValid) {
+                    ImGui::Spacing();
+                    char buf[80];
+                    sprintf(buf, "Unique colors:    %d", paletteStats.unique_colors);  InfoText(buf);
+                    if (paletteStats.used_colors > 0) {
+                        sprintf(buf, "Used by image:    %d", paletteStats.used_colors); InfoText(buf);
+                    }
+                    sprintf(buf, "Avg luminance:    %.2f", paletteStats.average_luminance); InfoText(buf);
+                    sprintf(buf, "Darkest index:    %d",   paletteStats.darkest_index);     InfoText(buf);
+                    sprintf(buf, "Brightest index:  %d",   paletteStats.brightest_index);   InfoText(buf);
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // --- Palette header diagnostics ---
+                HeaderText("Header Info");
+                ImGui::Spacing();
+                if (pal) {
+                    char buf[80];
+                    sprintf(buf, "palCount:     %d%s", (int)(unsigned char)pal->Head.palCount,
+                            pal->Head.palCount == 0 ? "  *** ZERO — game won't load! ***" : "");
+                    if (pal->Head.palCount == 0) WarningText(buf); else InfoText(buf);
+
+                    sprintf(buf, "valid:        %u%s", pal->Head.valid,
+                            pal->Head.valid == 0 ? "  *** ZERO — palette may not load! ***" : "");
+                    if (pal->Head.valid == 0) WarningText(buf); else InfoText(buf);
+
+                    sprintf(buf, "type:         %d  (%s)", (int)pal->Head.type,
+                            pal->Head.type == 0 ? "per-entry flags" : "shared def flag");
+                    InfoText(buf);
+
+                    sprintf(buf, "startOffset:  %d", (int)pal->Head.startOffset); InfoText(buf);
+                    sprintf(buf, "nColors:      %d", (int)pal->Head.nColors);     InfoText(buf);
+
+                    // Count used entries
+                    int usedCount = 0;
+                    for (int i = 0; i < 256; i++)
+                        if (pal->palData[i].remap != 0) usedCount++;
+                    sprintf(buf, "Used slots:  %d / 256", usedCount);
+                    InfoText(buf);
+
+                    ImGui::Spacing();
+                    if (ImGui::Button("Fix Header (palCount/valid)", ImVec2(-1, 0))) {
+                        pal->EnsureValidPalCount();
+                        pal->RecalculateHeaderRange();
+                        paletteModified = true; datasaved = false;
+                        statusMessage = "Header fields corrected"; showStatus = true;
+                    }
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Sets palCount=1, valid=1, type=0 and recalculates\n"
+                                          "startOffset/nColors to cover only Used slots.");
+                }
+
+            } // TAB 2 — File
+
+            ImGui::Spacing();
+
+            // Status message (auto-hide)
+            if (showStatus && !statusMessage.empty()) {
+                ImGui::Separator();
+                ImGui::Spacing();
+                if (statusMessage.find("fail") != std::string::npos ||
+                    statusMessage.find("Error") != std::string::npos ||
+                    statusMessage.find("ERROR") != std::string::npos)
+                    ErrorText(statusMessage.c_str());
+                else if (statusMessage.find("***") != std::string::npos)
+                    WarningText(statusMessage.c_str());
+                else
+                    SuccessText(statusMessage.c_str());
+
+                statusCounter++;
+                if (statusCounter > 300) {
+                    showStatus = false;
+                    statusMessage = "";
+                    statusCounter = 0;
+                }
+            }
+
+        }
+        ImGui::EndChild(); // PalTools
+
     }
-    ImGui::EndChild();
-    
-    // Status message
-    if (showStatus && !statusMessage.empty()) {
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-        
-        if (statusMessage.find("SUCCESS") != std::string::npos || statusMessage.find("successfully") != std::string::npos) {
-            SuccessText(statusMessage.c_str());
-        } else if (statusMessage.find("ERROR") != std::string::npos) {
-            ErrorText(statusMessage.c_str());
-        } else {
-            InfoText(statusMessage.c_str());
-        }
-        
-        // Auto-hide status after a few seconds
-        static int statusCounter = 0;
-        statusCounter++;
-        if (statusCounter > 180) { // ~3 seconds at 60fps
-            showStatus = false;
-            statusMessage = "";
-            statusCounter = 0;
-        }
-    }
-    
+    ImGui::EndChild(); // PalMain
+
     EndDialog();
 
-    // Handle deferred dialog close to prevent ImGui crashes
     if (shouldCloseDialog) {
         configInitialized = false;
         shouldCloseDialog = false;
-        ImGuiDialogs::HideDialog(ImGuiDialogs::DIALOG_PALETTE_MANAGER);
-        return;
+        HideDialog(DIALOG_PALETTE_MANAGER);
     }
 }
