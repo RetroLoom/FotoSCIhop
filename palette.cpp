@@ -63,6 +63,7 @@ void Palette::initializeMembers()
     Head.valid    = 1;
     Head.type     = 0;  // Per-entry flag mode (each RGB has its own remap byte)
     Head.def      = 1;  // Default flag value consistent with original SCI files
+    hasPalette    = true;
     initializeDefaultPalette();
 }
 
